@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "246964756601",
+    "project_id": "bdscollector-500712",
+    "storage_bucket": "bdscollector-500712.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:246964756601:android:1f609ef283da825df6b4a8",
+        "android_client_info": {
+          "package_name": "com.aistudio.bdscollector.vskwzh"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "246964756601-br8tam85ori4o89lgge949pk07fmpt13.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.bdscollector.vskwzh",
+            "certificate_hash": "183bdd2a532b4f0c42b50079e5893bc7baa12e63"
+          }
+        },
+        {
+          "client_id": "246964756601-qi41nai9svth37osamrt59hrq2v30a1q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyClikDy56x6ztnpqrAfoBuDaSt9kICrzWA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "246964756601-qi41nai9svth37osamrt59hrq2v30a1q.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

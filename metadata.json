@@ -1,0 +1,6 @@
+{
+  "name": "BĐS Collector",
+  "description": "Ứng dụng quản lý bất động sản thực địa dành cho môi giới BĐS Việt Nam",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
