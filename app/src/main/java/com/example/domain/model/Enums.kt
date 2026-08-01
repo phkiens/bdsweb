@@ -25,7 +25,6 @@ enum class CustomerStatus(val value: String) {
 enum class PropertyStatus(val value: String) {
     FOR_SALE("Đang bán"),
     SOLD("Đã bán"),
-    ON_HOLD("Tạm ngưng"),
     PENDING_SURVEY("Chờ khảo sát");
 
     companion object {
@@ -46,4 +45,13 @@ val Property.propertyStatus: PropertyStatus
 
 val UnverifiedProperty.propertyStatus: PropertyStatus
     get() = PropertyStatus.fromValue(status)
+
+enum class LinkRole(val value: String) {
+    OWNER("OWNER"),
+    VIEWER("VIEWER");
+    companion object {
+        fun fromValue(value: String?): LinkRole =
+            values().find { it.value.equals(value, ignoreCase = true) } ?: VIEWER
+    }
+}
 

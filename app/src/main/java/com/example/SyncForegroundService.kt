@@ -100,7 +100,6 @@ class SyncForegroundService : Service() {
                 try {
                     val property = propertyRepository.getPropertyById(propertyId)
                     val localImages = property?.imagePath?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
-                    Log.d("SYNC_UPLOAD_DEBUG", "Đã nhận request, propertyId: $propertyId, số lượng ảnh (đường dẫn local) cần upload: ${localImages.size} (Chi tiết: $localImages)")
                     if (property != null) {
                         propertyArea = property.area
                     }
@@ -176,7 +175,6 @@ class SyncForegroundService : Service() {
                         )
                     }
                 } catch (e: Exception) {
-                    Log.e("SYNC_UPLOAD_DEBUG", "Lỗi đồng bộ single property $propertyId", e)
                     Log.e(TAG, "Lỗi đồng bộ single property", e)
                     val errorMsg = e.localizedMessage ?: "Lỗi không xác định"
                     AppLogger.record(
@@ -206,7 +204,7 @@ class SyncForegroundService : Service() {
                 try {
                     val unverified = propertyRepository.getUnverifiedById(unverifiedId)
                     if (unverified != null) {
-                        unverifiedArea = unverified.address ?: "Sản phẩm chờ"
+                        unverifiedArea = unverified.area.ifBlank { "Sản phẩm chờ" }
                     }
                     updateNotification("Đang đồng bộ $unverifiedArea...", "Đồng bộ sản phẩm chờ")
                     SyncStatusBus.update(SyncProgress("Đang đồng bộ $unverifiedArea", indeterminate = true))
@@ -443,7 +441,6 @@ class SyncForegroundService : Service() {
                     // Sync Property Images
                     for ((index, property) in propertiesWithImages.withIndex()) {
                         val localImages = property.imagePath?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
-                        Log.d("SYNC_UPLOAD_DEBUG", "Đã nhận request, propertyId: ${property.id}, số lượng ảnh (đường dẫn local) cần upload: ${localImages.size} (Chi tiết: $localImages)")
                         AppLogger.log(TAG, "Đang đồng bộ ảnh cho BĐS: ${property.area} (${index + 1}/$totalBds)")
                         SyncStatusBus.update(SyncProgress("Đang đồng bộ BĐS", index + 1, totalBds))
                         NotificationHelper.showSyncProgress(
@@ -582,7 +579,6 @@ class SyncForegroundService : Service() {
                 )
 
             } catch (e: Exception) {
-                Log.e("SYNC_UPLOAD_DEBUG", "Lỗi trong tiến trình SyncForegroundService", e)
                 Log.e(TAG, "Error in SyncForegroundService", e)
                 val errorMsg = e.localizedMessage ?: "Lỗi không xác định"
                 AppLogger.record(

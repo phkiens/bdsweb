@@ -139,6 +139,10 @@ class CustomerRepositoryImpl @Inject constructor(
         return customerDao.getCustomerById(id)?.toDomain()
     }
 
+    override fun getCustomerByIdFlow(id: String): Flow<Customer?> {
+        return customerDao.getCustomerByIdFlow(id).map { it?.toDomain() }
+    }
+
     override suspend fun insertCustomer(customer: Customer, fromSync: Boolean) {
         customerDao.insertCustomer(CustomerEntity.fromDomain(customer))
         if (!customer.isSynced && !fromSync) {
@@ -165,16 +169,36 @@ class CustomerRepositoryImpl @Inject constructor(
     }
 
     override suspend fun updateCustomer(customer: Customer, fromSync: Boolean) {
-        customerDao.updateCustomer(CustomerEntity.fromDomain(customer))
-        if (customer.role == "OWNER") {
+        val existing = customerDao.getCustomerById(customer.id)?.toDomain()
+        val isTextChanged = !fromSync && existing != null && (
+            existing.name             != customer.name ||
+            existing.phone            != customer.phone ||
+            existing.demandType       != customer.demandType ||
+            existing.propertyType     != customer.propertyType ||
+            existing.demandAreas      != customer.demandAreas ||
+            existing.demandDirections != customer.demandDirections ||
+            existing.priceMin         != customer.priceMin ||
+            existing.priceMax         != customer.priceMax ||
+            existing.note             != customer.note ||
+            existing.role             != customer.role ||
+            existing.status           != customer.status ||
+            existing.isDeleted        != customer.isDeleted ||
+            existing.avatarDriveUrl   != customer.avatarDriveUrl
+        )
+        val normalized = if (isTextChanged) {
+            customer.copy(isSynced = false, updatedAt = System.currentTimeMillis())
+        } else customer
+
+        customerDao.updateCustomer(CustomerEntity.fromDomain(normalized))
+        if (normalized.role == "OWNER") {
             customerDao.updateLinkedPropertiesOwnerInfo(
-                customerId = customer.id,
-                newName = customer.name,
-                newPhone = customer.phone
+                customerId = normalized.id,
+                newName = normalized.name,
+                newPhone = normalized.phone
             )
         }
         if (!fromSync) {
-            syncCustomerToSupabase(customer.id)
+            syncCustomerToSupabase(normalized.id)
         }
     }
 
@@ -186,8 +210,12 @@ class CustomerRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun softDeleteCustomerLocalOnly(id: String, timestamp: Long) {
-        customerDao.softDeleteCustomerFromRemote(id, timestamp)
+    override suspend fun softDeleteCustomerLocalOnly(id: String, timestamp: Long): Int {
+        return customerDao.softDeleteCustomerFromRemote(id, timestamp)
+    }
+
+    override suspend fun markCustomerUnsynced(id: String): Int {
+        return customerDao.markCustomerUnsynced(id)
     }
 
     override suspend fun restoreCustomer(id: String) {
@@ -298,6 +326,10 @@ class CustomerRepositoryImpl @Inject constructor(
         return customerDao.getLinksForProperty(propertyId)
     }
 
+    override suspend fun getActiveOwnerLinksForProperty(propertyId: String): List<com.example.data.local.entity.CustomerPropertyLink> {
+        return customerDao.getActiveOwnerLinksForProperty(propertyId)
+    }
+
     override suspend fun getLinkByIds(customerId: String, propertyId: String): com.example.data.local.entity.CustomerPropertyLink? {
         return customerDao.getLinkByIds(customerId, propertyId)
     }
@@ -320,8 +352,12 @@ class CustomerRepositoryImpl @Inject constructor(
         syncCustomerPropertyLinkToSupabase(customerId, propertyId)
     }
 
-    override suspend fun softDeleteCustomerPropertyLinkLocalOnly(customerId: String, propertyId: String, timestamp: Long) {
-        customerDao.softDeleteCustomerPropertyLinkFromRemote(customerId, propertyId, timestamp)
+    override suspend fun softDeleteCustomerPropertyLinkLocalOnly(customerId: String, propertyId: String, timestamp: Long): Int {
+        return customerDao.softDeleteCustomerPropertyLinkFromRemote(customerId, propertyId, timestamp)
+    }
+
+    override suspend fun markCustomerPropertyLinkUnsynced(customerId: String, propertyId: String): Int {
+        return customerDao.markCustomerPropertyLinkUnsynced(customerId, propertyId)
     }
 
     override suspend fun getUnsyncedCustomers(): List<Customer> {

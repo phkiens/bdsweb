@@ -87,7 +87,7 @@ class CustomerSyncRetryWorker(
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error during CustomerSyncRetryWorker", e)
-            Result.failure()
+            if (runAttemptCount < 5) Result.retry() else Result.failure()
         }
     }
 }

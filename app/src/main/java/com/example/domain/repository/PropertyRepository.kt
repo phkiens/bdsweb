@@ -10,7 +10,8 @@ interface PropertyRepository {
     suspend fun insertProperty(property: Property, linkedCustomerId: String? = null, fromSync: Boolean = false)
     suspend fun updateProperty(property: Property, fromSync: Boolean = false)
     suspend fun softDeleteProperty(id: String, timestamp: Long)
-    suspend fun softDeletePropertyLocalOnly(id: String, timestamp: Long)
+    suspend fun softDeletePropertyLocalOnly(id: String, timestamp: Long): Int
+    suspend fun markPropertyTextUnsynced(id: String): Int
     suspend fun deleteOldDeletedProperties(thirtyDaysAgo: Long)
     suspend fun getAllProperties(): List<Property>
     // Thay cho getAllProperties().filter { it.isVerified } — GIỮ record đã xoá (cho backup/sync).
@@ -21,11 +22,11 @@ interface PropertyRepository {
     suspend fun getMediaCountRows(): List<com.example.data.local.dao.MediaCountRow>
     suspend fun getActiveProperties(): List<Property>
     suspend fun getAllDistinctAreas(): List<String>
+    fun getAllDistinctAreasFlow(): Flow<List<String>>
     suspend fun updateMediaSyncStatus(id: String, isSynced: Boolean, expectedImagePath: String?): Boolean
     suspend fun markSyncedIfUnchanged(id: String, pushedUpdatedAt: Long): Boolean
     suspend fun updateDriveMediaIds(id: String, mediaIdsJson: String?)
     suspend fun updateDriveFolderInfo(id: String, folderId: String?, price: Double?)
-    suspend fun getPropertiesForMatching(propertyType: String, priceMin: Double, priceMax: Double, status: String): List<Property>
     suspend fun getPropertiesFiltered(
         keyword: String?,
         propertyType: String?,
@@ -48,9 +49,13 @@ interface PropertyRepository {
     suspend fun updateUnverified(unverified: Property)
     suspend fun softDeleteUnverified(id: String, timestamp: Long)
     suspend fun softDeleteUnverifiedLocalOnly(id: String, timestamp: Long)
+    @Deprecated("Use deleteOldDeletedProperties instead.")
     suspend fun deleteOldDeletedUnverified(thirtyDaysAgo: Long)
     suspend fun getAllUnverified(): List<Property>
     suspend fun getUnsyncedTextUnverified(): List<Property>
     suspend fun getUnsyncedUnverified(): List<com.example.data.local.entity.PropertyEntity>
     suspend fun findPotentialDuplicates(property: Property): List<Property>
+    suspend fun findByCoordinates(latMin: Double, latMax: Double, lngMin: Double, lngMax: Double): List<Property>
+    suspend fun transferPropertyOwnership(propertyId: String, newOwnerId: String)
 }
+

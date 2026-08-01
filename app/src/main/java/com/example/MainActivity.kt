@@ -17,8 +17,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.MutableStateFlow
+
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -32,7 +33,6 @@ import com.example.ui.settings.SettingsScreen
 import com.example.ui.settings.SettingsViewModel
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.unverified.UnverifiedScreen
-import com.example.ui.unverified.UnverifiedDetailScreen
 import com.example.ui.unverified.UnverifiedViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.ui.statistics.StatisticsScreen
@@ -76,9 +76,6 @@ class MainActivity : ComponentActivity() {
     lateinit var networkStateObserver: com.example.ui.common.NetworkStateObserver
 
     @Inject
-    lateinit var oAuthTokenManager: com.example.data.remote.drive.OAuthTokenManager
-
-    @Inject
     lateinit var settingsManager: com.example.ui.common.SettingsManager
 
     @Inject
@@ -93,17 +90,40 @@ class MainActivity : ComponentActivity() {
     private val statisticsViewModel: com.example.ui.statistics.StatisticsViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
+    private val pendingShortcutAction = MutableStateFlow<String?>(null)
+
+    private val shortcutActions = setOf(
+        "com.aistudio.bdscollector.vskwzh.action.CHECK_DUPLICATE",
+        "com.aistudio.bdscollector.vskwzh.action.ADD_PROPERTY",
+        "com.aistudio.bdscollector.vskwzh.action.ADD_UNVERIFIED",
+    )
+
+    private fun handleShortcutIntent(intent: Intent?) {
+        if (intent?.action in shortcutActions) {
+            pendingShortcutAction.value = intent?.action
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        com.example.ui.common.AppLogger.log("EDIT_BTN_DEBUG", "onCreate savedInstanceState=" + if (savedInstanceState == null) "null" else "NOT_NULL - process bị tái tạo")
         enableEdgeToEdge()
 
-        // Handle Share Intent inputs from outside (e.g. Zalo / FB)
+        // savedInstanceState != null  <=>  Activity đang được DỰNG LẠI, không phải mở mới.
+        // Lúc đó NavHost sẽ tự khôi phục back stack cũ, nên tuyệt đối không được
+        // điều hướng lại theo intent — nếu không sẽ chồng thêm một màn hình rỗng
+        // lên trên màn hình người dùng đang nhập dở.
+        val isFreshLaunch = savedInstanceState == null
+
         var sharedTextFromIntent: String? = null
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            sharedTextFromIntent = intent.getStringExtra(Intent.EXTRA_TEXT)
-            Log.d(TAG, "Received share text intent: $sharedTextFromIntent")
+        if (isFreshLaunch) {
+            handleShortcutIntent(intent)
+
+            // Handle Share Intent inputs from outside (e.g. Zalo / FB)
+            if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+                sharedTextFromIntent = intent.getStringExtra(Intent.EXTRA_TEXT)
+                Log.d(TAG, "Received share text intent: $sharedTextFromIntent")
+            }
         }
 
         setContent {
@@ -129,7 +149,8 @@ class MainActivity : ComponentActivity() {
                 val startDestination = if (hasShownOnboarding) "property_list" else "permission_onboarding"
 
                 // Check and parse deep links or notification intent flags
-                val checkFilterToday = intent?.getBooleanExtra("filter_view_today", false) ?: false
+                val checkFilterToday = isFreshLaunch &&
+                    (intent?.getBooleanExtra("filter_view_today", false) ?: false)
 
                 // Share text auto redirection to Unverified listings
                 LaunchedEffect(sharedTextFromIntent) {
@@ -145,6 +166,30 @@ class MainActivity : ComponentActivity() {
                         navController.navigate("property_list")
                     }
                 }
+
+                val shortcutAction by pendingShortcutAction.collectAsStateWithLifecycle()
+                LaunchedEffect(shortcutAction) {
+                    when (shortcutAction) {
+                        "com.aistudio.bdscollector.vskwzh.action.CHECK_DUPLICATE" -> {
+                            pendingShortcutAction.value = null
+                            propertyListViewModel.openDuplicateCheckDialog("")
+                            navController.navigate("property_list") {
+                                popUpTo("property_list") { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                        "com.aistudio.bdscollector.vskwzh.action.ADD_PROPERTY" -> {
+                            pendingShortcutAction.value = null
+                            navController.navigate("property_add")
+                        }
+                        "com.aistudio.bdscollector.vskwzh.action.ADD_UNVERIFIED" -> {
+                            pendingShortcutAction.value = null
+                            navController.navigate("property_add?isVerified=false")
+                        }
+                        else -> { /* null: no-op */ }
+                    }
+                }
+
 
                 // Current Route tracking for Bottom Navigation visibility
                 // Theo dõi route hiện tại qua back stack — tự đồng bộ và sống sót qua
@@ -248,7 +293,6 @@ class MainActivity : ComponentActivity() {
                                     onNavigateToAdd = { navController.navigate("property_add") },
                                     onNavigateToDetail = { id -> navController.navigate("property_detail/$id") },
                                     onNavigateToEdit = { id -> 
-                                        android.util.Log.d("PROPERTY_CLICK_DEBUG", "onNavigateToEdit (List) in MainActivity called for propertyId: $id at timestamp: ${System.currentTimeMillis()}")
                                         navController.navigate("property_edit/$id") 
                                     },
                                     onNavigateToSettings = {
@@ -258,12 +302,16 @@ class MainActivity : ComponentActivity() {
                                             restoreState = true
                                         }
                                     },
-                                    onNavigateToSurveyRoute = { route -> navController.navigate(route) }
+                                    onNavigateToSurveyRoute = { route -> navController.navigate(route) },
+                                    onNavigateToUnverifiedDetail = { id -> navController.navigate("unverified_detail/$id") },
+                                    onAddPropertyAtCoord = { lat, lng -> navController.navigate("property_add?lat=$lat&lng=$lng") },
+                                    onAddUnverifiedAtCoord = { lat, lng -> navController.navigate("property_add?isVerified=false&lat=$lat&lng=$lng") }
                                 )
                             }
 
+
                             composable(
-                                route = "property_add?linkedCustomerId={linkedCustomerId}&isVerified={isVerified}",
+                                route = "property_add?linkedCustomerId={linkedCustomerId}&isVerified={isVerified}&lat={lat}&lng={lng}",
                                 arguments = listOf(
                                     androidx.navigation.navArgument("linkedCustomerId") {
                                         type = androidx.navigation.NavType.StringType
@@ -273,23 +321,39 @@ class MainActivity : ComponentActivity() {
                                     androidx.navigation.navArgument("isVerified") {
                                         type = androidx.navigation.NavType.BoolType
                                         defaultValue = true
+                                    },
+                                    androidx.navigation.navArgument("lat") {
+                                        type = androidx.navigation.NavType.StringType
+                                        nullable = true
+                                        defaultValue = null
+                                    },
+                                    androidx.navigation.navArgument("lng") {
+                                        type = androidx.navigation.NavType.StringType
+                                        nullable = true
+                                        defaultValue = null
                                     }
                                 )
                             ) { backStackEntry ->
                                 val linkedCustomerId = backStackEntry.arguments?.getString("linkedCustomerId")
                                 val isVerified = backStackEntry.arguments?.getBoolean("isVerified") ?: true
+                                val lat = backStackEntry.arguments?.getString("lat")
+                                val lng = backStackEntry.arguments?.getString("lng")
+                                val hasPrefillCoords = !lat.isNullOrBlank() || !lng.isNullOrBlank()
                                 val formViewModel: PropertyFormViewModel = hiltViewModel()
-                                LaunchedEffect(linkedCustomerId, isVerified) {
+                                LaunchedEffect(linkedCustomerId, isVerified, lat, lng) {
                                     formViewModel.setVerified(isVerified)
                                     if (linkedCustomerId != null) {
                                         formViewModel.loadLinkedCustomer(linkedCustomerId)
                                     }
+                                    if (!lat.isNullOrBlank()) formViewModel.updateLatitude(lat)
+                                    if (!lng.isNullOrBlank()) formViewModel.updateLongitude(lng)
                                 }
 
                                 PropertyFormScreen(
                                     viewModel = formViewModel,
                                     onNavigateBack = { navController.popBackStack() },
                                     isVerifiedDefault = isVerified,
+                                    prefillCoords = hasPrefillCoords,
                                     onNavigateToDetail = { id -> navController.navigate("property_detail/$id") }
                                 )
                             }
@@ -326,19 +390,18 @@ class MainActivity : ComponentActivity() {
                                     propertyId = propertyId,
                                     onNavigateBack = { navController.popBackStack() },
                                     onNavigateToEdit = { id -> 
-                                        android.util.Log.d("PROPERTY_CLICK_DEBUG", "onNavigateToEdit (Detail) in MainActivity called for propertyId: $id at timestamp: ${System.currentTimeMillis()}")
-                                        com.example.ui.common.AppLogger.log("EDIT_BTN_DEBUG", "Click edit, propertyId=$id, navController_valid=${navController != null}")
                                         try {
                                             navController.navigate("property_edit/$id") 
-                                            com.example.ui.common.AppLogger.log("EDIT_BTN_DEBUG", "Navigate call completed")
                                         } catch (e: Exception) {
-                                            com.example.ui.common.AppLogger.e("EDIT_BTN_DEBUG", "Navigate exception", e)
+                                            com.example.ui.common.AppLogger.e("Navigation", "Không mở được màn sửa SP $id", e)
                                         }
                                     },
                                      onNavigateToNearby = { property ->
                                          navController.navigate("map_survey?centerPropertyId=${property.id}")
                                      },
-                                    onNavigateToCustomerDetail = { id -> navController.navigate("customer_list/$id") }
+                                    onNavigateToCustomerDetail = { id -> navController.navigate("customer_list/$id") },
+                                    onNavigateToActionConfig = { navController.navigate("settings_icon_sorting") },
+                                    onNavigateToVerify = { id -> navController.navigate("property_edit/$id?openForVerify=true") }
                                 )
                             }
 
@@ -354,9 +417,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onNavigateToDetail = { id -> navController.navigate("unverified_detail/$id") },
-                                    onNavigateToSurveyRoute = { route -> navController.navigate(route) }
+                                    onNavigateToSurveyRoute = { route -> navController.navigate(route) },
+                                    onNavigateToOfficialDetail = { id -> navController.navigate("property_detail/$id") },
+                                    onAddPropertyAtCoord = { lat, lng -> navController.navigate("property_add?lat=$lat&lng=$lng") },
+                                    onAddUnverifiedAtCoord = { lat, lng -> navController.navigate("property_add?isVerified=false&lat=$lat&lng=$lng") }
                                 )
                             }
+
 
                             composable(
                                 route = "map_survey?centerPropertyId={centerPropertyId}&selectedKeys={selectedKeys}",
@@ -378,19 +445,31 @@ class MainActivity : ComponentActivity() {
                                     centerPropertyId = centerId,
                                     onNavigateBack = { navController.popBackStack() },
                                     onNavigateToDetail = { id -> navController.navigate("property_detail/$id") },
-                                    onNavigateToUnverifiedDetail = { id -> navController.navigate("unverified_detail/$id") }
+                                    onNavigateToUnverifiedDetail = { id -> navController.navigate("unverified_detail/$id") },
+                                    onNavigateToCustomerDetail = { id -> navController.navigate("customer_list/$id") }
                                 )
                             }
 
                             composable("unverified_detail/{unverifiedId}") { backStackEntry ->
                                 val unverifiedId = backStackEntry.arguments?.getString("unverifiedId") ?: ""
-                                UnverifiedDetailScreen(
-                                    viewModel = unverifiedViewModel,
-                                    unverifiedId = unverifiedId,
+                                PropertyDetailScreen(
+                                    viewModel = propertyDetailViewModel,
+                                    customerViewModel = customerViewModel,
+                                    propertyId = unverifiedId,
                                     onNavigateBack = { navController.popBackStack() },
-                                    onNavigateToEdit = { id, openForVerify -> 
-                                        navController.navigate("property_edit/$id?openForVerify=$openForVerify") 
-                                    }
+                                    onNavigateToEdit = { id -> 
+                                        try {
+                                            navController.navigate("property_edit/$id") 
+                                        } catch (e: Exception) {
+                                            com.example.ui.common.AppLogger.e("Navigation", "Không mở được màn sửa SP $id", e)
+                                        }
+                                    },
+                                    onNavigateToNearby = { property ->
+                                        navController.navigate("map_survey?centerPropertyId=${property.id}")
+                                    },
+                                    onNavigateToCustomerDetail = { id -> navController.navigate("customer_list/$id") },
+                                    onNavigateToActionConfig = { navController.navigate("settings_icon_sorting") },
+                                    onNavigateToVerify = { id -> navController.navigate("property_edit/$id?openForVerify=true") }
                                 )
                             }
 
@@ -465,71 +544,21 @@ class MainActivity : ComponentActivity() {
             }
             }
         }
-        handleOAuthRedirect(intent)
-    }
-
-    private fun handleOAuthRedirect(intent: Intent?) {
-        val uri = intent?.data
-        if (uri != null && uri.scheme == "com.googleusercontent.apps.246964756601-5oi7aht372p6f5otl9musfkpa6rpcp1p") {
-            Log.d(TAG, "handleOAuthRedirect: URI matched OAuth redirect: $uri")
-            val code = uri.getQueryParameter("code")
-            val error = uri.getQueryParameter("error")
-            if (code != null) {
-                val verifier = settingsManager.pkceVerifier
-                lifecycleScope.launch {
-                    val ok = oAuthTokenManager.exchangeCodeForTokens(
-                        code = code,
-                        codeVerifier = verifier,
-                        redirectUri = com.example.data.remote.drive.OAuthTokenManager.REDIRECT_URI
-                    )
-                    settingsManager.pkceVerifier = "" // clear verifier after use
-                    if (ok) {
-                        val token = settingsManager.driveToken
-                        val userInfo = oAuthTokenManager.fetchUserInfo(token)
-                        if (userInfo != null && userInfo.first.isNotBlank()) {
-                            com.example.ui.common.LoginEventBus.emit(
-                                com.example.ui.common.LoginEventBus.LoginResult(true, userInfo.first, userInfo.second)
-                            )
-                        } else {
-                            com.example.ui.common.LoginEventBus.emit(
-                                com.example.ui.common.LoginEventBus.LoginResult(true, "", "")
-                            )
-                        }
-                    } else {
-                        com.example.ui.common.LoginEventBus.emit(
-                            com.example.ui.common.LoginEventBus.LoginResult(false)
-                        )
-                    }
-                }
-            } else if (error != null) {
-                Log.e(TAG, "OAuth Redirect error: $error")
-                com.example.ui.common.AppLogger.record(
-                    type = com.example.data.local.entity.SyncType.GENERAL,
-                    status = com.example.data.local.entity.SyncStatus.FAILED,
-                    tag = TAG,
-                    message = "Lỗi đăng nhập Google Drive: $error"
-                )
-                com.example.ui.common.LoginEventBus.emit(
-                    com.example.ui.common.LoginEventBus.LoginResult(false)
-                )
-            }
-        }
     }
 
     override fun onStart() {
         super.onStart()
-        com.example.ui.common.AppLogger.log("EDIT_BTN_DEBUG", "onStart called")
     }
 
     override fun onResume() {
         super.onResume()
-        com.example.ui.common.AppLogger.log("EDIT_BTN_DEBUG", "onResume called")
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         Log.d(TAG, "onNewIntent received: $intent")
-        handleOAuthRedirect(intent)
+        handleShortcutIntent(intent)
     }
+
 }

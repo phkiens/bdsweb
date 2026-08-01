@@ -3,11 +3,28 @@ package com.example.ui.common
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.example.util.CoordinateUtils
+sealed interface RouteResult {
+    data class Success(
+        val mapsUrl: String,
+        val invalidPointsCount: Int,
+        val droppedByLimitCount: Int,
+        val maxPoints: Int
+    ) : RouteResult
+
+    data class NoValidPoints(val invalidPointsCount: Int) : RouteResult
+}
 
 object MapsIntentHelper {
 
+    const val MAX_WAYPOINTS = 8
+
+    fun maxSelectablePoints(hasCenter: Boolean): Int {
+        return MAX_WAYPOINTS + if (hasCenter) 1 else 2
+    }
+
     fun isValidCoordinate(lat: Double?, lng: Double?): Boolean {
-        return lat != null && lng != null && !(lat == 0.0 && lng == 0.0)
+        return lat != null && lng != null && CoordinateUtils.isInVietnam(lat, lng)
     }
 
     /**
@@ -51,8 +68,8 @@ object MapsIntentHelper {
             }
         }
 
-        // Limit intermediate waypoints to 8 to avoid exceeding Google Maps URL limit
-        val limitedWaypoints = intermediateWaypoints.take(8)
+        // Limit intermediate waypoints to MAX_WAYPOINTS to avoid exceeding Google Maps URL limit
+        val limitedWaypoints = intermediateWaypoints.take(MAX_WAYPOINTS)
 
         val waypointsStr = if (limitedWaypoints.isNotEmpty()) {
             limitedWaypoints.joinToString("|") { "${it.first},${it.second}" }

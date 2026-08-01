@@ -41,11 +41,14 @@ interface PropertyDao {
     @Query("UPDATE properties SET isDeleted = 1, isTextSynced = 0, updatedAt = :timestamp WHERE id = :id")
     suspend fun softDeleteProperty(id: String, timestamp: Long)
 
-    // Xóa mềm do nhận từ remote (pull/realtime): đánh dấu ĐÃ synced để không push echo ngược lại
-    @Query("UPDATE properties SET isDeleted = 1, isTextSynced = 1, updatedAt = :timestamp WHERE id = :id")
-    suspend fun softDeletePropertyFromRemote(id: String, timestamp: Long)
+    // Xóa mềm do nhận từ remote (pull/realtime): đánh dấu ĐÃ synced để không push echo ngược lại (chỉ áp nếu local không mới hơn)
+    @Query("UPDATE properties SET isDeleted = 1, isTextSynced = 1, updatedAt = :timestamp WHERE id = :id AND updatedAt <= :timestamp")
+    suspend fun softDeletePropertyFromRemote(id: String, timestamp: Long): Int
 
-    @Query("DELETE FROM properties WHERE isDeleted = 1 AND updatedAt < :thirtyDaysAgo")
+    @Query("UPDATE properties SET isTextSynced = 0 WHERE id = :id")
+    suspend fun markPropertyTextUnsynced(id: String): Int
+
+    @Query("DELETE FROM properties WHERE isDeleted = 1 AND isTextSynced = 1 AND updatedAt < :thirtyDaysAgo")
     suspend fun deleteOldDeletedProperties(thirtyDaysAgo: Long)
 
     @Query("SELECT * FROM properties")
@@ -68,8 +71,11 @@ interface PropertyDao {
     @Query("SELECT * FROM properties WHERE isDeleted = 0")
     suspend fun getActiveProperties(): List<PropertyEntity>
 
-    @Query("SELECT DISTINCT area FROM properties WHERE area != '' AND isDeleted = 0 AND isVerified = 1 ORDER BY area ASC")
+    @Query("SELECT DISTINCT area FROM properties WHERE area != '' AND isDeleted = 0 ORDER BY area ASC")
     suspend fun getAllDistinctAreas(): List<String>
+
+    @Query("SELECT DISTINCT area FROM properties WHERE area != '' AND isDeleted = 0 ORDER BY area ASC")
+    fun getAllDistinctAreasFlow(): Flow<List<String>>
 
     @Query("UPDATE properties SET isMediaSynced = :isSynced WHERE id = :id AND imagePath IS :expectedImagePath")
     suspend fun updateMediaSyncStatus(id: String, isSynced: Boolean, expectedImagePath: String?): Int
@@ -86,18 +92,10 @@ interface PropertyDao {
     @Query("UPDATE properties SET propertyDetailJsonFileId = :propertyDetailJsonFileId, txtFileId = :txtFileId WHERE id = :id")
     suspend fun updateDriveFileIds(id: String, propertyDetailJsonFileId: String?, txtFileId: String?)
 
-    @Query("SELECT * FROM properties WHERE propertyType = :propertyType AND price >= :priceMin AND price <= :priceMax AND status = :status AND isDeleted = 0 AND isVerified = 1")
-    suspend fun getPropertiesForMatching(
-        propertyType: String,
-        priceMin: Double,
-        priceMax: Double,
-        status: String
-    ): List<PropertyEntity>
-
     @Query("SELECT * FROM properties WHERE (driveFolderId IS NULL OR driveFolderId = '') AND isDeleted = 0")
     suspend fun getUnsyncedProperties(): List<PropertyEntity>
 
-    @Query("SELECT * FROM properties WHERE isTextSynced = 0 AND isDeleted = 0")
+    @Query("SELECT * FROM properties WHERE isTextSynced = 0")
     suspend fun getUnsyncedTextProperties(): List<PropertyEntity>
 
     @Query("SELECT * FROM properties WHERE isTextSynced = 0 AND isDeleted = 0 AND isVerified = 0")
@@ -148,4 +146,12 @@ interface PropertyDao {
 
     @Query("SELECT * FROM properties WHERE isDeleted = 0 AND areaSize = :areaSize AND price = :price AND ownerPhone = :ownerPhone AND id != :selfId")
     suspend fun findByAreaPriceOwner(areaSize: Double, price: Double, ownerPhone: String, selfId: String): List<PropertyEntity>
+
+    @Query("SELECT * FROM properties WHERE isDeleted = 0 AND latitude BETWEEN :latMin AND :latMax AND longitude BETWEEN :lngMin AND :lngMax")
+    suspend fun findByCoordinates(
+        latMin: Double,
+        latMax: Double,
+        lngMin: Double,
+        lngMax: Double
+    ): List<PropertyEntity>
 }

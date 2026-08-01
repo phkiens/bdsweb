@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Note: targetPackage is hardcoded to com.aistudio.bdscollector.vskwzh (matching applicationId in build.gradle.kts)
+     because Gradle ${applicationId} placeholders are not processed inside res/xml/ (C2). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="check_duplicate"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search_location"
+        android:shortcutShortLabel="@string/shortcut_check_duplicate_short"
+        android:shortcutLongLabel="@string/shortcut_check_duplicate_long">
+        <intent
+            android:action="com.aistudio.bdscollector.vskwzh.action.CHECK_DUPLICATE"
+            android:targetPackage="com.aistudio.bdscollector.vskwzh"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="add_property"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add_property"
+        android:shortcutShortLabel="@string/shortcut_add_property_short"
+        android:shortcutLongLabel="@string/shortcut_add_property_long">
+        <intent
+            android:action="com.aistudio.bdscollector.vskwzh.action.ADD_PROPERTY"
+            android:targetPackage="com.aistudio.bdscollector.vskwzh"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="add_unverified"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add_unverified"
+        android:shortcutShortLabel="@string/shortcut_add_unverified_short"
+        android:shortcutLongLabel="@string/shortcut_add_unverified_long">
+        <intent
+            android:action="com.aistudio.bdscollector.vskwzh.action.ADD_UNVERIFIED"
+            android:targetPackage="com.aistudio.bdscollector.vskwzh"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+</shortcuts>

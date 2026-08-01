@@ -9,6 +9,7 @@ import android.hardware.Sensor
 import com.example.ui.common.PermissionRationaleDialog
 import com.example.ui.common.PermissionSettingsDialog
 import com.example.ui.common.AppTextField
+import com.example.ui.common.rememberContactPickerLauncher
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
@@ -85,6 +86,7 @@ fun PropertyFormScreen(
     propertyId: String? = null,
     isVerifiedDefault: Boolean = true,
     openForVerify: Boolean = false,
+    prefillCoords: Boolean = false,
     onNavigateToDetail: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -138,6 +140,8 @@ fun PropertyFormScreen(
     val rawText by viewModel.rawText.collectAsStateWithLifecycle()
     val rawTextSheetVisible by viewModel.rawTextSheetVisible.collectAsStateWithLifecycle()
     var rawTextPeeking by remember { mutableStateOf(false) }
+    var showFullScreenViewer by remember { mutableStateOf(false) }
+    var fullScreenInitialIndex by remember { mutableStateOf(0) }
 
     // Multiple Image Picker
     val multipleMediaLauncher = rememberLauncherForActivityResult(
@@ -175,35 +179,12 @@ fun PropertyFormScreen(
         }
     }
 
-    val contactPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val contactUri = result.data?.data
-            if (contactUri != null) {
-                try {
-                    val projection = arrayOf(
-                        android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
-                        android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
-                    )
-                    context.contentResolver.query(contactUri, projection, null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val numberIdx = cursor.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)
-                            val nameIdx = cursor.getColumnIndex(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                            val number = if (numberIdx >= 0) cursor.getString(numberIdx) else ""
-                            val name = if (nameIdx >= 0) cursor.getString(nameIdx) else ""
-                            if (name.isNotBlank()) {
-                                viewModel.updateOwnerName(name)
-                            }
-                            if (number.isNotBlank()) {
-                                viewModel.updateOwnerPhone(number)
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Lỗi lấy liên hệ: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-                }
-            }
+    val contactPickerLauncher = rememberContactPickerLauncher { name, number ->
+        if (name.isNotBlank()) {
+            viewModel.updateOwnerName(name)
+        }
+        if (number.isNotBlank()) {
+            viewModel.updateOwnerPhone(number)
         }
     }
 
@@ -314,15 +295,16 @@ fun PropertyFormScreen(
 
     // Load property if editing
     LaunchedEffect(Unit) {
-        com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "T0 form screen composed, ts=${System.currentTimeMillis()}")
     }
 
     LaunchedEffect(propertyId) {
         if (propertyId != null) {
             viewModel.loadProperty(propertyId)
         } else {
-            // Auto GPS on opening form for new property
-            fetchGpsWithLoading()
+            // Auto GPS chỉ khi KHÔNG có toạ độ prefill mang sang
+            if (isVerifiedDefault && !prefillCoords) {
+                fetchGpsWithLoading()
+            }
         }
     }
 
@@ -644,9 +626,8 @@ fun PropertyFormScreen(
                                         viewModel.updateArea(it.text)
                                     },
                                     label = { Text("Khu vực *") },
-                                    placeholder = { Text("Khu vực...") },
                                     modifier = Modifier
-                                        .weight(0.7f)
+                                        .weight(0.5f)
                                         .testTag("form_name_input")
                                         .onFocusChanged { focusState ->
                                             if (focusState.isFocused) {
@@ -674,6 +655,34 @@ fun PropertyFormScreen(
                                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                                 ) {
                                     Text("Dán", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                                }
+
+                                // Toggle button for property type
+                                val isLand = propertyType == "Đất"
+                                Surface(
+                                    onClick = {
+                                        viewModel.updatePropertyType(if (isLand) "Nhà" else "Đất")
+                                    },
+                                    modifier = Modifier
+                                        .weight(0.25f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.padding(horizontal = 4.dp).fillMaxHeight()
+                                    ) {
+                                        Text(
+                                            text = if (isLand) "Đất" else "Nhà",
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                             }
 
@@ -713,103 +722,128 @@ fun PropertyFormScreen(
                     }
 
                     // Row 2: [GPS info + buttons] [🏠 Nhà / 🌳 Đất Toggle]
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Card(
-                                modifier = Modifier.weight(1f),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                                ),
-                                shape = RoundedCornerShape(8.dp)
+                    if (isVerified) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Vị trí GPS",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        if (isGpsLoading) {
-                                            Text(
-                                                text = "⏳ Lấy vị trí...",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        } else if (latitude.isNotBlank() && longitude.isNotBlank()) {
-                                            Text(
-                                                text = "📍 $latitude, $longitude",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        } else {
-                                            Text(
-                                                text = "Chưa có GPS",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.outline
-                                            )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                             if (isGpsLoading) {
+                                                 Text(
+                                                     text = "⏳ Lấy vị trí...",
+                                                     style = MaterialTheme.typography.bodyMedium,
+                                                     fontWeight = FontWeight.Bold,
+                                                     color = MaterialTheme.colorScheme.primary
+                                                 )
+                                             } else if (latitude.isNotBlank() && longitude.isNotBlank()) {
+                                                 Text(
+                                                     text = "📍 $latitude, $longitude",
+                                                     style = MaterialTheme.typography.bodyMedium,
+                                                     fontWeight = FontWeight.Bold,
+                                                     color = MaterialTheme.colorScheme.onSurface
+                                                 )
+                                             }
                                         }
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        IconButton(
-                                            onClick = { viewModel.clearLocation() },
-                                            modifier = Modifier.size(36.dp)
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Clear,
-                                                contentDescription = "Xóa vị trí",
-                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = { fetchGpsWithLoading() },
-                                            modifier = Modifier.size(36.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Refresh,
-                                                contentDescription = "Lấy lại vị trí",
-                                                tint = MaterialTheme.colorScheme.primary,
-                                                modifier = Modifier.size(16.dp)
-                                            )
+                                            if (isVerified) {
+                                                IconButton(
+                                                    onClick = { viewModel.clearLocation() },
+                                                    modifier = Modifier.size(36.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Clear,
+                                                        contentDescription = "Xóa vị trí",
+                                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { fetchGpsWithLoading() },
+                                                    modifier = Modifier.size(36.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Refresh,
+                                                        contentDescription = "Lấy lại vị trí",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
 
-                            // Toggle button for property type
-                            val isLand = propertyType == "Đất"
-                            Surface(
-                                onClick = {
-                                    viewModel.updatePropertyType(if (isLand) "Nhà" else "Đất")
-                                },
-                                modifier = Modifier
-                                    .wrapContentWidth()
-                                    .height(48.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f))
+                    if (!isVerified) {
+                        item {
+                            var locInput by remember { mutableStateOf("") }
+                            var isExtracting by remember { mutableStateOf(false) }
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.padding(horizontal = 16.dp).fillMaxHeight()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    AppTextField(
+                                        value = locInput,
+                                        onValueChange = { locInput = it },
+                                        placeholder = { Text("Dán link Maps / tọa độ") },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        allowPaste = true,
+                                        allowClear = true
+                                    )
+                                    Button(
+                                        onClick = {
+                                            if (locInput.isBlank()) return@Button
+                                            isExtracting = true
+                                            scope.launch {
+                                                val coords = CoordinateExtractor.extract(locInput)
+                                                if (coords != null) {
+                                                    viewModel.updateLatitude(coords.latitude.toString())
+                                                    viewModel.updateLongitude(coords.longitude.toString())
+                                                } else {
+                                                    snackbarHostState.showSnackbar("Không tìm thấy tọa độ")
+                                                }
+                                                isExtracting = false
+                                            }
+                                        },
+                                        enabled = !isExtracting && locInput.isNotBlank(),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(if (isExtracting) "..." else "Bóc tọa độ", maxLines = 1)
+                                    }
+                                }
+                                if (latitude.isNotBlank() && longitude.isNotBlank()) {
                                     Text(
-                                        text = if (isLand) "Đất" else "Nhà",
+                                        text = "📍 $latitude, $longitude",
+                                        style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        style = MaterialTheme.typography.bodyMedium
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -849,7 +883,7 @@ fun PropertyFormScreen(
                             AppTextField(
                                 value = areaSize,
                                 onValueChange = { if (it.length <= 7) viewModel.updateAreaSize(it) },
-                                label = { Text("Diện tích (m²)") },
+                                label = { Text("DT (m²)") },
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Decimal,
                                     imeAction = ImeAction.Next
@@ -1028,6 +1062,10 @@ fun PropertyFormScreen(
                                                 .size(90.dp)
                                                 .clip(RoundedCornerShape(8.dp))
                                                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                                .clickable {
+                                                    fullScreenInitialIndex = idx
+                                                    showFullScreenViewer = true
+                                                }
                                         ) {
                                             AsyncImage(
                                                 model = File(imgPath),
@@ -1127,13 +1165,7 @@ fun PropertyFormScreen(
                                 trailingIcon = if (linkedCustomerId == null) {
                                     {
                                         IconButton(
-                                            onClick = {
-                                                val intent = Intent(
-                                                    Intent.ACTION_PICK,
-                                                    android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-                                                )
-                                                contactPickerLauncher.launch(intent)
-                                            }
+                                            onClick = { contactPickerLauncher.launch() }
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.ContactPhone,
@@ -1305,6 +1337,15 @@ fun PropertyFormScreen(
     }
     }
 
+    if (showFullScreenViewer && images.isNotEmpty()) {
+        FullScreenImageViewer(
+            imagePaths = images,
+            initialIndex = fullScreenInitialIndex.coerceIn(0, images.lastIndex),
+            onDismiss = { showFullScreenViewer = false },
+            onSetAsAvatar = { idx -> viewModel.setAvatarImage(idx) }
+        )
+    }
+
     // Modal Bottom Sheets
     // ═══════════════════════════════════════
     // NÚT 📋 "DÁN INFO" - BOTTOM SHEET
@@ -1433,21 +1474,6 @@ fun PropertyFormScreen(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        AppTextField(
-                            value = pasteInfoText,
-                            onValueChange = { viewModel.updatePasteInfoText(it) },
-                            placeholder = { Text("Dán tin nhắn BĐS vào đây...") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 160.dp)
-                                .focusRequester(infoFocusRequester),
-                            maxLines = 8,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                            )
-                        )
-
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1488,6 +1514,21 @@ fun PropertyFormScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                             modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
+
+                        AppTextField(
+                            value = pasteInfoText,
+                            onValueChange = { viewModel.updatePasteInfoText(it) },
+                            placeholder = { Text("Dán tin nhắn BĐS vào đây...") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 160.dp)
+                                .focusRequester(infoFocusRequester),
+                            maxLines = 8,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            )
                         )
                     }
                     ExtractionState.Loading -> {

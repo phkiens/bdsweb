@@ -98,14 +98,14 @@ fun CustomerCard(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Center Content
+        // Center Content: chỉ tên + SĐT, màu chữ trung tính
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.Center
         ) {
-            // Row 1: Name, Role icon, Check icon
+            // Row 1: Name (+ check icon nếu đã giao dịch)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -114,41 +114,10 @@ fun CustomerCard(
                     text = customer.name,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
-                )
-
-                if (ownerPropertiesCount > 0) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.padding(horizontal = 2.dp)
-                    ) {
-                        Text(
-                            text = "$ownerPropertiesCount nhà",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Role Icon Badge: OWNER -> RealEstateAgent, BUYER -> MonetizationOn
-                val roleIcon = if (roleEnum == CustomerRole.OWNER) Icons.Default.RealEstateAgent else Icons.Default.MonetizationOn
-                val roleColor = roleEnum.getColor()
-                
-                Icon(
-                    imageVector = roleIcon,
-                    contentDescription = customer.role,
-                    tint = roleColor,
-                    modifier = Modifier
-                        .minimumInteractiveComponentSize()
-                        .size(18.dp)
-                        .clickable(enabled = roleEnum == CustomerRole.OWNER) {
-                            onRoleClick()
-                        }
                 )
 
                 // If customer status is CLOSED, show a check circle icon from theme colors
@@ -164,48 +133,42 @@ fun CustomerCard(
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            // Row 2: SĐT • BĐS Type icon
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    text = customer.phone,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.primary,
-                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable { onPhoneClick(customer.phone) }
-                )
-
-                Text(
-                    text = "•",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                )
-
-                // BĐS Type Icon: Apartment for Nhà, Landscape for Đất
-                val isNha = customer.propertyType.contains("Nhà", ignoreCase = true) || customer.propertyType.contains("nha", ignoreCase = true)
-                val typeIcon = if (isNha) Icons.Default.Apartment else Icons.Default.Landscape
-
-                Icon(
-                    imageVector = typeIcon,
-                    contentDescription = customer.propertyType,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(14.dp)
-                )
-            }
+            // Row 2: SĐT - màu chữ trung tính (trắng/đen theo nền)
+            Text(
+                text = customer.phone,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable { onPhoneClick(customer.phone) }
+            )
         }
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        // Right Content: Icons
+        // Right Content: badge "N nhà" + cụm icon tô màu theo vai trò
+        // Mua (BUYER) = xanh lá, Bán (OWNER) = đỏ đậm
+        val roleColor = roleEnum.getColor()
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Badge số nhà, dồn sang phải
+            if (ownerPropertiesCount > 0) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "$ownerPropertiesCount nhà",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             // Icon call
             IconButton(
                 onClick = {
@@ -216,7 +179,7 @@ fun CustomerCard(
                 Icon(
                     imageVector = Icons.Default.Phone,
                     contentDescription = "Gọi điện",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = roleColor,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -229,7 +192,7 @@ fun CustomerCard(
                 Icon(
                     imageVector = Icons.Default.History,
                     contentDescription = "Lịch sử xem",
-                    tint = MaterialTheme.colorScheme.secondary,
+                    tint = roleColor,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -245,7 +208,7 @@ fun CustomerCard(
                     Icon(
                         imageVector = Icons.Default.CompareArrows,
                         contentDescription = "BĐS Phù hợp",
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = roleColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }

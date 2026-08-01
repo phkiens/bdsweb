@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.BuildConfig
 import com.example.domain.model.ApiConfig
 import com.example.domain.repository.ApiConfigRepository
+import com.example.data.remote.supabase.SupabaseApiKeyValidator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -18,9 +19,32 @@ import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "api_config_prefs")
 
+internal fun resolveSupabaseConfig(
+    savedUrl: String?,
+    savedKey: String?,
+    defaultUrl: String,
+    defaultKey: String
+): ApiConfig {
+    val sUrl = savedUrl?.trim() ?: ""
+    val sKey = savedKey?.trim() ?: ""
+
+    if (sUrl.isNotBlank() && SupabaseApiKeyValidator.isAllowedForMobileClient(sKey)) {
+        return ApiConfig(supabaseUrl = sUrl, supabaseAnonKey = sKey)
+    }
+
+    val dUrl = defaultUrl.trim()
+    val dKey = defaultKey.trim()
+
+    if (dUrl.isNotBlank() && SupabaseApiKeyValidator.isAllowedForMobileClient(dKey)) {
+        return ApiConfig(supabaseUrl = dUrl, supabaseAnonKey = dKey)
+    }
+
+    return ApiConfig(supabaseUrl = "", supabaseAnonKey = "")
+}
+
 @Singleton
 class ApiConfigRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : ApiConfigRepository {
 
     private val supabaseUrlKey = stringPreferencesKey("supabase_url")
@@ -28,22 +52,24 @@ class ApiConfigRepositoryImpl @Inject constructor(
 
     override fun getConfig(): Flow<ApiConfig> {
         return context.dataStore.data.map { preferences ->
-            val savedUrl = preferences[supabaseUrlKey]
-            val savedAnonKey = preferences[supabaseAnonKeyKey]
-
-            val defaultSupabaseKey = BuildConfig.SUPABASE_SERVICE_KEY
-
-            ApiConfig(
-                supabaseUrl = if (!savedUrl.isNullOrBlank()) savedUrl else BuildConfig.SUPABASE_URL,
-                supabaseAnonKey = if (!savedAnonKey.isNullOrBlank()) savedAnonKey else defaultSupabaseKey
+            resolveSupabaseConfig(
+                savedUrl = preferences[supabaseUrlKey],
+                savedKey = preferences[supabaseAnonKeyKey],
+                defaultUrl = BuildConfig.SUPABASE_URL,
+                defaultKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
             )
         }
     }
 
     override suspend fun saveConfig(supabaseUrl: String, supabaseAnonKey: String) {
+        val trimmedAnonKey = supabaseAnonKey.trim()
+        if (!SupabaseApiKeyValidator.isAllowedForMobileClient(trimmedAnonKey)) {
+            throw IllegalArgumentException("Supabase API key không hợp lệ hoặc không an toàn cho ứng dụng di động.")
+        }
+
         context.dataStore.edit { preferences ->
-            preferences[supabaseUrlKey] = supabaseUrl
-            preferences[supabaseAnonKeyKey] = supabaseAnonKey
+            preferences[supabaseUrlKey] = supabaseUrl.trim()
+            preferences[supabaseAnonKeyKey] = trimmedAnonKey
         }
     }
 

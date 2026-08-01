@@ -36,7 +36,8 @@ fun FullScreenImageViewer(
     imagePaths: List<String>,
     initialIndex: Int,
     onDismiss: () -> Unit,
-    onSetAsAvatar: (Int) -> Unit
+    onSetAsAvatar: (Int) -> Unit,
+    imageModels: List<Any?>? = null
 ) {
     var isVisible by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -139,8 +140,10 @@ fun FullScreenImageViewer(
                         userScrollEnabled = !isZoomed // Disable pager swipe when zoomed in
                     ) { page ->
                         val path = imagePaths[page]
+                        val model = imageModels?.getOrNull(page)
                         ZoomableImage(
                             imagePath = path,
+                            imageModel = model,
                             modifier = Modifier.fillMaxSize(),
                             onScaleChanged = { scale ->
                                 if (page == pagerState.currentPage) {

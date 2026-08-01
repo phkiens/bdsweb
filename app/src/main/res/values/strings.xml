@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">BĐS Collector</string>
+    <string name="shortcut_check_duplicate_short">Kiểm tra trùng</string>
+    <string name="shortcut_check_duplicate_long">Kiểm tra trùng toạ độ BĐS</string>
+    <string name="shortcut_add_property_short">Thêm SP bán</string>
+    <string name="shortcut_add_property_long">Thêm bất động sản bán</string>
+    <string name="shortcut_add_unverified_short">Thêm SP chờ</string>
+    <string name="shortcut_add_unverified_long">Thêm sản phẩm chờ</string>
 </resources>

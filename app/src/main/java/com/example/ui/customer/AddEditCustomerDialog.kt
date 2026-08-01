@@ -36,6 +36,11 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.domain.model.Customer
 import com.example.ui.common.AppTextField
+import com.example.ui.common.normalizeForSearch
+import com.example.ui.common.matchesArea
+import com.example.ui.common.rememberContactPickerLauncher
+import com.example.domain.model.normalizeVietnamesePhone
+import com.example.ui.theme.extendedColors
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -60,9 +65,20 @@ fun AddEditCustomerDialog(
     val formPriceMin by viewModel.priceMin.collectAsStateWithLifecycle()
     val formPriceMax by viewModel.priceMax.collectAsStateWithLifecycle()
     val formNote by viewModel.note.collectAsStateWithLifecycle()
+    val duplicateCustomerNotice by viewModel.duplicateCustomerNotice.collectAsStateWithLifecycle()
+
+    val contactPickerLauncher = rememberContactPickerLauncher { name, number ->
+        if (name.isNotBlank()) {
+            viewModel.name.value = name
+        }
+        if (number.isNotBlank()) {
+            val normalized = number.normalizeVietnamesePhone()
+            viewModel.phone.value = normalized
+            viewModel.checkDuplicatePhone(normalized)
+        }
+    }
 
     var showAvatarOptions by remember { mutableStateOf(false) }
-    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var showPriceMinDialog by remember { mutableStateOf(false) }
     var showPriceMaxDialog by remember { mutableStateOf(false) }
 
@@ -115,127 +131,12 @@ fun AddEditCustomerDialog(
         }
     }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null && editingCustomer != null) {
-            viewModel.uploadAndSetAvatar(context, editingCustomer.id, uri, editingCustomer)
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && tempPhotoUri != null && editingCustomer != null) {
-            viewModel.uploadAndSetAvatar(context, editingCustomer.id, tempPhotoUri!!, editingCustomer)
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            try {
-                val tempFile = java.io.File(context.cacheDir, "temp_camera_${System.currentTimeMillis()}.jpg").apply {
-                    parentFile?.mkdirs()
-                    createNewFile()
-                }
-                val providerUri = androidx.core.content.FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    tempFile
-                )
-                tempPhotoUri = providerUri
-                cameraLauncher.launch(providerUri)
-            } catch (e: Exception) {
-                context.showSnackbar("Không thể mở máy ảnh: ${e.localizedMessage}")
-            }
-        } else {
-            context.showSnackbar("Cần có quyền CAMERA để chụp ảnh đại diện.")
-        }
-    }
-
-    if (showAvatarOptions && editingCustomer != null) {
-        val formAvatarDriveUrl by viewModel.avatarDriveUrl.collectAsStateWithLifecycle()
-        AlertDialog(
-            onDismissRequest = { showAvatarOptions = false },
-            title = { Text("Chọn ảnh đại diện", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showAvatarOptions = false
-                                val permissionCheck = androidx.core.content.ContextCompat.checkSelfPermission(
-                                    context,
-                                    android.Manifest.permission.CAMERA
-                                )
-                                if (permissionCheck == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                    val tempFile = java.io.File(context.cacheDir, "temp_camera_${System.currentTimeMillis()}.jpg").apply {
-                                        parentFile?.mkdirs()
-                                        createNewFile()
-                                    }
-                                    val providerUri = androidx.core.content.FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.provider",
-                                        tempFile
-                                    )
-                                    tempPhotoUri = providerUri
-                                    cameraLauncher.launch(providerUri)
-                                } else {
-                                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                                }
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text("Chụp ảnh mới", style = MaterialTheme.typography.bodyLarge)
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                showAvatarOptions = false
-                                imagePickerLauncher.launch("image/*")
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text("Chọn từ thư viện", style = MaterialTheme.typography.bodyLarge)
-                    }
-
-                    if (!formAvatarDriveUrl.isNullOrBlank()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showAvatarOptions = false
-                                    viewModel.deleteAvatar(context, editingCustomer)
-                                }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text("Xóa ảnh hiện tại", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showAvatarOptions = false }) {
-                    Text("Đóng")
-                }
-            }
-        )
-    }
+    AvatarPickerDialog(
+        visible = showAvatarOptions,
+        editingCustomer = editingCustomer,
+        viewModel = viewModel,
+        onDismiss = { showAvatarOptions = false }
+    )
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismissRequest,
@@ -270,15 +171,20 @@ fun AddEditCustomerDialog(
                         actions = {
                             TextButton(
                                 onClick = {
-                                    viewModel.saveCustomer(
-                                        editingId = editingCustomer?.id,
-                                        prefilledPropertyId = prefilledPropertyId,
-                                        viewNote = viewNote.ifBlank { null }
-                                    )
-                                    onDismissRequest()
-                                    context.showSnackbar("Đã lưu thông tin")
-                                },
-                                enabled = formName.isNotBlank() && formPhone.isNotBlank()
+                                    when {
+                                        formName.isBlank() -> context.showSnackbar("Vui lòng nhập tên khách hàng")
+                                        formPhone.isBlank() -> context.showSnackbar("Vui lòng nhập số điện thoại để lưu")
+                                        else -> {
+                                            viewModel.saveCustomer(
+                                                editingId = editingCustomer?.id,
+                                                prefilledPropertyId = prefilledPropertyId,
+                                                viewNote = viewNote.ifBlank { null }
+                                            )
+                                            onDismissRequest()
+                                            context.showSnackbar("Đã lưu thông tin")
+                                        }
+                                    }
+                                }
                             ) {
                                 Text("LƯU", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                             }
@@ -424,6 +330,19 @@ fun AddEditCustomerDialog(
                         label = { Text("Tên khách hàng *") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = if (editingCustomer == null) {
+                            {
+                                IconButton(
+                                    onClick = { contactPickerLauncher.launch() }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContactPhone,
+                                        contentDescription = "Chọn từ danh bạ",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        } else null,
                         keyboardOptions = KeyboardOptions(
                             imeAction = ImeAction.Next
                         ),
@@ -434,10 +353,17 @@ fun AddEditCustomerDialog(
 
                     AppTextField(
                         value = formPhone,
-                        onValueChange = { viewModel.phone.value = it },
+                        onValueChange = {
+                            viewModel.phone.value = it
+                            viewModel.checkDuplicatePhone(it)
+                        },
                         label = { Text("Số điện thoại *") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
+                        isError = formPhone.isBlank(),
+                        supportingText = if (formPhone.isBlank()) {
+                            { Text("Vui lòng nhập số điện thoại để lưu") }
+                        } else null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Phone,
                             imeAction = ImeAction.Next
@@ -446,6 +372,37 @@ fun AddEditCustomerDialog(
                             onNext = { focusManager.moveFocus(FocusDirection.Down) }
                         )
                     )
+
+                    if (duplicateCustomerNotice != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.extendedColors.warningBg
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.extendedColors.warningText,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Khách này đã có trong danh sách: ${duplicateCustomerNotice!!.name}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.extendedColors.warningText,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
 
                     // Role selection using stylish chips - Hide when linking prefilled property
                     if (prefilledPropertyId == null || editingCustomer != null) {
@@ -899,50 +856,4 @@ fun AddEditCustomerDialog(
             }
         }
     }
-}
-
-// Helpers
-private val combiningMarksPattern = java.util.regex.Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
-private val qRegex1 = Regex("^q\\s*(\\d+)")
-private val qRegex2 = Regex("^q\\.(\\d+)")
-private val qRegex3 = Regex("^q\\s+")
-private val pRegex1 = Regex("^p\\s*(\\d+)")
-private val pRegex2 = Regex("^p\\.(\\d+)")
-private val tpRegex = Regex("^tp\\s+")
-private val spaceRegex = Regex("\\s+")
-
-private fun String.normalizeForSearch(): String {
-    val temp = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
-    return combiningMarksPattern.matcher(temp).replaceAll("")
-        .replace('đ', 'd')
-        .replace('Đ', 'D')
-        .lowercase(java.util.Locale.getDefault())
-        .trim()
-}
-
-private fun matchesArea(area: String, normInput: String): Boolean {
-    if (normInput.isBlank()) return true
-    val normArea = area.normalizeForSearch()
-
-    if (normArea.contains(normInput)) return true
-
-    val expandedInput = normInput
-        .replace(qRegex1, "quan $1")
-        .replace(qRegex2, "quan $1")
-        .replace(qRegex3, "quan ")
-        .replace(pRegex1, "phuong $1")
-        .replace(pRegex2, "phuong $1")
-        .replace(tpRegex, "thanh pho ")
-    if (normArea.contains(expandedInput)) return true
-
-    val words = normArea.split(spaceRegex).filter { it.isNotEmpty() }
-    val initials = words.mapNotNull { it.firstOrNull() }.joinToString("")
-    if (initials.contains(normInput)) return true
-
-    val inputWords = normInput.split(spaceRegex).filter { it.isNotEmpty() }
-    if (inputWords.isNotEmpty() && inputWords.all { word -> normArea.contains(word) }) {
-        return true
-    }
-
-    return false
 }

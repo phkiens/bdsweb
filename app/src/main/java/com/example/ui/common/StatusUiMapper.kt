@@ -34,13 +34,11 @@ fun CustomerStatus.getLabel(): String = when (this) {
 fun PropertyStatus.getColor(): Color = when (this) {
     PropertyStatus.FOR_SALE -> MaterialTheme.extendedColors.statusForSale
     PropertyStatus.SOLD -> MaterialTheme.extendedColors.statusSold
-    PropertyStatus.ON_HOLD -> MaterialTheme.extendedColors.warning
     PropertyStatus.PENDING_SURVEY -> MaterialTheme.extendedColors.info
 }
 
 fun PropertyStatus.getLabel(): String = when (this) {
     PropertyStatus.FOR_SALE -> "Đang bán"
     PropertyStatus.SOLD -> "Đã bán"
-    PropertyStatus.ON_HOLD -> "Tạm ngưng"
     PropertyStatus.PENDING_SURVEY -> "Chờ khảo sát"
 }

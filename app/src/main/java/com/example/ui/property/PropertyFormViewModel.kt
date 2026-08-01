@@ -75,12 +75,12 @@ class PropertyFormViewModel @Inject constructor(
 
     // Form values backed by SavedStateHandle for process death survival
     val area: StateFlow<String> = savedStateHandle.getStateFlow("area", "")
-    val latitude: StateFlow<String> = savedStateHandle.getStateFlow("latitude", "16.047")
-    val longitude: StateFlow<String> = savedStateHandle.getStateFlow("longitude", "108.206")
+    val latitude: StateFlow<String> = savedStateHandle.getStateFlow("latitude", "")
+    val longitude: StateFlow<String> = savedStateHandle.getStateFlow("longitude", "")
     val areaSize: StateFlow<String> = savedStateHandle.getStateFlow("areaSize", "")
     val price: StateFlow<String> = savedStateHandle.getStateFlow("price", "")
     val description: StateFlow<String> = savedStateHandle.getStateFlow("description", "")
-    val status: StateFlow<String> = savedStateHandle.getStateFlow("status", "Đang bán")
+    val status: StateFlow<String> = savedStateHandle.getStateFlow("status", PropertyStatus.FOR_SALE.value)
     val direction: StateFlow<String> = savedStateHandle.getStateFlow("direction", "")
     val ownerName: StateFlow<String> = savedStateHandle.getStateFlow("ownerName", "")
     val ownerPhone: StateFlow<String> = savedStateHandle.getStateFlow("ownerPhone", "")
@@ -474,12 +474,12 @@ class PropertyFormViewModel @Inject constructor(
         cleanupTemporaryImages()
 
         savedStateHandle["area"] = ""
-        savedStateHandle["latitude"] = "16.047"
-        savedStateHandle["longitude"] = "108.206"
+        savedStateHandle["latitude"] = ""
+        savedStateHandle["longitude"] = ""
         savedStateHandle["areaSize"] = ""
         savedStateHandle["price"] = ""
         savedStateHandle["description"] = ""
-        savedStateHandle["status"] = "Đang bán"
+        savedStateHandle["status"] = PropertyStatus.FOR_SALE.value
         savedStateHandle["direction"] = ""
         savedStateHandle["ownerName"] = ""
         savedStateHandle["ownerPhone"] = ""
@@ -549,14 +549,12 @@ class PropertyFormViewModel @Inject constructor(
         _uiState.value = FormState.Loading
         viewModelScope.launch {
             try {
-                AppLogger.log("EDIT_PERF_DEBUG", "T1 start load property id=$id, ts=${System.currentTimeMillis()}")
                 refreshAreaSuggestions()
                 val property = propertyRepository.getPropertyById(id)
-                AppLogger.log("EDIT_PERF_DEBUG", "T2 property loaded from Room, ts=${System.currentTimeMillis()}")
                 if (property != null) {
                     originalProperty = property
                     
-                    savedStateHandle["area"] = property.area.ifBlank { property.address ?: "" }
+                    savedStateHandle["area"] = property.area
                     savedStateHandle["latitude"] = property.latitude.toString()
                     savedStateHandle["longitude"] = property.longitude.toString()
                     savedStateHandle["areaSize"] = property.areaSize.toString()
@@ -626,6 +624,16 @@ class PropertyFormViewModel @Inject constructor(
         }
     }
 
+    fun setAvatarImage(index: Int) {
+        val newList = images.value.toMutableList()
+        if (index in newList.indices && index != 0) {
+            val item = newList.removeAt(index)
+            newList.add(0, item)
+            savedStateHandle["images"] = newList
+            AppLogger.log(TAG, "Đã chuyển ảnh index $index thành ảnh đại diện (đầu danh sách).")
+        }
+    }
+
     fun fetchCurrentGPS() {
         try {
             val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
@@ -666,8 +674,8 @@ class PropertyFormViewModel @Inject constructor(
                 } else {
                     status.value
                 }
-                val latVal = latitude.value.toDoubleOrNull() ?: 0.0
-                val lngVal = longitude.value.toDoubleOrNull() ?: 0.0
+                val latVal = latitude.value.toDoubleOrNull()
+                val lngVal = longitude.value.toDoubleOrNull()
                 val sizeVal = areaSize.value.toDoubleOrNull() ?: 0.0
                 val priceVal = price.value.toDoubleOrNull() ?: 0.0
 
@@ -833,7 +841,6 @@ class PropertyFormViewModel @Inject constructor(
                     Property(
                         id = propertyId,
                         area = area.value.trim(),
-                        address = area.value.trim(),
                         latitude = latVal,
                         longitude = lngVal,
                         imagePath = imgPathJoined,
@@ -856,7 +863,6 @@ class PropertyFormViewModel @Inject constructor(
                 } else {
                     dbProperty!!.copy(
                         area = area.value.trim(),
-                        address = area.value.trim(),
                         latitude = latVal,
                         longitude = lngVal,
                         imagePath = imgPathJoined,
@@ -885,7 +891,6 @@ class PropertyFormViewModel @Inject constructor(
 
                 // Trigger auto-sync in background asynchronously
                 try {
-                    Log.d("SYNC_UPLOAD_DEBUG", "Nguồn trigger: save, propertyId liên quan: ${property.id}")
                     val intent = Intent(context, SyncForegroundService::class.java).apply {
                         putExtra("PROPERTY_ID", property.id)
                     }

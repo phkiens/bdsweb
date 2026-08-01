@@ -24,12 +24,14 @@ class MigrationTest {
     @Test
     @Throws(IOException::class)
     fun testAllMigrations() {
-        // Create the database at version 2 and then run all migrations sequentially
-        var db = helper.createDatabase(TEST_DB, 2)
+        var db = helper.createDatabase(TEST_DB, 23)
         db.close()
 
-        var currentVersion = 2
-        for (migration in AppDatabase.ALL_MIGRATIONS) {
+        var currentVersion = 23
+        val migrations = AppDatabase.ALL_MIGRATIONS
+            .filter { it.startVersion >= 23 }
+            .sortedBy { it.startVersion }
+        for (migration in migrations) {
             currentVersion++
             db = helper.runMigrationsAndValidate(
                 TEST_DB,

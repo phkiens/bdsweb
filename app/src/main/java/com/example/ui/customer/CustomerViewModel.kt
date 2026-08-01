@@ -6,19 +6,26 @@ import com.example.domain.model.Customer
 import com.example.domain.model.CustomerStatus
 import com.example.domain.model.MatchResult
 import com.example.domain.model.Property
+import com.example.domain.model.LinkRole
 import com.example.domain.repository.CustomerRepository
 import com.example.domain.repository.PropertyRepository
 import com.example.domain.usecase.customer.GetCustomersUseCase
 import com.example.domain.usecase.customer.AddCustomerUseCase
 import com.example.domain.usecase.customer.UpdateCustomerUseCase
 import com.example.domain.usecase.customer.DeleteCustomerUseCase
-import com.example.domain.usecase.customer.MatchPropertiesUseCase
 import com.example.domain.usecase.match.MatchEngineUseCase
 import com.example.ui.common.AppLogger
+import com.example.domain.usecase.property.TransferPropertyOwnershipUseCase
+import com.example.domain.model.isEligibleForMatching
+import com.example.domain.model.normalizeVietnamese
+import com.example.domain.model.normalizeVietnamesePhone
+import com.example.ui.property.CustomerMatchUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val MATCH_SCORE_THRESHOLD = 50
 
 sealed class MatchUiState {
     object Idle : MatchUiState()
@@ -40,7 +47,6 @@ class CustomerViewModel @Inject constructor(
     private val addCustomerUseCase: AddCustomerUseCase,
     private val updateCustomerUseCase: UpdateCustomerUseCase,
     private val deleteCustomerUseCase: DeleteCustomerUseCase,
-    private val matchPropertiesUseCase: MatchPropertiesUseCase,
     private val matchEngineUseCase: MatchEngineUseCase,
     private val customerRepository: CustomerRepository,
     private val propertyRepository: PropertyRepository,
@@ -48,7 +54,8 @@ class CustomerViewModel @Inject constructor(
     private val settingsManager: com.example.ui.common.SettingsManager,
     private val syncSingleCustomerUseCase: com.example.domain.usecase.sync.SyncSingleCustomerUseCase,
     private val prepareImageUseCase: com.example.domain.usecase.media.PrepareImageUseCase,
-    private val snackbarManager: com.example.ui.common.SnackbarManager
+    private val snackbarManager: com.example.ui.common.SnackbarManager,
+    private val transferPropertyOwnershipUseCase: TransferPropertyOwnershipUseCase
 ) : ViewModel() {
 
     private val TAG = "CustomerViewModel"
@@ -92,7 +99,7 @@ class CustomerViewModel @Inject constructor(
     private val _linkedProperties = MutableStateFlow<List<Property>>(emptyList())
     val linkedProperties = _linkedProperties.asStateFlow()
 
-    private val _matchingProperties = MutableStateFlow<List<Property>>(emptyList())
+    private val _matchingProperties = MutableStateFlow<List<MatchResult>>(emptyList())
     val matchingProperties = _matchingProperties.asStateFlow()
 
     private val _isMatching = MutableStateFlow(false)
@@ -101,11 +108,32 @@ class CustomerViewModel @Inject constructor(
     private val _matchResults = MutableStateFlow<MatchUiState>(MatchUiState.Idle)
     val matchResults: StateFlow<MatchUiState> = _matchResults.asStateFlow()
 
+    private val _customerMatchResults = MutableStateFlow<CustomerMatchUiState>(CustomerMatchUiState.Idle)
+    val customerMatchResults: StateFlow<CustomerMatchUiState> = _customerMatchResults.asStateFlow()
+
     private val _selectedFilter = MutableStateFlow("Tất cả") // "Tất cả", "OWNER", "BUYER", "Đã giao dịch"
     val selectedFilter = _selectedFilter.asStateFlow()
 
     private val _distinctAreas = MutableStateFlow<List<String>>(emptyList())
     val distinctAreas = _distinctAreas.asStateFlow()
+
+    val fabOnLeft: StateFlow<Boolean> = settingsManager.fabOnLeftFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    private val _duplicateCustomerNotice = MutableStateFlow<Customer?>(null)
+    val duplicateCustomerNotice: StateFlow<Customer?> = _duplicateCustomerNotice.asStateFlow()
+
+    fun checkDuplicatePhone(phoneInput: String) {
+        viewModelScope.launch {
+            if (phoneInput.isNotBlank()) {
+                val normalized = phoneInput.normalizeVietnamesePhone()
+                val existing = customerRepository.getCustomerByPhone(normalized)
+                _duplicateCustomerNotice.value = existing
+            } else {
+                _duplicateCustomerNotice.value = null
+            }
+        }
+    }
 
     // Form inputs
     val name = MutableStateFlow("")
@@ -196,7 +224,7 @@ class CustomerViewModel @Inject constructor(
                 customerRepository.insertCustomerPropertyLink(
                     customerId = customerId,
                     propertyId = propertyId,
-                    role = "VIEWER",
+                    role = LinkRole.VIEWER.value,
                     viewDate = dateStr,
                     viewNote = note.ifBlank { "Không có ghi chú" }
                 )
@@ -204,6 +232,54 @@ class CustomerViewModel @Inject constructor(
                 selectOwner(_selectedOwner.value)
             } catch (e: Exception) {
                 AppLogger.log(TAG, "Error adding viewed property link: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun updateCustomerNote(customer: Customer, newNote: String) {
+        viewModelScope.launch {
+            try {
+                val trimmed = newNote.trim()
+                val updated = customer.copy(
+                    note = trimmed,
+                    noteNormalized = trimmed.normalizeVietnamese(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                customerRepository.updateCustomer(updated, fromSync = false)
+                AppLogger.log(TAG, "Đã cập nhật ghi chú cho khách hàng ${customer.name}")
+                selectOwner(updated)
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Lỗi khi cập nhật ghi chú: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun deleteViewingLink(customerId: String, propertyId: String) {
+        viewModelScope.launch {
+            try {
+                customerRepository.softDeleteCustomerPropertyLink(customerId, propertyId)
+                selectOwner(_selectedOwner.value)
+                AppLogger.log(TAG, "Đã xóa lượt xem nhà giữa khách hàng $customerId và tài sản $propertyId")
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Lỗi khi xóa lượt xem nhà: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun addOwnedProperties(customerId: String, propertyIds: List<String>) {
+        viewModelScope.launch {
+            try {
+                for (propertyId in propertyIds) {
+                    try {
+                        transferPropertyOwnershipUseCase(propertyId, customerId)
+                        AppLogger.log(TAG, "Đã gán quyền sở hữu tài sản $propertyId cho khách hàng $customerId")
+                    } catch (e: Exception) {
+                        AppLogger.log(TAG, "Lỗi khi gán quyền sở hữu tài sản $propertyId cho khách hàng $customerId: ${e.localizedMessage}")
+                    }
+                }
+                selectOwner(_selectedOwner.value)
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Error in bulk ownership assignment: ${e.localizedMessage}")
             }
         }
     }
@@ -222,7 +298,7 @@ class CustomerViewModel @Inject constructor(
                             property = prop,
                             viewDate = link?.viewDate,
                             viewNote = link?.viewNote,
-                            role = link?.role ?: "VIEWER"
+                            role = LinkRole.fromValue(link?.role)
                         )
                     }
                     _viewedProperties.value = combined
@@ -242,7 +318,9 @@ class CustomerViewModel @Inject constructor(
         _isMatching.value = true
         viewModelScope.launch {
             try {
-                val matches = matchPropertiesUseCase(customer)
+                val allProperties = propertyRepository.getVerifiedActiveProperties()
+                val results = matchEngineUseCase.findMatchingProperties(customer, allProperties)
+                val matches = results.filter { it.score >= MATCH_SCORE_THRESHOLD }
                 _matchingProperties.value = matches
                 AppLogger.log(TAG, "Tìm thấy ${matches.size} BĐS phù hợp với khách '${customer.name}'")
             } catch (e: Exception) {
@@ -259,6 +337,7 @@ class CustomerViewModel @Inject constructor(
             try {
                 val allProperties = propertyRepository.getVerifiedActiveProperties()
                 val results = matchEngineUseCase.findMatchingProperties(customer, allProperties)
+                    .filter { it.score >= MATCH_SCORE_THRESHOLD }
                 _matchResults.value = if (results.isEmpty()) {
                     MatchUiState.Empty("Không tìm thấy BĐS phù hợp")
                 } else {
@@ -270,9 +349,30 @@ class CustomerViewModel @Inject constructor(
             }
         }
     }
+    fun onScanMatchingCustomersForProperty(property: Property, sellerCustomerId: String) {
+        viewModelScope.launch {
+            _customerMatchResults.value = CustomerMatchUiState.Loading
+            try {
+                val allCustomers = customerRepository.getAllCustomers()
+                val candidateCustomers = allCustomers.filter {
+                    it.isEligibleForMatching() && it.id != sellerCustomerId && (property.linkedCustomerId == null || it.id != property.linkedCustomerId)
+                }
+                val results = matchEngineUseCase.findMatchingCustomers(property, candidateCustomers)
+                _customerMatchResults.value = if (results.isEmpty()) {
+                    CustomerMatchUiState.Empty("Không tìm thấy khách hàng mua phù hợp")
+                } else {
+                    CustomerMatchUiState.Success(results)
+                }
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Error scanning matching customers for property: ${e.localizedMessage}")
+                _customerMatchResults.value = CustomerMatchUiState.Empty("Có lỗi xảy ra khi quét tìm khách mua")
+            }
+        }
+    }
 
     fun resetMatchState() {
         _matchResults.value = MatchUiState.Idle
+        _customerMatchResults.value = CustomerMatchUiState.Idle
     }
 
     fun loadFormWithCustomer(customer: Customer) {
@@ -306,6 +406,7 @@ class CustomerViewModel @Inject constructor(
         avatarPath.value = null
         avatarDriveUrl.value = null
         isAvatarUploading.value = false
+        _duplicateCustomerNotice.value = null
     }
 
     fun saveCustomer(
@@ -317,9 +418,9 @@ class CustomerViewModel @Inject constructor(
 
         viewModelScope.launch {
             val minP = priceMin.value.toDoubleOrNull() ?: 0.0
-            val maxP = priceMax.value.toDoubleOrNull() ?: 100.0
+            val maxP = priceMax.value.toDoubleOrNull() ?: 0.0
 
-            val customerRole = if (prefilledPropertyId != null && editingId == null) "VIEWER" else role.value
+            val customerRole = if (prefilledPropertyId != null && editingId == null) "BUYER" else role.value
 
             val customer = Customer(
                 id = editingId ?: java.util.UUID.randomUUID().toString(),
@@ -345,7 +446,7 @@ class CustomerViewModel @Inject constructor(
                     addCustomerUseCase(
                         customer = customer,
                         propertyId = prefilledPropertyId,
-                        role = "VIEWER",
+                        role = LinkRole.VIEWER.value,
                         viewDate = formattedDate,
                         viewNote = viewNote
                     )
@@ -431,5 +532,5 @@ data class ViewedPropertyInfo(
     val property: Property,
     val viewDate: String?,
     val viewNote: String?,
-    val role: String
+    val role: LinkRole
 )

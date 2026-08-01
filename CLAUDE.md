@@ -55,7 +55,7 @@ Standard Clean Architecture layering under `app/src/main/java/com/example`: `dat
 
 ### Auth
 
-Google Sign-In/Drive access uses a custom OAuth PKCE flow (not Credential Manager alone) so the app can hold a Drive access/refresh token — see `OAuthTokenManager`, `PkceHelper`, and the redirect handling in `MainActivity.handleOAuthRedirect` (custom scheme `com.googleusercontent.apps.<clientId>`). OAuth client ID/secret are injected via `BuildConfig` fields set in `app/build.gradle.kts`.
+Google Drive access uses Google Identity Services `AuthorizationClient` (`Identity.getAuthorizationClient`). The app does not use custom OAuth PKCE, client secrets, refresh tokens, or redirect URIs. Short-lived access tokens are held temporarily in RAM cache only (never written to persistent storage).
 
 ## Notes
 

@@ -1,5 +1,6 @@
 package com.example.ui.unverified
 
+import com.example.ui.property.FilterBuckets
 import com.example.ui.common.showSnackbar
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.rememberScrollState
@@ -36,6 +37,9 @@ import androidx.compose.ui.text.input.ImeAction
 import com.example.ui.common.KeyboardAwareScreen
 import com.example.ui.common.adaptiveContentWidth
 import com.example.ui.common.AppTextField
+import com.example.ui.common.normalizeForSearch
+import com.example.ui.common.matchesArea
+import com.example.ui.common.StringUtils
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,8 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import com.example.domain.model.UnverifiedProperty
-import com.example.domain.model.UnverifiedPropertyType
+import com.example.domain.model.Property
 import coil.compose.AsyncImage
 import java.io.File
 import androidx.compose.ui.layout.ContentScale
@@ -63,6 +66,9 @@ fun UnverifiedScreen(
     onNavigateToEdit: (String) -> Unit,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToSurveyRoute: (String) -> Unit,
+    onNavigateToOfficialDetail: (String) -> Unit = {},
+    onAddPropertyAtCoord: (Double, Double) -> Unit = { _, _ -> },
+    onAddUnverifiedAtCoord: (Double, Double) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -77,7 +83,10 @@ fun UnverifiedScreen(
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val filteredCount by viewModel.filteredCount.collectAsStateWithLifecycle()
     
+    var showDuplicateCheckDialog by remember { mutableStateOf(false) }
+    var duplicateCheckInitialText by remember { mutableStateOf("") }
     var showFilterBottomSheet by remember { mutableStateOf(false) }
+
     
     val activeFilterCount = remember(filterState) {
         var count = 0
@@ -100,7 +109,7 @@ fun UnverifiedScreen(
     // Dialog & Alerts
     var showImportDialog by remember { mutableStateOf(false) }
     var showNoApiKeyDialog by remember { mutableStateOf(false) }
-    var propertyToDelete by remember { mutableStateOf<UnverifiedProperty?>(null) }
+    var propertyToDelete by remember { mutableStateOf<Property?>(null) }
 
     // Watch share / deep link trigger
     LaunchedEffect(pastedText) {
@@ -344,20 +353,38 @@ fun UnverifiedScreen(
                                     ) 
                                 },
                                 trailingIcon = {
-                                    if (searchQuery.isNotEmpty()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (searchQuery.isNotEmpty()) {
+                                            IconButton(
+                                                onClick = { viewModel.setSearchQuery("") },
+                                                modifier = Modifier.size(18.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close, 
+                                                    contentDescription = "Xóa",
+                                                    modifier = Modifier.size(14.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
                                         IconButton(
-                                            onClick = { viewModel.setSearchQuery("") },
-                                            modifier = Modifier.size(18.dp)
+                                            onClick = {
+                                                duplicateCheckInitialText = searchQuery
+                                                showDuplicateCheckDialog = true
+                                            },
+                                            modifier = Modifier.size(24.dp)
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.Close, 
-                                                contentDescription = "Xóa",
-                                                modifier = Modifier.size(14.dp),
+                                                imageVector = Icons.Default.LocationSearching,
+                                                contentDescription = "Kiểm tra trùng toạ độ",
+                                                modifier = Modifier.size(18.dp),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
                                     }
                                 },
+
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                                     unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -640,21 +667,12 @@ fun UnverifiedScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             
-                            val priceChips = listOf(
-                                "<1" to (null to 1.0),
-                                "1-2" to (1.0 to 2.0),
-                                "2-3" to (2.0 to 3.0),
-                                "3-4" to (3.0 to 4.0),
-                                "4-5" to (4.0 to 5.0),
-                                "5-7" to (5.0 to 7.0),
-                                "7-10" to (7.0 to 10.0),
-                                ">10" to (10.0 to null)
-                            )
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                items(priceChips) { (label, range) ->
+                                items(FilterBuckets.PRICE_BUCKETS) { bucket ->
+                                    val label = bucket.label
                                     val isSelected = filterState.selectedPrices.contains(label)
                                     FilterChip(
                                         selected = isSelected,
@@ -821,19 +839,12 @@ fun UnverifiedScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             
-                            val sizeChips = listOf(
-                                "<30" to (null to 30.0),
-                                "30-50" to (30.0 to 50.0),
-                                "50-80" to (50.0 to 80.0),
-                                "80-100" to (80.0 to 100.0),
-                                "100-150" to (100.0 to 150.0),
-                                ">150" to (150.0 to null)
-                            )
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                items(sizeChips) { (label, range) ->
+                                items(FilterBuckets.SIZE_BUCKETS) { bucket ->
+                                    val label = bucket.label
                                     val isSelected = filterState.selectedSizes.contains(label)
                                     FilterChip(
                                         selected = isSelected,
@@ -1015,32 +1026,50 @@ fun UnverifiedScreen(
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (viewModel.geminiApiKey.isBlank()) {
-                            showNoApiKeyDialog = true
-                            return@Button
-                        }
-                        viewModel.setPastedText(textVal)
-                        showImportDialog = false
-                        viewModel.extractAndSaveRawText { resultType ->
-                            val message = when (resultType) {
-                                com.example.domain.model.ExtractionType.AI -> "Bóc tách AI thành công"
-                                com.example.domain.model.ExtractionType.REGEX -> "Không có API key — đã dùng Regex"
-                                com.example.domain.model.ExtractionType.MANUAL -> "Không bóc tách được thông tin nào"
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            duplicateCheckInitialText = textVal
+                            showDuplicateCheckDialog = true
+                        },
+                        enabled = textVal.isNotBlank() && !isExtracting
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationSearching, 
+                            contentDescription = null, 
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Kiểm tra trùng")
+                    }
+                    Button(
+                        onClick = {
+                            if (viewModel.geminiApiKey.isBlank()) {
+                                showNoApiKeyDialog = true
+                                return@Button
                             }
-                            context.showSnackbar(message)
+                            viewModel.setPastedText(textVal)
+                            showImportDialog = false
+                            viewModel.extractAndSaveRawText { resultType ->
+                                val message = when (resultType) {
+                                    com.example.domain.model.ExtractionType.AI -> "Bóc tách AI thành công"
+                                    com.example.domain.model.ExtractionType.REGEX -> "Không có API key — đã dùng Regex"
+                                    com.example.domain.model.ExtractionType.MANUAL -> "Không bóc tách được thông tin nào"
+                                }
+                                context.showSnackbar(message)
+                            }
+                        },
+                        enabled = textVal.isNotBlank() && !isExtracting
+                    ) {
+                        if (isExtracting) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Bóc tách AI")
                         }
-                    },
-                    enabled = textVal.isNotBlank() && !isExtracting
-                ) {
-                    if (isExtracting) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Bóc tách AI")
                     }
                 }
             },
+
             dismissButton = {
                 TextButton(
                     onClick = { showImportDialog = false },
@@ -1064,6 +1093,30 @@ fun UnverifiedScreen(
             }
         )
     }
+
+    if (showDuplicateCheckDialog) {
+        com.example.ui.common.DuplicateCheckDialog(
+            initialText = duplicateCheckInitialText,
+            onDismiss = { showDuplicateCheckDialog = false },
+            onOpenProperty = { id, isVerified ->
+                showDuplicateCheckDialog = false
+                if (isVerified) {
+                    onNavigateToOfficialDetail(id)
+                } else {
+                    onNavigateToDetail(id)
+                }
+            },
+            onAddProperty = { lat, lng ->
+                showDuplicateCheckDialog = false
+                onAddPropertyAtCoord(lat, lng)
+            },
+            onAddUnverified = { lat, lng ->
+                showDuplicateCheckDialog = false
+                onAddUnverifiedAtCoord(lat, lng)
+            }
+        )
+    }
+
 
     // --- Delete Confirmation Dialog (Part 6 Swipe/Xóa) ---
     if (propertyToDelete != null) {
@@ -1097,7 +1150,7 @@ fun UnverifiedScreen(
 
 @Composable
 fun UnverifiedPropertyCard(
-    item: UnverifiedProperty,
+    item: Property,
     isWarning: Boolean = false,
     isMultiSelect: Boolean = false,
     isSelected: Boolean = false,
@@ -1183,10 +1236,21 @@ fun UnverifiedPropertyCard(
             }
 
             // Thumbnail / Icon
-            // Ưu tiên file local; nếu chưa tải về (mediaPaths rỗng sau khi pull) thì fallback
-            // thumbnail Drive theo driveMediaId đầu tiên.
-            val firstLocal = item.mediaPaths.firstOrNull { it.isNotBlank() && File(it).exists() }
-            val firstDriveId = item.driveMediaIds.firstOrNull { it.isNotBlank() }
+            val localPaths = remember(item.imagePath) {
+                item.imagePath?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
+            }
+            val firstLocal = localPaths.firstOrNull { File(it).exists() }
+            val firstDriveId = remember(item.driveMediaIds) {
+                if (item.driveMediaIds.isNullOrBlank()) null
+                else {
+                    try {
+                        val jsonObj = org.json.JSONObject(item.driveMediaIds)
+                        jsonObj.keys().asSequence().map { jsonObj.optString(it) }.firstOrNull { it.isNotBlank() }
+                    } catch (e: Exception) {
+                        item.driveMediaIds?.split("|||")?.firstOrNull { it.isNotBlank() }
+                    }
+                }
+            }
             
             val imageModel = remember(firstLocal, firstDriveId, token) {
                 when {
@@ -1254,7 +1318,7 @@ fun UnverifiedPropertyCard(
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = item.address ?: "Chưa rõ khu vực",
+                    text = StringUtils.toTitleCase(item.area).ifBlank { "Chưa rõ khu vực" },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -1264,19 +1328,19 @@ fun UnverifiedPropertyCard(
                 Spacer(modifier = Modifier.height(4.dp))
 
                 val parts = buildList<@Composable () -> Unit> {
-                    if (item.price != null && item.price > 0.0) {
+                    if (item.price > 0.0) {
                         val str = if (item.price >= 1.0) "${formatter.format(item.price)} tỷ"
                                   else "${formatter.format(item.price * 1000)} triệu"
                         add { Text(str, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, maxLines = 1) }
                     } else {
                         add { Icon(Icons.Default.MonetizationOn, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)) }
                     }
-                    if (item.area != null && item.area > 0f) {
-                        add { Text("${formatter.format(item.area)} m²", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                    if (item.areaSize != null && item.areaSize > 0.0) {
+                        add { Text("${formatter.format(item.areaSize)} m²", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                     } else {
                         add { Icon(Icons.Default.Straighten, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)) }
                     }
-                    if (!item.direction.isNullOrBlank()) {
+                    if (item.direction.isNotBlank()) {
                         add { Text(item.direction, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     } else {
                         add { Icon(Icons.Default.Explore, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)) }
@@ -1325,51 +1389,4 @@ fun UnverifiedPropertyCard(
     }
 }
 
-private val combiningMarksPattern = java.util.regex.Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
-private val qRegex1 = Regex("^q\\s*(\\d+)")
-private val qRegex2 = Regex("^q\\.(\\d+)")
-private val qRegex3 = Regex("^q\\s+")
-private val pRegex1 = Regex("^p\\s*(\\d+)")
-private val pRegex2 = Regex("^p\\.(\\d+)")
-private val tpRegex = Regex("^tp\\s+")
-private val spaceRegex = Regex("\\s+")
 
-private fun String.normalizeForSearch(): String {
-    val temp = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
-    return combiningMarksPattern.matcher(temp).replaceAll("")
-        .replace('đ', 'd')
-        .replace('Đ', 'D')
-        .lowercase(java.util.Locale.getDefault())
-        .trim()
-}
-
-private fun matchesArea(area: String, normInput: String): Boolean {
-    if (normInput.isBlank()) return true
-    val normArea = area.normalizeForSearch()
-    
-    // 1. Direct contains (e.g. "quan 9" in "quan 9", "hiep binh" in "hiep binh chanh")
-    if (normArea.contains(normInput)) return true
-    
-    // 2. Standard abbreviation expansion (e.g. "q9" -> "quan 9", "q.9" -> "quan 9", "p12" -> "phuong 12")
-    val expandedInput = normInput
-        .replace(qRegex1, "quan $1")
-        .replace(qRegex2, "quan $1")
-        .replace(qRegex3, "quan ")
-        .replace(pRegex1, "phuong $1")
-        .replace(pRegex2, "phuong $1")
-        .replace(tpRegex, "thanh pho ")
-    if (normArea.contains(expandedInput)) return true
-    
-    // 3. First letters of each word (e.g. "hbc" for "Hiep Binh Chanh", "qtd" for "Quan Thu Duc")
-    val words = normArea.split(spaceRegex).filter { it.isNotEmpty() }
-    val initials = words.mapNotNull { it.firstOrNull() }.joinToString("")
-    if (initials.contains(normInput)) return true
-    
-    // 4. Checking if all words of input are found in area words in any order
-    val inputWords = normInput.split(spaceRegex).filter { it.isNotEmpty() }
-    if (inputWords.isNotEmpty() && inputWords.all { word -> normArea.contains(word) }) {
-        return true
-    }
-    
-    return false
-}

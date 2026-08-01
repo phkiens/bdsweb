@@ -23,8 +23,6 @@ android {
     versionName = "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"246964756601-5oi7aht372p6f5otl9musfkpa6rpcp1p.apps.googleusercontent.com\"")
-    buildConfigField("String", "GOOGLE_OAUTH_CLIENT_SECRET", "\"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\"")
   }
 
   signingConfigs {
@@ -68,6 +66,7 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  ignoreList.add("GEMINI_API_KEY")
 }
 
 googleServices {
@@ -121,7 +120,6 @@ dependencies {
   implementation(libs.androidx.security.crypto)
   implementation(libs.googleid)
   implementation(libs.retrofit)
-  implementation("androidx.browser:browser:1.8.0")
   implementation("androidx.core:core-splashscreen:1.0.1")
   implementation("org.osmdroid:osmdroid-android:6.1.18")
   

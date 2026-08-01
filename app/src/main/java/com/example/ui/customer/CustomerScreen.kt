@@ -1,7 +1,10 @@
 package com.example.ui.customer
 
 import com.example.ui.common.showSnackbar
+import com.example.ui.property.PropertyFilter
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.domain.model.MatchResult
+import com.example.ui.theme.extendedColors
 
 import android.content.Intent
 import android.net.Uri
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.FocusDirection
@@ -69,67 +73,33 @@ fun CustomerScreen(
     val viewedProperties by viewModel.viewedProperties.collectAsStateWithLifecycle()
     val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
     val matchResults by viewModel.matchResults.collectAsStateWithLifecycle()
+    val fabOnLeft by viewModel.fabOnLeft.collectAsStateWithLifecycle()
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingCustomer by remember { mutableStateOf<Customer?>(null) }
-    var viewingCustomerDetail by remember { mutableStateOf<Customer?>(null) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var editingCustomerId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editingCustomer = remember(editingCustomerId, customers) {
+        customers.find { it.id == editingCustomerId }
+    }
+    var viewingCustomerDetailId by rememberSaveable { mutableStateOf<String?>(null) }
+    val viewingCustomerDetail = remember(viewingCustomerDetailId, customers) {
+        customers.find { it.id == viewingCustomerDetailId }
+    }
 
     LaunchedEffect(initialCustomerId, customers) {
         if (!initialCustomerId.isNullOrBlank() && customers.isNotEmpty()) {
             val customer = customers.find { it.id == initialCustomerId }
             if (customer != null) {
-                viewingCustomerDetail = customer
+                viewingCustomerDetailId = customer.id
             }
         }
     }
     var phoneDialogNumber by remember { mutableStateOf<String?>(null) }
     var showAvatarOptions by remember { mutableStateOf(false) }
-    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var showPriceMinDialog by remember { mutableStateOf(false) }
     var showPriceMaxDialog by remember { mutableStateOf(false) }
     var showAddViewLinkDialog by remember { mutableStateOf(false) }
     var selectedPropIdForLink by remember { mutableStateOf("") }
     var viewLinkNote by remember { mutableStateOf("") }
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null && editingCustomer != null) {
-            viewModel.uploadAndSetAvatar(context, editingCustomer!!.id, uri, editingCustomer)
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success && tempPhotoUri != null && editingCustomer != null) {
-            viewModel.uploadAndSetAvatar(context, editingCustomer!!.id, tempPhotoUri!!, editingCustomer)
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            try {
-                val tempFile = java.io.File(context.cacheDir, "temp_camera_${System.currentTimeMillis()}.jpg").apply {
-                    parentFile?.mkdirs()
-                    createNewFile()
-                }
-                val providerUri = androidx.core.content.FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    tempFile
-                )
-                tempPhotoUri = providerUri
-                cameraLauncher.launch(providerUri)
-            } catch (e: Exception) {
-                context.showSnackbar("Không thể mở máy ảnh: ${e.localizedMessage}")
-            }
-        } else {
-            context.showSnackbar("Cần có quyền CAMERA để chụp ảnh đại diện.")
-        }
-    }
 
     // Form inputs
     val formName by viewModel.name.collectAsStateWithLifecycle()
@@ -148,15 +118,23 @@ fun CustomerScreen(
                 viewModel = viewModel,
                 onBack = { 
                     viewModel.selectOwner(null)
-                    viewingCustomerDetail = null
+                    viewingCustomerDetailId = null
                     viewModel.resetMatchState()
                 },
                 onNavigateToPropertyDetail = onNavigateToPropertyDetail,
+                onNavigateToCustomerDetail = { targetCustomerId ->
+                    val targetCustomer = customers.find { it.id == targetCustomerId }
+                    if (targetCustomer != null) {
+                        viewModel.selectOwner(targetCustomer)
+                        viewingCustomerDetailId = targetCustomer.id
+                        viewModel.resetMatchState()
+                    }
+                },
                 onEditClick = {
                     viewModel.loadFormWithCustomer(viewingCustomerDetail!!)
-                    editingCustomer = viewingCustomerDetail
+                    editingCustomerId = viewingCustomerDetail?.id
                     showAddDialog = true
-                    viewingCustomerDetail = null
+                    viewingCustomerDetailId = null
                 },
                 onPhoneClick = { phoneDialogNumber = it },
                 onNavigateToPropertyAdd = onNavigateToPropertyAdd,
@@ -164,49 +142,54 @@ fun CustomerScreen(
             )
         } else {
             Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Khách hàng", 
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            if (customers.isNotEmpty()) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Badge(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ) {
-                                    Text(
-                                        text = customers.size.toString(),
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                topBar = {
+                    TopAppBar(
+                        title = { 
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Khách hàng", 
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                if (customers.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    ) {
+                                        Text(
+                                            text = customers.size.toString(),
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    },
-                    actions = {
-                        IconButton(
-                            onClick = {
-                                viewModel.clearForm()
-                                editingCustomer = null
-                                showAddDialog = true
-                            },
-                            modifier = Modifier.testTag("add_customer_button")
-                        ) {
-                            Icon(Icons.Default.PersonAdd, contentDescription = "Thêm khách")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground
+                        )
                     )
-                )
-            },
-            modifier = modifier
-        ) { innerPadding ->
+                },
+                floatingActionButtonPosition = if (fabOnLeft) FabPosition.Start else FabPosition.End,
+                floatingActionButton = {
+                    FloatingActionButton(
+                        onClick = {
+                            viewModel.clearForm()
+                            editingCustomerId = null
+                            showAddDialog = true
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .testTag("add_customer_button")
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = "Thêm khách")
+                    }
+                },
+                modifier = modifier
+            ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -326,7 +309,7 @@ fun CustomerScreen(
                                 ownerPropertiesCount = ownerPropertyCounts[customer.id] ?: 0,
                                 onMatchClick = { viewModel.selectCustomer(customer) },
                                 onEditClick = {
-                                    viewingCustomerDetail = customer
+                                    viewingCustomerDetailId = customer.id
                                 },
                                 onRoleClick = {
                                     viewModel.selectOwner(customer)
@@ -389,39 +372,128 @@ fun CustomerScreen(
                         )
                     }
                 } else {
-                    matchingProperties.forEach { p ->
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(8.dp),
-                            tonalElevation = 1.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        matchingProperties.forEach { result ->
+                            val prop = result.property
+                            val score = result.score
+                            val scoreColor = when {
+                                score > 80 -> MaterialTheme.extendedColors.success
+                                score >= 50 -> MaterialTheme.extendedColors.warning
+                                else -> Color.Gray
+                            }
+                            val scoreContainerColor = scoreColor.copy(alpha = 0.1f)
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.selectCustomer(null)
+                                        onNavigateToPropertyDetail(prop.id)
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = p.area,
-                                        fontWeight = FontWeight.Bold, 
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1, 
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "Hướng: ${p.direction} • DT: ${p.areaSize}m² • Giá: ${p.price} tỷ", 
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val firstImagePath = prop.imagePath?.split("|||")?.firstOrNull()
+                                    if (!firstImagePath.isNullOrBlank() && java.io.File(firstImagePath).exists()) {
+                                        AsyncImage(
+                                            model = java.io.File(firstImagePath),
+                                            contentDescription = null,
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(64.dp)
+                                                .background(
+                                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
+                                                    RoundedCornerShape(8.dp)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Home,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = prop.area,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Hướng: ${prop.direction} • DT: ${prop.areaSize}m² • Giá: ${prop.price} tỷ",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
+
+                                        if (result.matchingReasons.isNotEmpty()) {
+                                            Text(
+                                                text = result.matchingReasons.joinToString(", "),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        if (result.warnings.isNotEmpty()) {
+                                            Text(
+                                                text = result.warnings.joinToString(", "),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.error,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    SuggestionChip(
+                                        onClick = {},
+                                        label = {
+                                            Text(
+                                                text = "$score%",
+                                                color = scoreColor,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = scoreContainerColor,
+                                            labelColor = scoreColor
+                                        ),
+                                        border = SuggestionChipDefaults.suggestionChipBorder(
+                                            borderColor = scoreColor.copy(alpha = 0.3f),
+                                            enabled = true
+                                        )
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "${p.price} tỷ", 
-                                    fontWeight = FontWeight.Bold, 
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
                             }
                         }
                     }
@@ -566,57 +638,176 @@ fun CustomerScreen(
 
     if (showAddViewLinkDialog && selectedOwner != null) {
         val allProps by viewModel.allProperties.collectAsStateWithLifecycle()
-        
+        var searchQuery by remember { mutableStateOf("") }
+
+        val filteredProps = remember(searchQuery, allProps) {
+            allProps.filter { PropertyFilter.matchesQuery(it, searchQuery) }
+        }
+
         AlertDialog(
-            onDismissRequest = { showAddViewLinkDialog = false },
+            onDismissRequest = {
+                showAddViewLinkDialog = false
+                searchQuery = ""
+            },
             title = { Text("Thêm lịch sử xem nhà", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Chọn BĐS mà khách đã xem:", style = MaterialTheme.typography.bodyMedium)
-                    
-                    var expandedDropdown by remember { mutableStateOf(false) }
-                    val selectedProperty = allProps.find { it.id == selectedPropIdForLink }
-                    
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = selectedProperty?.let { "${it.area} - ${it.price} tỷ" } ?: "Chưa chọn BĐS",
-                            onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Bất động sản") },
-                            modifier = Modifier.fillMaxWidth().clickable { expandedDropdown = true },
-                            enabled = false,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                                disabledBorderColor = MaterialTheme.colorScheme.outline,
-                                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            trailingIcon = {
-                                IconButton(onClick = { expandedDropdown = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDropDown,
-                                        contentDescription = "Chọn BĐS"
-                                    )
-                                }
-                            }
-                        )
-                        
-                        DropdownMenu(
-                            expanded = expandedDropdown,
-                            onDismissRequest = { expandedDropdown = false },
-                            modifier = Modifier.fillMaxWidth(0.9f).heightIn(max = 250.dp)
-                        ) {
-                            allProps.forEach { p ->
-                                DropdownMenuItem(
-                                    text = { Text("${p.area} - ${p.price} tỷ") },
-                                    onClick = {
-                                        selectedPropIdForLink = p.id
-                                        expandedDropdown = false
-                                    }
+                    // Search box
+                    AppTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Tìm khu vực, mô tả, chủ, SĐT, giá...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Default.Search, contentDescription = null)
+                        },
+                        singleLine = true
+                    )
+
+                    Text(
+                        text = "Chọn BĐS mà khách đã xem:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                    ) {
+                        if (filteredProps.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Không tìm thấy BĐS nào",
+                                    color = MaterialTheme.colorScheme.outline,
+                                    style = MaterialTheme.typography.bodyMedium
                                 )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                itemsIndexed(filteredProps) { _, p ->
+                                    val isSelected = selectedPropIdForLink == p.id
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { selectedPropIdForLink = p.id },
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelected) {
+                                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                                            }
+                                        ),
+                                        border = if (isSelected) {
+                                            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                                        } else {
+                                            null
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val firstImagePath = p.imagePath?.split("|||")?.firstOrNull()
+                                            if (!firstImagePath.isNullOrBlank() && java.io.File(firstImagePath).exists()) {
+                                                AsyncImage(
+                                                    model = java.io.File(firstImagePath),
+                                                    contentDescription = null,
+                                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .background(
+                                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f),
+                                                            RoundedCornerShape(6.dp)
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Home,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.width(10.dp))
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = p.area,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "${p.price} tỷ",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = "•",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                    Text(
+                                                        text = "${p.areaSize} m²",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.secondary,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    if (p.direction.isNotBlank()) {
+                                                        Text(
+                                                            text = "•",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.outline
+                                                        )
+                                                        Text(
+                                                            text = p.direction,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.outline
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "Selected",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                    
+
                     AppTextField(
                         value = viewLinkNote,
                         onValueChange = { viewLinkNote = it },
@@ -638,6 +829,7 @@ fun CustomerScreen(
                             showAddViewLinkDialog = false
                             selectedPropIdForLink = ""
                             viewLinkNote = ""
+                            searchQuery = ""
                         }
                     },
                     enabled = selectedPropIdForLink.isNotBlank()
@@ -646,7 +838,12 @@ fun CustomerScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddViewLinkDialog = false }) {
+                TextButton(
+                    onClick = {
+                        showAddViewLinkDialog = false
+                        searchQuery = ""
+                    }
+                ) {
                     Text("Hủy")
                 }
             }
@@ -657,98 +854,6 @@ fun CustomerScreen(
 
     // Add/Edit Dialog with Role & Status support
     if (showAddDialog) {
-        if (showAvatarOptions && editingCustomer != null) {
-            val formAvatarDriveUrl by viewModel.avatarDriveUrl.collectAsStateWithLifecycle()
-            AlertDialog(
-                onDismissRequest = { showAvatarOptions = false },
-                title = { Text("Chọn ảnh đại diện", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                    ) {
-                        // Option 1: Chụp ảnh
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showAvatarOptions = false
-                                    val permissionCheck = androidx.core.content.ContextCompat.checkSelfPermission(
-                                        context,
-                                        android.Manifest.permission.CAMERA
-                                    )
-                                    if (permissionCheck == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        try {
-                                            val tempFile = java.io.File(context.cacheDir, "temp_camera_${System.currentTimeMillis()}.jpg").apply {
-                                                parentFile?.mkdirs()
-                                                createNewFile()
-                                            }
-                                            val providerUri = androidx.core.content.FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.provider",
-                                                tempFile
-                                            )
-                                            tempPhotoUri = providerUri
-                                            cameraLauncher.launch(providerUri)
-                                        } catch (e: Exception) {
-                                            context.showSnackbar("Không thể mở máy ảnh: ${e.localizedMessage}")
-                                        }
-                                    } else {
-                                        cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                                    }
-                                }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text("Chụp ảnh mới", style = MaterialTheme.typography.bodyLarge)
-                        }
-
-                        // Option 2: Chọn từ thư viện
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showAvatarOptions = false
-                                    imagePickerLauncher.launch("image/*")
-                                }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text("Chọn từ thư viện", style = MaterialTheme.typography.bodyLarge)
-                        }
-
-                        // Option 3: Xóa ảnh hiện tại
-                        if (!formAvatarDriveUrl.isNullOrBlank()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showAvatarOptions = false
-                                        viewModel.deleteAvatar(context, editingCustomer!!)
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Text("Xóa ảnh hiện tại", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { showAvatarOptions = false }) {
-                        Text("Đóng")
-                    }
-                }
-            )
-        }
-
         AddEditCustomerDialog(
             showDialog = showAddDialog,
             onDismissRequest = { showAddDialog = false },
@@ -756,4 +861,11 @@ fun CustomerScreen(
             editingCustomer = editingCustomer
         )
     }
+
+    AvatarPickerDialog(
+        visible = showAvatarOptions,
+        editingCustomer = editingCustomer,
+        viewModel = viewModel,
+        onDismiss = { showAvatarOptions = false }
+    )
 }

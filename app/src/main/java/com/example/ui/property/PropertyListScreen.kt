@@ -2,6 +2,9 @@ package com.example.ui.property
 
 import androidx.compose.animation.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.BorderStroke
@@ -54,6 +57,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.FocusDirection
 import com.example.ui.common.KeyboardAwareScreen
 import com.example.ui.common.adaptiveContentWidth
+import com.example.ui.common.normalizeForSearch
+import com.example.ui.common.matchesArea
 import coil.compose.AsyncImage
 import com.example.domain.model.Property
 import java.io.File
@@ -75,6 +80,9 @@ fun PropertyListScreen(
     onNavigateToEdit: (String) -> Unit,
     onNavigateToSettings: () -> Unit = {},
     onNavigateToSurveyRoute: (String) -> Unit = {},
+    onNavigateToUnverifiedDetail: (String) -> Unit = {},
+    onAddPropertyAtCoord: (Double, Double) -> Unit = { _, _ -> },
+    onAddUnverifiedAtCoord: (Double, Double) -> Unit = { _, _ -> },
     forceFilterViewToday: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -82,6 +90,11 @@ fun PropertyListScreen(
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val hasMore by viewModel.hasMore.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+
+    val showDuplicateCheckDialog by viewModel.showDuplicateCheckDialog.collectAsStateWithLifecycle()
+    val duplicateCheckInitialText by viewModel.duplicateCheckInitialText.collectAsStateWithLifecycle()
+    var showFilterBottomSheet by remember { mutableStateOf(false) }
+
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val filterViewTodayOnly by viewModel.filterViewTodayOnly.collectAsStateWithLifecycle()
     val isMultiSelectMode by viewModel.isMultiSelectMode.collectAsStateWithLifecycle()
@@ -107,10 +120,26 @@ fun PropertyListScreen(
         }
     }
 
-    var showFilterBottomSheet by remember { mutableStateOf(false) }
-
     val focusManager = LocalFocusManager.current
+
     val keyboardController = LocalSoftwareKeyboardController.current
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeTrigger by remember { mutableStateOf(0) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                resumeTrigger++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    val defaultFilter = remember(resumeTrigger, filterState) { viewModel.baseDefaultFilter() }
 
     LaunchedEffect(forceFilterViewToday) {
         if (forceFilterViewToday) {
@@ -118,10 +147,10 @@ fun PropertyListScreen(
         }
     }
 
-    val activeFilterCount = remember(filterState) {
+    val activeFilterCount = remember(filterState, defaultFilter) {
         var count = 0
-        if (filterState.propertyTypes != setOf("Nhà")) count++
-        if (filterState.statuses != setOf(PropertyStatus.FOR_SALE)) count++
+        if (filterState.propertyTypes != defaultFilter.propertyTypes) count++
+        if (filterState.statuses != defaultFilter.statuses) count++
         if (filterState.selectedPrices.isNotEmpty() || filterState.priceMin != null || filterState.priceMax != null) count++
         if (filterState.selectedSizes.isNotEmpty() || filterState.sizeMin != null || filterState.sizeMax != null) count++
         if (filterState.areas.isNotEmpty()) count++
@@ -353,20 +382,36 @@ fun PropertyListScreen(
                                 ) 
                             },
                             trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = { viewModel.setSearchQuery("") },
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close, 
+                                                contentDescription = "Xóa",
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
                                     IconButton(
-                                        onClick = { viewModel.setSearchQuery("") },
-                                        modifier = Modifier.size(18.dp)
+                                        onClick = { viewModel.openDuplicateCheckDialog(searchQuery) },
+                                        modifier = Modifier.size(24.dp)
                                     ) {
+
                                         Icon(
-                                            imageVector = Icons.Default.Close, 
-                                            contentDescription = "Xóa",
-                                            modifier = Modifier.size(14.dp),
+                                            imageVector = Icons.Default.LocationSearching,
+                                            contentDescription = "Kiểm tra trùng toạ độ",
+                                            modifier = Modifier.size(18.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
                             },
+
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = MaterialTheme.colorScheme.surface,
                                 unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -623,21 +668,12 @@ fun PropertyListScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         
-                        val priceChips = listOf(
-                            "<1" to (null to 1.0),
-                            "1-2" to (1.0 to 2.0),
-                            "2-3" to (2.0 to 3.0),
-                            "3-4" to (3.0 to 4.0),
-                            "4-5" to (4.0 to 5.0),
-                            "5-7" to (5.0 to 7.0),
-                            "7-10" to (7.0 to 10.0),
-                            ">10" to (10.0 to null)
-                        )
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(priceChips) { (label, range) ->
+                            items(FilterBuckets.PRICE_BUCKETS) { bucket ->
+                                val label = bucket.label
                                 val isSelected = filterState.selectedPrices.contains(label)
                                 FilterChip(
                                     selected = isSelected,
@@ -805,19 +841,12 @@ fun PropertyListScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         
-                        val sizeChips = listOf(
-                            "<30" to (null to 30.0),
-                            "30-50" to (30.0 to 50.0),
-                            "50-80" to (50.0 to 80.0),
-                            "80-100" to (80.0 to 100.0),
-                            "100-150" to (100.0 to 150.0),
-                            ">150" to (150.0 to null)
-                        )
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(sizeChips) { (label, range) ->
+                            items(FilterBuckets.SIZE_BUCKETS) { bucket ->
+                                val label = bucket.label
                                 val isSelected = filterState.selectedSizes.contains(label)
                                 FilterChip(
                                     selected = isSelected,
@@ -959,436 +988,31 @@ fun PropertyListScreen(
             }
         }
     }
-}
 
-enum class SyncState {
-    NOT_SYNCED,
-    FULLY_SYNCED,
-    PARTIALLY_SYNCED
-}
-
-fun getSyncState(property: Property): SyncState {
-    if (!property.isTextSynced) return SyncState.NOT_SYNCED
-    val imagePath = property.imagePath
-    if (imagePath.isNullOrBlank()) {
-        return SyncState.FULLY_SYNCED
-    }
-    val localPaths = imagePath.split("|||").filter { it.isNotBlank() }
-    if (localPaths.isEmpty()) {
-        return SyncState.FULLY_SYNCED
-    }
-    val driveMediaIds = property.driveMediaIds
-    if (driveMediaIds.isNullOrBlank()) {
-        return SyncState.PARTIALLY_SYNCED
-    }
-    return try {
-        val jsonObject = org.json.JSONObject(driveMediaIds)
-        var allImagesSynced = true
-        for (path in localPaths) {
-            val trimmedPath = path.trim()
-            if (trimmedPath.isEmpty()) continue
-            val driveId = jsonObject.optString(trimmedPath, "")
-            if (driveId.isEmpty()) {
-                allImagesSynced = false
-                break
-            }
-        }
-        if (allImagesSynced) {
-            SyncState.FULLY_SYNCED
-        } else {
-            SyncState.PARTIALLY_SYNCED
-        }
-    } catch (e: Exception) {
-        SyncState.NOT_SYNCED
-    }
-}
-
-@Composable
-fun SyncStatusIcon(state: SyncState, modifier: Modifier = Modifier) {
-    val (icon, color, description) = when (state) {
-        SyncState.FULLY_SYNCED -> Triple(Icons.Default.CheckCircle, androidx.compose.ui.graphics.Color(0xFF2E7D32), "Đã đồng bộ đầy đủ")
-        SyncState.PARTIALLY_SYNCED -> Triple(Icons.Default.Sync, androidx.compose.ui.graphics.Color(0xFFF57F17), "Đang đồng bộ một phần")
-        SyncState.NOT_SYNCED -> Triple(Icons.Default.Warning, androidx.compose.ui.graphics.Color.Gray, "Chưa đồng bộ")
-    }
-    Icon(
-        imageVector = icon,
-        contentDescription = description,
-        tint = color,
-        modifier = modifier
-    )
-}
-
-@Composable
-fun PropertyCard(
-    property: Property,
-    onClick: () -> Unit,
-    onToggleNeedToViewToday: () -> Unit,
-    onToggleStatus: () -> Unit,
-    isMultiSelectMode: Boolean = false,
-    isSelected: Boolean = false,
-    onToggleSelect: () -> Unit = {},
-    modifier: Modifier = Modifier
-) {
-    val formatter = remember { NumberFormat.getNumberInstance(Locale.US) }
-    val formattedPrice = if (property.price >= 1.0) {
-        "${formatter.format(property.price)} tỷ"
-    } else {
-        "${formatter.format(property.price * 1000)} triệu"
-    }
-    val syncState = remember(property) { getSyncState(property) }
-
-    val coroutineScope = rememberCoroutineScope()
-    val offsetX = remember { androidx.compose.animation.core.Animatable(0f) }
-    var cardWidth by remember { mutableStateOf(0) }
-
-    val isPotential = property.needToViewToday
-    val baseColor = if (isPotential) androidx.compose.ui.graphics.Color.Gray else androidx.compose.ui.graphics.Color(0xFFFFC107) // Amber
-    val bgIcon = if (isPotential) Icons.Default.Close else Icons.Default.Star
-
-    val swipeThreshold = if (cardWidth > 0) cardWidth * 0.2f else 200f
-    val dragPercent = if (swipeThreshold > 0f) (kotlin.math.abs(offsetX.value) / swipeThreshold).coerceIn(0f, 1f) else 0f
-    val revealedBgColor = if (offsetX.value > 0f) {
-        baseColor.copy(alpha = dragPercent)
-    } else {
-        MaterialTheme.colorScheme.errorContainer.copy(alpha = dragPercent)
-    }
-    val iconScale = 0.5f + (0.5f * dragPercent)
-    val iconAlpha = dragPercent
-
-    val haptic = LocalHapticFeedback.current
-    var hasTriggeredHaptic by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(revealedBgColor)
-    ) {
-        // Background layer icon (reveals instantly and scales/alphas beautifully)
-        if (offsetX.value > 0f) {
-            Icon(
-                imageVector = bgIcon,
-                contentDescription = if (isPotential) "Bỏ đánh dấu" else "Đánh dấu",
-                tint = (if (isPotential) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Black).copy(alpha = iconAlpha),
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp)
-                    .size(24.dp)
-                    .graphicsLayer {
-                        scaleX = iconScale
-                        scaleY = iconScale
-                    }
-            )
-        } else if (offsetX.value < 0f) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "Chuyển trạng thái",
-                tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = iconAlpha),
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp)
-                    .size(24.dp)
-                    .graphicsLayer {
-                        scaleX = iconScale
-                        scaleY = iconScale
-                    }
-            )
-        }
-
-        // Foreground Card Row
-        Row(
-            modifier = Modifier
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface)
-                .clickable(onClick = {
-                    if (isMultiSelectMode) {
-                        onToggleSelect()
-                    } else {
-                        onClick()
-                    }
-                })
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-                .onSizeChanged { cardWidth = it.width }
-                .pointerInput(property.needToViewToday, isMultiSelectMode) {
-                    if (isMultiSelectMode) return@pointerInput
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            val threshold = cardWidth * 0.2f
-                            if (offsetX.value > threshold) {
-                                onToggleNeedToViewToday()
-                            } else if (offsetX.value < -threshold) {
-                                onToggleStatus()
-                            }
-                            hasTriggeredHaptic = false
-                            coroutineScope.launch {
-                                offsetX.animateTo(
-                                    targetValue = 0f,
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                                        stiffness = Spring.StiffnessMediumLow
-                                    )
-                                )
-                            }
-                        },
-                        onDragCancel = {
-                            hasTriggeredHaptic = false
-                            coroutineScope.launch {
-                                offsetX.animateTo(0f)
-                            }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            val newOffset = offsetX.value + dragAmount
-                            val maxDrag = if (cardWidth > 0) cardWidth * 0.4f else 400f
-                            val limitedOffset = newOffset.coerceIn(-maxDrag, maxDrag)
-                            coroutineScope.launch {
-                                offsetX.snapTo(limitedOffset)
-                            }
-
-                            val threshold = cardWidth * 0.2f
-                            if (threshold > 0f) {
-                                val absOffset = kotlin.math.abs(limitedOffset)
-                                if (absOffset >= threshold && !hasTriggeredHaptic) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    hasTriggeredHaptic = true
-                                } else if (absOffset < threshold) {
-                                    hasTriggeredHaptic = false
-                                }
-                            }
-                        }
-                    )
-                },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isMultiSelectMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { onToggleSelect() },
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-
-            // Thumbnail Image Box with Star Badge Overlay
-            Box(modifier = Modifier.size(60.dp)) {
-                val firstImagePath = property.imagePath?.split("|||")?.firstOrNull()
-                if (!firstImagePath.isNullOrBlank() && File(firstImagePath).exists()) {
-                    AsyncImage(
-                        model = File(firstImagePath),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(60.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                    )
+    if (showDuplicateCheckDialog) {
+        com.example.ui.common.DuplicateCheckDialog(
+            initialText = duplicateCheckInitialText,
+            onDismiss = { viewModel.closeDuplicateCheckDialog() },
+            onOpenProperty = { id, isVerified ->
+                viewModel.closeDuplicateCheckDialog()
+                if (isVerified) {
+                    onNavigateToDetail(id)
                 } else {
-                    Box(
-                        modifier = Modifier
-                            .size(60.dp)
-                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Home,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    onNavigateToUnverifiedDetail(id)
                 }
-
-                // Small Amber Star on top-left of thumbnail if potential
-                if (property.needToViewToday) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(2.dp)
-                            .background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 3.dp, vertical = 2.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = "Tiềm năng",
-                            tint = androidx.compose.ui.graphics.Color(0xFFFFC107),
-                            modifier = Modifier.size(10.dp)
-                        )
-                    }
-                }
+            },
+            onAddProperty = { lat, lng ->
+                viewModel.closeDuplicateCheckDialog()
+                onAddPropertyAtCoord(lat, lng)
+            },
+            onAddUnverified = { lat, lng ->
+                viewModel.closeDuplicateCheckDialog()
+                onAddUnverifiedAtCoord(lat, lng)
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // Center Content (takes remaining width)
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Row 1: bắc sơn | Anh Nam
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = property.area,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    if (property.ownerName.isNotBlank()) {
-                        Text(
-                            text = property.ownerName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "Chưa có chủ nhà",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                        )
-                    }
-                }
-
-                // Row 2: 2.59 tỷ | 62.0 m²
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (property.price > 0.0) {
-                        Text(
-                            text = formattedPrice,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MonetizationOn,
-                                contentDescription = "Chưa có giá",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    if (property.areaSize != null && property.areaSize > 0.0) {
-                        Text(
-                            text = "${property.areaSize} m²",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Straighten,
-                            contentDescription = "Chưa có diện tích",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                        )
-                    }
-                }
-
-                // Row 3: 02/06/2026 | Đông [⚠️]
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = property.surveyDate.ifBlank { "" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val firstDirection = if (property.direction.isNotBlank()) {
-                            property.direction.split("|||").firstOrNull { it.isNotBlank() } ?: ""
-                        } else ""
-                        if (firstDirection.isNotBlank()) {
-                            Text(
-                                text = firstDirection,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Explore,
-                                contentDescription = "Chưa có hướng",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                            )
-                        }
-                        SyncStatusIcon(
-                            state = syncState,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
-        }
+        )
     }
 }
 
-private val combiningMarksPattern = java.util.regex.Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
-private val qRegex1 = Regex("^q\\s*(\\d+)")
-private val qRegex2 = Regex("^q\\.(\\d+)")
-private val qRegex3 = Regex("^q\\s+")
-private val pRegex1 = Regex("^p\\s*(\\d+)")
-private val pRegex2 = Regex("^p\\.(\\d+)")
-private val tpRegex = Regex("^tp\\s+")
-private val spaceRegex = Regex("\\s+")
 
-private fun String.normalizeForSearch(): String {
-    val temp = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
-    return combiningMarksPattern.matcher(temp).replaceAll("")
-        .replace('đ', 'd')
-        .replace('Đ', 'D')
-        .lowercase(java.util.Locale.getDefault())
-        .trim()
-}
 
-private fun matchesArea(area: String, normInput: String): Boolean {
-    if (normInput.isBlank()) return true
-    val normArea = area.normalizeForSearch()
-    
-    // 1. Direct contains (e.g. "quan 9" in "quan 9", "hiep binh" in "hiep binh chanh")
-    if (normArea.contains(normInput)) return true
-    
-    // 2. Standard abbreviation expansion (e.g. "q9" -> "quan 9", "q.9" -> "quan 9", "p12" -> "phuong 12")
-    val expandedInput = normInput
-        .replace(qRegex1, "quan $1")
-        .replace(qRegex2, "quan $1")
-        .replace(qRegex3, "quan ")
-        .replace(pRegex1, "phuong $1")
-        .replace(pRegex2, "phuong $1")
-        .replace(tpRegex, "thanh pho ")
-    if (normArea.contains(expandedInput)) return true
-    
-    // 3. First letters of each word (e.g. "hbc" for "Hiep Binh Chanh", "qtd" for "Quan Thu Duc")
-    val words = normArea.split(spaceRegex).filter { it.isNotEmpty() }
-    val initials = words.mapNotNull { it.firstOrNull() }.joinToString("")
-    if (initials.contains(normInput)) return true
-    
-    // 4. Checking if all words of input are found in area words in any order
-    val inputWords = normInput.split(spaceRegex).filter { it.isNotEmpty() }
-    if (inputWords.isNotEmpty() && inputWords.all { word -> normArea.contains(word) }) {
-        return true
-    }
-    
-    return false
-}
+

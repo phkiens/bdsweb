@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ZoomableImage(
     imagePath: String,
+    imageModel: Any? = null,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
     onScaleChanged: (Float) -> Unit = {}
@@ -114,7 +115,7 @@ fun ZoomableImage(
             contentAlignment = Alignment.Center
         ) {
             AsyncImage(
-                model = File(imagePath),
+                model = imageModel ?: File(imagePath),
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()

@@ -9,8 +9,10 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 
 sealed class LocationState {
     object Idle : LocationState()
@@ -41,10 +43,18 @@ object LocationHelper {
         trySend(LocationState.Loading)
         val cts = CancellationTokenSource()
         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+
+        val timeoutJob = launch {
+            delay(10_000L)
+            cts.cancel()
+            trySend(LocationState.Error("Chưa lấy được vị trí GPS. Bạn hãy thử di chuyển ra khu vực thoáng hơn."))
+            close()
+        }
         
         try {
             fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
                 .addOnSuccessListener { loc: Location? ->
+                    timeoutJob.cancel()
                     if (loc != null) {
                         trySend(LocationState.Success(loc.latitude, loc.longitude))
                     } else {
@@ -53,15 +63,20 @@ object LocationHelper {
                     close()
                 }
                 .addOnFailureListener { e ->
-                    trySend(LocationState.Error("Lỗi lấy GPS: ${e.localizedMessage}"))
-                    close()
+                    timeoutJob.cancel()
+                    if (!cts.token.isCancellationRequested) {
+                        trySend(LocationState.Error("Lỗi lấy GPS: ${e.localizedMessage}"))
+                        close()
+                    }
                 }
         } catch (e: SecurityException) {
+            timeoutJob.cancel()
             trySend(LocationState.Error("Lỗi bảo mật khi lấy GPS: ${e.localizedMessage}"))
             close()
         }
 
         awaitClose {
+            timeoutJob.cancel()
             cts.cancel()
         }
     }

@@ -13,9 +13,9 @@ import android.content.Intent
 import android.net.Uri
 import com.example.domain.model.Property
 import com.example.domain.model.UnverifiedProperty
-import com.example.domain.model.normalizeVietnamesePhone
-import com.example.ui.common.PhoneActionDialog
 import com.example.ui.common.AppTextField
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.views.overlay.MapEventsOverlay
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -68,8 +68,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -78,6 +76,12 @@ import com.example.ui.common.LocationHelper
 import com.example.ui.common.MapSurveyItem
 import com.example.ui.common.MapsIntentHelper
 import com.example.ui.common.RouteOptimizer
+import com.example.ui.common.RouteResult
+import com.example.ui.property.FilterBuckets
+import com.example.ui.common.normalizeForSearch
+import com.example.ui.common.matchesArea
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -94,6 +98,8 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import java.io.File
 import java.text.DecimalFormat
+import com.example.ui.property.CustomerMatchesBottomSheet
+import androidx.compose.runtime.DisposableEffect
 
 @Composable
 fun PlaceholderBox(modifier: Modifier = Modifier) {
@@ -111,11 +117,13 @@ fun MapSurveyScreen(
     onNavigateBack: () -> Unit,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToUnverifiedDetail: (String) -> Unit,
+    onNavigateToCustomerDetail: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     centerPropertyId: String? = null,
     viewModel: MapSurveyViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val markerFactory = remember { MapMarkerFactory() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val focusManager = LocalFocusManager.current
 
@@ -125,9 +133,45 @@ fun MapSurveyScreen(
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
     val selectedKeys by viewModel.selectedKeys.collectAsStateWithLifecycle()
     val isFetchingLocation by viewModel.isFetchingLocation.collectAsStateWithLifecycle()
+    val isBuildingRoute by viewModel.isBuildingRoute.collectAsStateWithLifecycle()
     val scanMode by viewModel.scanMode.collectAsStateWithLifecycle()
     val distinctAreas by viewModel.distinctAreas.collectAsStateWithLifecycle()
     val recentAreas by viewModel.recentAreas.collectAsStateWithLifecycle()
+    val matchResults by viewModel.matchResults.collectAsStateWithLifecycle()
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.resetMatchState()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.openRouteEvent.collect { result ->
+            when (result) {
+                is RouteResult.NoValidPoints -> {
+                    if (result.invalidPointsCount > 0) {
+                        Toast.makeText(context, "${result.invalidPointsCount} điểm lỗi tọa độ đã bị bỏ qua khỏi lộ trình.", Toast.LENGTH_LONG).show()
+                    }
+                    Toast.makeText(context, "Không có điểm tọa độ nào hợp lệ để tạo lộ trình.", Toast.LENGTH_SHORT).show()
+                }
+                is RouteResult.Success -> {
+                    val invalid = result.invalidPointsCount
+                    val dropped = result.droppedByLimitCount
+                    val max = result.maxPoints
+
+                    if (invalid > 0 && dropped > 0) {
+                        Toast.makeText(context, "$invalid điểm lỗi tọa độ bị bỏ qua, và $dropped điểm bị bỏ do vượt giới hạn Google Maps ($max điểm).", Toast.LENGTH_LONG).show()
+                    } else if (invalid > 0) {
+                        Toast.makeText(context, "$invalid điểm lỗi tọa độ đã bị bỏ qua khỏi lộ trình.", Toast.LENGTH_LONG).show()
+                    } else if (dropped > 0) {
+                        Toast.makeText(context, "Google Maps chỉ mở tối đa $max điểm, $dropped điểm sẽ bị bỏ khỏi lộ trình.", Toast.LENGTH_LONG).show()
+                    }
+
+                    MapsIntentHelper.openInGoogleMaps(context, result.mapsUrl)
+                }
+            }
+        }
+    }
 
     val distanceFormat = remember { DecimalFormat("0.00") }
     val scope = rememberCoroutineScope()
@@ -135,16 +179,22 @@ fun MapSurveyScreen(
 
     var showFilterBottomSheet by remember { mutableStateOf(false) }
     var areaInput by remember { mutableStateOf("") }
-    var previewCluster by remember { mutableStateOf<List<MapSurveyItem>?>(null) }
+    var previewState by remember { mutableStateOf<PreviewState?>(null) }
     var focusedItemKey by remember { mutableStateOf<String?>(null) }
-    val pagerState = rememberPagerState(pageCount = { previewCluster?.size ?: 0 })
+    val pagerState = rememberPagerState(pageCount = { previewState?.items?.size ?: 0 })
     val focusMarkerRef = remember { mutableStateOf<Marker?>(null) }
     var currentZoom by remember { mutableStateOf(15.0) }
     val zoomBucket by remember { derivedStateOf { Math.round(currentZoom * 2.0) / 2.0 } }
     var hasInitialFit by remember { mutableStateOf(false) }
+    var lastCenteredPropertyId by remember { mutableStateOf<String?>(null) }
+    var pendingMapPoint by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
-    // Init configuration parameters — chỉ chạy khi centerPropertyId thay đổi
+    // Init configuration parameters — chỉ chạy khi centerPropertyId thay đổi và giữ nguyên mode MAP_POINT khi xoay màn hình
     LaunchedEffect(centerPropertyId) {
+        if (viewModel.scanMode.value == "MAP_POINT") {
+            return@LaunchedEffect
+        }
+
         if (centerPropertyId != null) {
             viewModel.setCenterProperty(centerPropertyId)
         } else {
@@ -169,6 +219,7 @@ fun MapSurveyScreen(
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
         if (fineGranted || coarseGranted) {
+            viewModel.setScanMode("GPS")
             viewModel.fetchCurrentGPSLocation(context)
         } else {
             Toast.makeText(context, "Ứng dụng cần quyền định vị để quét các BĐS xung quanh bạn.", Toast.LENGTH_LONG).show()
@@ -180,6 +231,24 @@ fun MapSurveyScreen(
 
     // Dynamic map creation with offline cache settings
     val mapView = remember {
+        // Cấu hình osmdroid PHẢI chạy TRƯỚC khi dựng MapView: tile provider đọc
+        // đường dẫn cache ngay trong constructor của MapView. Đặt sau khi tạo
+        // (như code cũ) là quá muộn nên cache không rơi đúng chỗ mong muốn.
+        val osmConfig = Configuration.getInstance()
+        osmConfig.userAgentValue = context.packageName
+        // Dùng filesDir thay cacheDir: tile GIỮ được qua "Xoá cache" và khi hệ
+        // thống dọn bộ nhớ → không trắng map khi đi thực địa vùng sóng yếu.
+        // Phải set CẢ basePath: nếu chỉ set tileCache thì basePath vẫn mặc định
+        // trong cacheDir và tile vẫn bị xoá.
+        val osmBasePath = File(context.filesDir, "osmdroid")
+        osmBasePath.mkdirs()
+        osmConfig.osmdroidBasePath = osmBasePath
+        osmConfig.osmdroidTileCache = File(osmBasePath, "tiles")
+        // filesDir user không tự xoá bằng "Xoá cache" được → hạ cap ~150MB
+        // (mặc định osmdroid ~600MB) cho lịch sự, osmdroid tự trim.
+        osmConfig.tileFileSystemCacheMaxBytes = 150L * 1024 * 1024
+        osmConfig.tileFileSystemCacheTrimBytes = 120L * 1024 * 1024
+
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
@@ -187,16 +256,25 @@ fun MapSurveyScreen(
             // Hide standard zoom +/- buttons
             zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
 
-            // Bypass external storage permissions
-            val osmConfig = Configuration.getInstance()
-            osmConfig.userAgentValue = context.packageName
-            osmConfig.osmdroidTileCache = File(context.cacheDir, "osm_tiles")
-
             controller.setZoom(15.0)
             // Chặn zoom-out vô hạn: min theo phạm vi người dùng chọn; max sát mức tile MAPNIK
             minZoomLevel = userMinZoom
             maxZoomLevel = 19.0
         }
+    }
+
+    val mapEventsOverlay = remember(mapView) {
+        val receiver = object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean = false
+            override fun longPressHelper(p: GeoPoint?): Boolean {
+                if (p != null && MapsIntentHelper.isValidCoordinate(p.latitude, p.longitude)) {
+                    pendingMapPoint = Pair(p.latitude, p.longitude)
+                    return true
+                }
+                return false
+            }
+        }
+        MapEventsOverlay(receiver)
     }
 
     // Nếu người dùng đổi phạm vi ở Cài đặt rồi quay lại màn bản đồ, cập nhật lại giới hạn.
@@ -214,27 +292,23 @@ fun MapSurveyScreen(
         }
     }
 
-    LaunchedEffect(previewCluster, pagerState.settledPage) {
-        val pts = previewCluster ?: return@LaunchedEffect
-        if (pts.isEmpty() || pagerState.settledPage >= pts.size) return@LaunchedEffect
-        val current = pts[pagerState.settledPage]
+    fun animateToWithSheetOffset(lat: Double, lng: Double) {
+        // Dịch tâm xuống dưới ~25% chiều cao map để pin nổi lên trên bottom sheet.
+        // Tính offset theo span vĩ độ hiện tại của viewport.
+        val box = mapView.boundingBox
+        val latSpan = box.latNorth - box.latSouth
+        val offsetLat = latSpan * 0.25           // nâng pin lên ~1/4 màn
+        mapView.controller.animateTo(GeoPoint(lat - offsetLat, lng))
+    }
 
-        delay(250) // Chống nảy camera khi sheet đang mở rộng/thu nhỏ
-
-        // Cập nhật chỉ dấu đang xem sau khi delay để đồng bộ nhịp vẽ với camera
-        focusedItemKey = if (current.isUnverified) "unverified_${current.id}" else "official_${current.id}"
-
+    fun animateCameraTo(current: MapSurveyItem, pts: List<MapSurveyItem>) {
         // Trùng 100%? -> mọi cặp cùng toạ độ -> khỏi zoom
         val allSame = pts.all {
             it.latitude == current.latitude && it.longitude == current.longitude
         }
         if (allSame) {
-            val box = mapView.boundingBox
-            val isVisible = box.contains(current.latitude, current.longitude)
-            if (!isVisible) {
-                mapView.controller.animateTo(GeoPoint(current.latitude, current.longitude))
-            }
-            return@LaunchedEffect
+            animateToWithSheetOffset(current.latitude, current.longitude)
+            return
         }
 
         // Tính minDist từ current tới các điểm khác toạ độ trong cụm
@@ -243,23 +317,47 @@ fun MapSurveyScreen(
                 val dx = pt.latitude - current.latitude
                 val dy = pt.longitude - current.longitude
                 Math.sqrt(dx * dx + dy * dy)
-            }.minOrNull() ?: return@LaunchedEffect
+            }.minOrNull() ?: return
 
         // Tính zoom cần thiết để tách, cộng biên +0.8 và ép zoom tối thiểu thêm 1 nấc để dứt khoát tách
         val targetZoom = (13.0 + Math.log(0.005 / minDist) / Math.log(2.0)) + 0.8
         val needZoom = Math.max(targetZoom, mapView.zoomLevelDouble + 1.0)
             .coerceIn(mapView.minZoomLevel, mapView.maxZoomLevel)
 
-        val box = mapView.boundingBox
-        val isVisible = box.contains(current.latitude, current.longitude)
         val shouldZoom = needZoom > mapView.zoomLevelDouble + 0.1
 
-        if (shouldZoom || !isVisible) {
-            mapView.controller.animateTo(GeoPoint(current.latitude, current.longitude))
-        }
+        animateToWithSheetOffset(current.latitude, current.longitude)
         if (shouldZoom) {
             mapView.controller.zoomTo(needZoom)
             currentZoom = needZoom
+        }
+    }
+
+    LaunchedEffect(previewState) {
+        val state = previewState ?: return@LaunchedEffect
+        val pts = state.items
+        if (pts.isEmpty()) return@LaunchedEffect
+        val targetPage = state.initialPage.coerceIn(0, pts.size - 1)
+        pagerState.scrollToPage(targetPage)
+        val current = pts[targetPage]
+        focusedItemKey = current.toKey()
+        if (state.mode == PreviewMode.CLUSTER) {
+            animateCameraTo(current, pts)
+        } else {
+            animateToWithSheetOffset(current.latitude, current.longitude)
+        }
+    }
+
+    LaunchedEffect(pagerState.settledPage) {
+        val state = previewState ?: return@LaunchedEffect
+        val pts = state.items
+        if (pts.isEmpty() || pagerState.settledPage !in pts.indices) return@LaunchedEffect
+        val current = pts[pagerState.settledPage]
+        focusedItemKey = current.toKey()
+        if (state.mode == PreviewMode.CLUSTER) {
+            animateCameraTo(current, pts)
+        } else {
+            animateToWithSheetOffset(current.latitude, current.longitude)
         }
     }
 
@@ -297,18 +395,29 @@ fun MapSurveyScreen(
         }
     }
 
-    // Trigger map camera update when scanCenter is loaded
-    LaunchedEffect(scanCenter) {
-        if (hasInitialFit || filteredItems.isEmpty()) {
-            scanCenter?.let { center ->
-                mapView.controller.animateTo(GeoPoint(center.first, center.second))
-            }
+    // Trigger initial map camera zoom once when centerPropertyId & scanCenter are loaded in PROPERTY mode
+    LaunchedEffect(centerPropertyId, scanCenter, scanMode) {
+        if (scanMode == "PROPERTY" && centerPropertyId != null && scanCenter != null && lastCenteredPropertyId != centerPropertyId) {
+            val targetZoom = 16.0.coerceIn(userMinZoom, mapView.maxZoomLevel)
+            mapView.controller.setCenter(GeoPoint(scanCenter!!.first, scanCenter!!.second))
+            mapView.controller.setZoom(targetZoom)
+            currentZoom = targetZoom
+            lastCenteredPropertyId = centerPropertyId
+            hasInitialFit = true
         }
     }
 
-    // Auto-fit Bounding Box to wrap all filtered items safely
-    LaunchedEffect(filteredItems) {
-        if (filteredItems.isNotEmpty() && !hasInitialFit) {
+    // Camera centering for MAP_POINT mode (preserves current zoom level)
+    LaunchedEffect(scanMode, scanCenter) {
+        if (scanMode == "MAP_POINT" && scanCenter != null) {
+            mapView.controller.animateTo(GeoPoint(scanCenter!!.first, scanCenter!!.second))
+            hasInitialFit = true
+        }
+    }
+
+    // Auto-fit Bounding Box to wrap all filtered items safely (ONLY for initial GPS scanMode)
+    LaunchedEffect(filteredItems, scanMode) {
+        if (scanMode == "GPS" && filteredItems.isNotEmpty() && !hasInitialFit) {
             val minLat = filteredItems.minOf { it.latitude }
             val maxLat = filteredItems.maxOf { it.latitude }
             val minLng = filteredItems.minOf { it.longitude }
@@ -334,172 +443,7 @@ fun MapSurveyScreen(
         }
     }
 
-    // Dynamic Pin/Pill Drawing Cache
-    val pinDrawableCache = remember { mutableMapOf<String, BitmapDrawable>() }
 
-    fun getPinDrawable(context: Context, color: Int, text: String? = null): BitmapDrawable {
-        val cacheKey = "pin_${color}_${text ?: ""}"
-        return pinDrawableCache.getOrPut(cacheKey) {
-            val density = context.resources.displayMetrics.density
-            val size = (36 * density).toInt()
-            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            
-            val paint = Paint().apply {
-                isAntiAlias = true
-                style = Paint.Style.FILL
-                this.color = color
-            }
-            
-            // Pin body
-            canvas.drawCircle(size / 2f, size / 3f, size / 3f, paint)
-            
-            // Pin tail
-            val path = Path().apply {
-                moveTo(size / 2f - size / 6f, size / 3f + size / 6f)
-                lineTo(size / 2f, size.toFloat())
-                lineTo(size / 2f + size / 6f, size / 3f + size / 6f)
-                close()
-            }
-            canvas.drawPath(path, paint)
-            
-            // Inner badge
-            paint.color = android.graphics.Color.WHITE
-            canvas.drawCircle(size / 2f, size / 3f, size / 6f + (if (text != null) 2 * density else 0f), paint)
-            
-            if (text != null) {
-                paint.apply {
-                    this.color = android.graphics.Color.RED
-                    textSize = 11 * density
-                    textAlign = Paint.Align.CENTER
-                    typeface = Typeface.DEFAULT_BOLD
-                }
-                val textHeight = paint.descent() - paint.ascent()
-                val textOffset = textHeight / 2 - paint.descent()
-                canvas.drawText(text, size / 2f, size / 3f + textOffset, paint)
-            }
-            
-            BitmapDrawable(context.resources, bitmap)
-        }
-    }
-
-    // Focus indicator cache and drawing
-    val focusIndicatorCache = remember { mutableMapOf<String, BitmapDrawable>() }
-
-    fun getFocusIndicatorDrawable(context: Context): BitmapDrawable {
-        return focusIndicatorCache.getOrPut("focus") {
-            val density = context.resources.displayMetrics.density
-            val width = (36 * density).toInt()
-            val height = (54 * density).toInt()
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-
-            val paint = Paint().apply {
-                isAntiAlias = true
-                style = Paint.Style.FILL
-                color = android.graphics.Color.parseColor("#4CAF50")
-            }
-
-            val startY = 4 * density
-            val endY = 14 * density
-            val centerX = width / 2f
-
-            val path = Path().apply {
-                moveTo(centerX - 8 * density, startY)
-                lineTo(centerX + 8 * density, startY)
-                lineTo(centerX, endY)
-                close()
-            }
-            canvas.drawPath(path, paint)
-
-            val paintCircle = Paint().apply {
-                isAntiAlias = true
-                style = Paint.Style.FILL
-                color = android.graphics.Color.parseColor("#8BC34A")
-            }
-            canvas.drawCircle(centerX, startY, 4 * density, paintCircle)
-
-            BitmapDrawable(context.resources, bitmap)
-        }
-    }
-
-    // Dynamic Cluster Drawing Cache
-    val clusterDrawableCache = remember { mutableMapOf<String, BitmapDrawable>() }
-
-    fun getClusterDrawable(
-        context: Context,
-        officialCount: Int,
-        unverifiedCount: Int,
-        hasSelected: Boolean
-    ): BitmapDrawable {
-        val cacheKey = "cluster_${officialCount}_${unverifiedCount}_${hasSelected}"
-        return clusterDrawableCache.getOrPut(cacheKey) {
-            val density = context.resources.displayMetrics.density
-            val size = (36 * density).toInt()
-            val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            
-            val paint = Paint().apply {
-                isAntiAlias = true
-                style = Paint.Style.FILL
-            }
-            
-            val radius = size / 3.2f
-            val cx = size / 2f
-            val cy = size / 2f
-            
-            // 1. Draw Background circle / arcs
-            if (officialCount > 0 && unverifiedCount == 0) {
-                paint.color = android.graphics.Color.BLUE
-                canvas.drawCircle(cx, cy, radius, paint)
-            } else if (unverifiedCount > 0 && officialCount == 0) {
-                paint.color = android.graphics.Color.parseColor("#FFA500") // Orange
-                canvas.drawCircle(cx, cy, radius, paint)
-            } else {
-                // Mixed: draw two arcs (left and right)
-                val rect = android.graphics.RectF(cx - radius, cy - radius, cx + radius, cy + radius)
-                
-                // Left half - Blue
-                paint.color = android.graphics.Color.BLUE
-                canvas.drawArc(rect, 90f, 180f, true, paint)
-                
-                // Right half - Orange
-                paint.color = android.graphics.Color.parseColor("#FFA500")
-                canvas.drawArc(rect, 270f, 180f, true, paint)
-            }
-            
-            // 2. Draw Red border if it contains selected items
-            if (hasSelected) {
-                paint.apply {
-                    style = Paint.Style.STROKE
-                    this.color = android.graphics.Color.RED
-                    strokeWidth = 2.5f * density
-                }
-                canvas.drawCircle(cx, cy, radius, paint)
-            }
-            
-            // 3. Draw inner white badge
-            paint.apply {
-                style = Paint.Style.FILL
-                paint.color = android.graphics.Color.WHITE
-            }
-            val totalText = (officialCount + unverifiedCount).toString()
-            canvas.drawCircle(cx, cy, radius / 2f + 1.5f * density, paint)
-            
-            // 4. Draw number text
-            paint.apply {
-                this.color = if (hasSelected) android.graphics.Color.RED else android.graphics.Color.BLACK
-                textSize = 10 * density
-                textAlign = Paint.Align.CENTER
-                typeface = Typeface.DEFAULT_BOLD
-            }
-            val textHeight = paint.descent() - paint.ascent()
-            val textOffset = textHeight / 2 - paint.descent()
-            canvas.drawText(totalText, cx, cy + textOffset, paint)
-            
-            BitmapDrawable(context.resources, bitmap)
-        }
-    }
 
     // Debounced Clustering on Coroutine Dispatchers.Default
     var clusteredItems by remember { mutableStateOf<List<ClusterResult>>(emptyList()) }
@@ -542,20 +486,40 @@ fun MapSurveyScreen(
         clusteredItems = clustered
     }
 
-    // Synchronize Map Overlays with Selection State
-    LaunchedEffect(clusteredItems, selectedKeys, scanCenter, zoomBucket) {
+    // Synchronize Map Overlays with Selection State, Center Pin, and Pending Map Point
+    LaunchedEffect(
+        clusteredItems,
+        selectedKeys,
+        scanCenter,
+        pendingMapPoint,
+        zoomBucket,
+        scanMode,
+        radiusKm
+    ) {
         mapView.overlays.clear()
+        mapView.overlays.add(mapEventsOverlay)
         focusMarkerRef.value = null
         
         // Add Center Pin
         scanCenter?.let { center ->
             val centerMarker = Marker(mapView).apply {
                 position = GeoPoint(center.first, center.second)
-                icon = getPinDrawable(context, android.graphics.Color.DKGRAY)
-                title = "Vị trí tâm quét"
+                icon = markerFactory.getPin(context, android.graphics.Color.DKGRAY)
+                title = if (scanMode == "MAP_POINT") "Tâm tìm kiếm (điểm chọn)" else "Vị trí tâm quét"
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             }
             mapView.overlays.add(centerMarker)
+        }
+
+        // Add Pending Map Point temporary pin marker if long-pressed
+        pendingMapPoint?.let { point ->
+            val tempMarker = Marker(mapView).apply {
+                position = GeoPoint(point.first, point.second)
+                icon = markerFactory.getPin(context, android.graphics.Color.MAGENTA)
+                title = "Điểm đã chọn"
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            }
+            mapView.overlays.add(tempMarker)
         }
 
         // Render clustered markers
@@ -573,7 +537,7 @@ fun MapSurveyScreen(
                     }
                     
                     val textIdx = if (selectIdx != -1) (selectIdx + 1).toString() else null
-                    val markerIcon = getPinDrawable(context, markerColor, textIdx)
+                    val markerIcon = markerFactory.getPin(context, markerColor, textIdx)
 
                     val marker = Marker(mapView).apply {
                         position = GeoPoint(item.latitude, item.longitude)
@@ -582,7 +546,14 @@ fun MapSurveyScreen(
                         subDescription = item.description
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                         setOnMarkerClickListener { _, _ ->
-                            previewCluster = listOf(item)
+                            val isNearbyModeEnabled = radiusKm != null && scanCenter != null && (scanMode == "MAP_POINT" || (scanMode == "PROPERTY" && centerPropertyId != null))
+                            val excludedCenterPropertyId = centerPropertyId.takeIf { scanMode == "PROPERTY" }
+                            previewState = MapSurveyHelper.buildNearbyPreview(
+                                clickedItem = item,
+                                filteredItems = filteredItems,
+                                centerPropertyId = excludedCenterPropertyId,
+                                isNearbyModeEnabled = isNearbyModeEnabled
+                            )
                             true
                         }
                     }
@@ -598,11 +569,15 @@ fun MapSurveyScreen(
 
                     val marker = Marker(mapView).apply {
                         position = GeoPoint(clusterResult.latitude, clusterResult.longitude)
-                        icon = getClusterDrawable(context, officialCount, unverifiedCount, containsSelected)
+                        icon = markerFactory.getCluster(context, officialCount, unverifiedCount, containsSelected)
                         title = "${clusterResult.points.size} BĐS"
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         setOnMarkerClickListener { _, _ ->
-                            previewCluster = clusterResult.points
+                            previewState = PreviewState(
+                                mode = PreviewMode.CLUSTER,
+                                items = clusterResult.points,
+                                initialPage = 0
+                            )
                             true
                         }
                     }
@@ -614,23 +589,31 @@ fun MapSurveyScreen(
         mapView.invalidate()
     }
 
-    // Separate focus indicator overlays rendering to prevent clear/recreate jank
-    LaunchedEffect(focusedItemKey, clusteredItems) {
+    // Separate focus indicator overlays rendering to prevent clear/recreate jank (observes all clear keys)
+    LaunchedEffect(
+        focusedItemKey,
+        filteredItems,
+        clusteredItems,
+        pendingMapPoint,
+        selectedKeys,
+        scanCenter,
+        zoomBucket,
+        scanMode,
+        radiusKm
+    ) {
         focusMarkerRef.value?.let {
             mapView.overlays.remove(it)
             focusMarkerRef.value = null
         }
 
         if (focusedItemKey != null) {
-            val focusedItem = clusteredItems.filterIsInstance<ClusterResult.Single>()
-                .map { it.item }
-                .firstOrNull { pt ->
-                    val key = if (pt.isUnverified) "unverified_${pt.id}" else "official_${pt.id}"
-                    key == focusedItemKey
-                }
+            val focusedItem = filteredItems.firstOrNull { pt ->
+                val key = if (pt.isUnverified) "unverified_${pt.id}" else "official_${pt.id}"
+                key == focusedItemKey
+            }
             
             if (focusedItem != null) {
-                val markerIcon = getFocusIndicatorDrawable(context)
+                val markerIcon = markerFactory.getFocusIndicator(context)
                 val marker = Marker(mapView).apply {
                     position = GeoPoint(focusedItem.latitude, focusedItem.longitude)
                     icon = markerIcon
@@ -694,13 +677,13 @@ fun MapSurveyScreen(
             }
         }
 
-        // 3. Floating Buttons column (GPS stacked)
+        // 3. Floating Buttons column (GPS + ExtendedFAB "Đi xem" stacked)
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 68.dp), // Positioned right above the bottom panel (52dp header + 16dp)
+                .padding(end = 16.dp, bottom = 68.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.End
         ) {
             // GPS Location
             FloatingActionButton(
@@ -718,7 +701,9 @@ fun MapSurveyScreen(
                         )
                     }
                 },
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier
+                    .size(48.dp)
+                    .align(Alignment.End),
                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
             ) {
                 if (isFetchingLocation) {
@@ -727,39 +712,28 @@ fun MapSurveyScreen(
                     Icon(Icons.Default.MyLocation, contentDescription = "Vị trí hiện tại", tint = MaterialTheme.colorScheme.primary)
                 }
             }
-        }
 
-        // 4. Floating FAB Action "Đi xem (N)"
-        if (selectedKeys.isNotEmpty()) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    val selectedItems = viewModel.getSelectedItemsOrdered()
-                    if (selectedItems.isEmpty()) return@ExtendedFloatingActionButton
-
-                    val currentCenter = scanCenter
-                    val optResult = RouteOptimizer.optimize(currentCenter, selectedItems)
-
-                    if (optResult.invalidPointsCount > 0) {
-                        Toast.makeText(context, "${optResult.invalidPointsCount} điểm lỗi tọa độ đã bị bỏ qua khỏi lộ trình.", Toast.LENGTH_LONG).show()
-                    }
-
-                    if (optResult.optimizedPoints.isEmpty()) {
-                        Toast.makeText(context, "Không có điểm tọa độ nào hợp lệ để tạo lộ trình.", Toast.LENGTH_SHORT).show()
-                        return@ExtendedFloatingActionButton
-                    }
-
-                    val routeCoords = optResult.optimizedPoints.map { Pair(it.latitude, it.longitude) }
-                    val mapsUrl = MapsIntentHelper.buildDirectionsUrl(currentCenter, routeCoords, null)
-
-                    MapsIntentHelper.openInGoogleMaps(context, mapsUrl)
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 68.dp) // Aligned above the bottom panel
-                    .testTag("btn_export_survey_route"),
-                icon = { Icon(Icons.Default.Directions, contentDescription = null) },
-                text = { Text("Đi xem (${selectedKeys.size})", fontWeight = FontWeight.Bold) }
-            )
+            // Floating FAB Action "Đi xem (N)" (stacked below GPS when items selected)
+            if (selectedKeys.isNotEmpty()) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (!isBuildingRoute) {
+                            viewModel.buildDirectionsRoute(scanCenter)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .testTag("btn_export_survey_route"),
+                    icon = {
+                        if (isBuildingRoute) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Directions, contentDescription = null)
+                        }
+                    },
+                    text = { Text("Đi xem (${selectedKeys.size})", fontWeight = FontWeight.Bold) }
+                )
+            }
         }
 
         // 5. Custom Bottom Panel (Header always visible + animated list)
@@ -811,7 +785,13 @@ fun MapSurveyScreen(
                                 onClick = { radiusExpanded = true },
                                 label = {
                                     Text(
-                                        text = if (radiusKm != null) "${radiusKm!!.toInt()} km ▾" else "Tất cả ▾",
+                                        text = if (scanCenter == null && radiusKm != null) {
+                                            "Chưa định vị ▾"
+                                        } else if (radiusKm != null) {
+                                            "${radiusKm!!.toInt()} km ▾"
+                                        } else {
+                                            "Tất cả ▾"
+                                        },
                                         style = MaterialTheme.typography.labelMedium
                                     )
                                 },
@@ -969,122 +949,85 @@ fun MapSurveyScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(10.dp),
+                                        .height(IntrinsicSize.Min),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Checkbox / Order Index
+                                    // 1. Dải viền màu bên trái (khớp màu với marker pin trên bản đồ)
+                                    val stripeColor = if (item.isUnverified) Color(0xFFFFA500) else Color(android.graphics.Color.BLUE)
                                     Box(
                                         modifier = Modifier
-                                            .size(32.dp)
-                                            .clickable { viewModel.toggleSelection(item) },
-                                        contentAlignment = Alignment.Center
+                                            .width(4.dp)
+                                            .fillMaxHeight()
+                                            .background(stripeColor)
+                                    )
+
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        if (isSelected) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(22.dp)
-                                                    .clip(RoundedCornerShape(11.dp))
-                                                    .background(MaterialTheme.colorScheme.primary),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = (selectIndex + 1).toString(),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.onPrimary
+                                        // Checkbox / Order Index
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clickable { viewModel.toggleSelection(item) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(22.dp)
+                                                        .clip(RoundedCornerShape(11.dp))
+                                                        .background(MaterialTheme.colorScheme.primary),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = (selectIndex + 1).toString(),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                            } else {
+                                                Checkbox(
+                                                    checked = false,
+                                                    onCheckedChange = { viewModel.toggleSelection(item) }
                                                 )
                                             }
-                                        } else {
-                                            Checkbox(
-                                                checked = false,
-                                                onCheckedChange = { viewModel.toggleSelection(item) }
-                                            )
                                         }
-                                    }
 
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
 
-                                    // Details (2 Lines with inline PlaceholderBox for nulls)
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
+                                        // Details
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = item.title,
                                                 style = MaterialTheme.typography.bodyMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
+                                                modifier = Modifier.fillMaxWidth()
                                             )
-                                            // Type dot indicator
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        color = if (item.isUnverified) {
-                                                            Color(0xFFFFA500) // Orange for unverified
-                                                        } else {
-                                                            Color(0xFF1A73E8) // Blue for official
-                                                        }
-                                                    )
+
+                                            // 2. Dòng 2: Khoảng cách -> Giá -> Loại -> Diện tích (dùng joinToString)
+                                            val line2Parts = remember(item.distanceKm, item.price, item.propertyType, item.areaSize) {
+                                                listOfNotNull(
+                                                    item.distanceKm?.let { "${distanceFormat.format(it)} km" },
+                                                    item.price?.takeIf { it > 0.0 }?.let { if (it % 1.0 == 0.0) "${it.toInt()} tỷ" else "$it tỷ" },
+                                                    item.propertyType?.takeIf { it.isNotBlank() },
+                                                    item.areaSize?.takeIf { it > 0.0 }?.let { if (it % 1.0 == 0.0) "${it.toInt()} m²" else "$it m²" }
+                                                )
+                                            }
+                                            val line2Text = if (line2Parts.isNotEmpty()) line2Parts.joinToString(" · ") else "---"
+
+                                            Text(
+                                                text = line2Text,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
-                                        }
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            // Distance
-                                            if (item.distanceKm != null) {
-                                                Text(
-                                                    text = "${distanceFormat.format(item.distanceKm)} km",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            } else {
-                                                PlaceholderBox()
-                                            }
-                                            Text("·", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-
-                                            // Type
-                                            if (!item.propertyType.isNullOrBlank()) {
-                                                Text(
-                                                    text = item.propertyType,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            } else {
-                                                PlaceholderBox()
-                                            }
-                                            Text("·", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-
-                                            // Price
-                                            if (item.price != null && item.price > 0.0) {
-                                                val priceStr = if (item.price % 1.0 == 0.0) "${item.price.toInt()} tỷ" else "${item.price} tỷ"
-                                                Text(
-                                                    text = priceStr,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            } else {
-                                                PlaceholderBox()
-                                            }
-                                            Text("·", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-
-                                            // Area Size
-                                            if (item.areaSize != null && item.areaSize > 0.0) {
-                                                val sizeStr = if (item.areaSize % 1.0 == 0.0) "${item.areaSize.toInt()} m²" else "${item.areaSize} m²"
-                                                Text(
-                                                    text = sizeStr,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            } else {
-                                                PlaceholderBox()
-                                            }
                                         }
                                     }
                                 }
@@ -1256,21 +1199,12 @@ fun MapSurveyScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        val priceChips = listOf(
-                            "<1" to (null to 1.0),
-                            "1-2" to (1.0 to 2.0),
-                            "2-3" to (2.0 to 3.0),
-                            "3-4" to (3.0 to 4.0),
-                            "4-5" to (4.0 to 5.0),
-                            "5-7" to (5.0 to 7.0),
-                            "7-10" to (7.0 to 10.0),
-                            ">10" to (10.0 to null)
-                        )
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(priceChips) { (label, range) ->
+                            items(FilterBuckets.PRICE_BUCKETS) { bucket ->
+                                val label = bucket.label
                                 val isSelected = filterState.selectedPrices.contains(label)
                                 FilterChip(
                                     selected = isSelected,
@@ -1432,19 +1366,12 @@ fun MapSurveyScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        val sizeChips = listOf(
-                            "<30" to (null to 30.0),
-                            "30-50" to (30.0 to 50.0),
-                            "50-80" to (50.0 to 80.0),
-                            "80-100" to (80.0 to 100.0),
-                            "100-150" to (100.0 to 150.0),
-                            ">150" to (150.0 to null)
-                        )
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            items(sizeChips) { (label, range) ->
+                            items(FilterBuckets.SIZE_BUCKETS) { bucket ->
+                                val label = bucket.label
                                 val isSelected = filterState.selectedSizes.contains(label)
                                 FilterChip(
                                     selected = isSelected,
@@ -1555,14 +1482,40 @@ fun MapSurveyScreen(
         }
     }
 
+    // Confirm Map Point dialog (triggered by long press on map)
+    if (pendingMapPoint != null) {
+        val point = pendingMapPoint!!
+        AlertDialog(
+            onDismissRequest = { pendingMapPoint = null },
+            title = { Text("Tìm quanh điểm này?") },
+            text = { Text("Dùng vị trí đã chọn làm tâm tìm kiếm trong bán kính 5 km.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setMapPointCenter(point.first, point.second)
+                        pendingMapPoint = null
+                    }
+                ) {
+                    Text("Tìm quanh đây")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMapPoint = null }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
     // Property Info Bottom Sheet (triggered by pin click)
-    if (previewCluster != null) {
-        val items = previewCluster!!
+    if (previewState != null) {
+        val state = previewState!!
+        val items = state.items
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
 
         ModalBottomSheet(
             onDismissRequest = { 
-                previewCluster = null
+                previewState = null
                 focusedItemKey = null
             },
             sheetState = sheetState,
@@ -1591,556 +1544,38 @@ fun MapSurveyScreen(
                     state = pagerState,
                     modifier = Modifier.fillMaxWidth()
                 ) { page ->
-                    val item = items[page]
-                    MapItemPreviewContent(
-                        item = item,
-                        viewModel = viewModel,
-                        scope = scope,
-                        onNavigateToDetail = onNavigateToDetail,
-                        onNavigateToUnverifiedDetail = onNavigateToUnverifiedDetail,
-                        onDismiss = { 
-                            previewCluster = null
-                            focusedItemKey = null
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun MapItemPreviewContent(
-    item: MapSurveyItem,
-    viewModel: MapSurveyViewModel,
-    scope: CoroutineScope,
-    onNavigateToDetail: (String) -> Unit,
-    onNavigateToUnverifiedDetail: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    val distanceFormat = remember { java.text.DecimalFormat("0.00") }
-
-    // State to load the full entity from the DB asynchronously
-    var fullProperty by remember(item.id) { mutableStateOf<Property?>(null) }
-    var fullUnverifiedProperty by remember(item.id) { mutableStateOf<UnverifiedProperty?>(null) }
-    var showQuickEditDialog by remember { mutableStateOf(false) }
-    var showPhoneActionDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(item.id) {
-        if (item.isUnverified) {
-            fullUnverifiedProperty = viewModel.getFullUnverifiedProperty(item.id)
-        } else {
-            fullProperty = viewModel.getFullProperty(item.id)
-        }
-    }
-
-    // Get phone number & name
-    val ownerPhone = if (item.isUnverified) fullUnverifiedProperty?.ownerPhone else fullProperty?.ownerPhone
-    val ownerName = if (item.isUnverified) fullUnverifiedProperty?.ownerName else fullProperty?.ownerName
-    val formattedPhone = ownerPhone?.takeIf { it.isNotBlank() }
-
-    // Dialog Quick Edit fields
-    var quickPriceText by remember(fullProperty, fullUnverifiedProperty) {
-        val price = if (item.isUnverified) fullUnverifiedProperty?.price else fullProperty?.price
-        mutableStateOf(price?.toString() ?: "")
-    }
-    var quickStatus by remember(fullProperty, fullUnverifiedProperty) {
-        val status = if (item.isUnverified) (fullUnverifiedProperty?.status ?: "Chờ khảo sát") else (fullProperty?.status ?: "Đang bán")
-        mutableStateOf(status)
-    }
-    var quickNotes by remember(fullProperty, fullUnverifiedProperty) {
-        val notes = if (item.isUnverified) (fullUnverifiedProperty?.description ?: "") else (fullProperty?.diary ?: "")
-        mutableStateOf(notes)
-    }
-
-    // Action methods
-    val launchDirections = { lat: Double, lng: Double ->
-        val navUri = Uri.parse("google.navigation:q=$lat,$lng")
-        val mapIntent = Intent(Intent.ACTION_VIEW, navUri).apply {
-            setPackage("com.google.android.apps.maps")
-        }
-        try {
-            context.startActivity(mapIntent)
-        } catch (e: Exception) {
-            // Fallback to web maps
-            val webUri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng")
-            val webIntent = Intent(Intent.ACTION_VIEW, webUri)
-            try {
-                context.startActivity(webIntent)
-            } catch (ex: Exception) {
-                Toast.makeText(context, "Không thể mở ứng dụng bản đồ", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    val launchDial = { phone: String ->
-        val intent = Intent(Intent.ACTION_DIAL).apply {
-            data = Uri.parse("tel:${phone.normalizeVietnamesePhone()}")
-        }
-        try {
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(context, "Không thể mở trình quay số", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Image list preparation
-    val imagesList = remember(fullProperty, fullUnverifiedProperty) {
-        val list = mutableListOf<Any>()
-        if (item.isUnverified) {
-            val unverified = fullUnverifiedProperty
-            if (unverified != null) {
-                val paths = unverified.mediaPaths
-                val driveIds = unverified.driveMediaIds
-                val maxCount = maxOf(paths.size, driveIds.size)
-                for (i in 0 until maxCount) {
-                    val path = paths.getOrNull(i)
-                    val driveId = driveIds.getOrNull(i)
-                    val localFile = path?.let { File(it) }
-                    if (localFile != null && localFile.exists()) {
-                        list.add(localFile)
-                    } else if (!driveId.isNullOrBlank()) {
-                        list.add("https://drive.google.com/thumbnail?sz=w400&id=$driveId")
-                    }
-                }
-            }
-        } else {
-            val property = fullProperty
-            if (property != null) {
-                val paths = property.imagePath?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
-                val driveIdsJson = property.driveMediaIds
-                val jsonObject = if (!driveIdsJson.isNullOrBlank()) {
-                    try { org.json.JSONObject(driveIdsJson) } catch (e: Exception) { null }
-                } else null
-                
-                for (path in paths) {
-                    val localFile = File(path)
-                    if (localFile.exists()) {
-                        list.add(localFile)
-                    } else {
-                        val driveId = jsonObject?.optString(path)
-                        if (!driveId.isNullOrBlank()) {
-                            list.add("https://drive.google.com/thumbnail?sz=w400&id=$driveId")
-                        }
-                    }
-                }
-            }
-        }
-        list
-    }
-
-    // Quick edit dialog UI
-    if (showQuickEditDialog) {
-        val statuses = if (item.isUnverified) {
-            listOf("Chờ khảo sát", "Đã xác minh", "Đã xóa")
-        } else {
-            listOf("Đang bán", "Đã bán", "Tạm ngưng")
-        }
-        AlertDialog(
-            onDismissRequest = { showQuickEditDialog = false },
-            title = { Text("Sửa nhanh thông tin", style = MaterialTheme.typography.titleLarge) },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    AppTextField(
-                        value = quickPriceText,
-                        onValueChange = { quickPriceText = it },
-                        label = { Text("Giá (tỷ)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Column {
-                        Text(
-                            "Trạng thái",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            statuses.forEach { statusText ->
-                                val isSelectedStatus = quickStatus == statusText
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (isSelectedStatus) MaterialTheme.colorScheme.primaryContainer
-                                            else MaterialTheme.colorScheme.surfaceVariant
-                                        )
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelectedStatus) MaterialTheme.colorScheme.primary
-                                            else Color.Transparent,
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                        .clickable { quickStatus = statusText }
-                                        .padding(vertical = 8.dp)
-                                ) {
-                                    Text(
-                                        text = statusText,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = if (isSelectedStatus) MaterialTheme.colorScheme.onPrimaryContainer
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    AppTextField(
-                        value = quickNotes,
-                        onValueChange = { quickNotes = it },
-                        label = { Text(if (item.isUnverified) "Mô tả" else "Ghi chú nhật ký") },
-                        minLines = 3,
-                        maxLines = 5,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val priceVal = quickPriceText.toDoubleOrNull()
-                        viewModel.updatePropertyQuickly(
-                            id = item.id,
-                            isUnverified = item.isUnverified,
-                            newPrice = priceVal,
-                            newStatus = quickStatus,
-                            newNotes = quickNotes,
-                            onSuccess = {
-                                showQuickEditDialog = false
-                                scope.launch {
-                                    if (item.isUnverified) {
-                                        fullUnverifiedProperty = viewModel.getFullUnverifiedProperty(item.id)
-                                    } else {
-                                        fullProperty = viewModel.getFullProperty(item.id)
-                                    }
-                                }
+                    if (page in items.indices) {
+                        val item = items[page]
+                        MapItemPreviewContent(
+                            item = item,
+                            viewModel = viewModel,
+                            scope = scope,
+                            onNavigateToDetail = onNavigateToDetail,
+                            onNavigateToUnverifiedDetail = onNavigateToUnverifiedDetail,
+                            onDismiss = { 
+                                previewState = null
+                                focusedItemKey = null
                             }
                         )
                     }
-                ) {
-                    Text("Lưu")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showQuickEditDialog = false }) {
-                    Text("Hủy")
                 }
             }
-        )
+        }
     }
 
-    if (showPhoneActionDialog && !formattedPhone.isNullOrBlank()) {
-        PhoneActionDialog(
-            phoneNumber = formattedPhone,
-            onDismissRequest = { showPhoneActionDialog = false }
-        )
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // 1) HÀNG NÚT một tay (Chỉ đường, Gọi, Lộ trình) - Chỉ hiện Icon
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            val hasCoords = MapsIntentHelper.isValidCoordinate(item.latitude, item.longitude)
-            OutlinedButton(
-                onClick = { launchDirections(item.latitude, item.longitude) },
-                enabled = hasCoords,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Directions, contentDescription = "Chỉ đường", modifier = Modifier.size(20.dp))
-            }
-
-            val hasPhone = !formattedPhone.isNullOrBlank()
-            OutlinedButton(
-                onClick = { showPhoneActionDialog = true },
-                enabled = hasPhone,
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Call, contentDescription = "Liên hệ", modifier = Modifier.size(20.dp))
-            }
-
-            val isSelected = viewModel.isSelected(item)
-            Button(
-                onClick = { viewModel.toggleSelection(item) },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isSelected) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = if (isSelected) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            ) {
-                Icon(
-                    imageVector = if (isSelected) Icons.Default.RemoveCircleOutline else Icons.Default.AddCircleOutline,
-                    contentDescription = "Chọn lộ trình",
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        // 2) Thông tin bên dưới (Peek info)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            val firstImagePath = item.imagePath?.split("|||")?.firstOrNull()
-            val imageFile = if (!firstImagePath.isNullOrBlank()) File(firstImagePath) else null
-            
-            if (imageFile != null && imageFile.exists()) {
-                AsyncImage(
-                    model = imageFile,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(90.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                )
-            } else if (!item.isUnverified) {
-                Box(
-                    modifier = Modifier
-                        .size(90.dp)
-                        .background(Color(0xFFF0F0F0), RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.ImageNotSupported, contentDescription = null, tint = Color.Gray.copy(alpha = 0.5f))
-                }
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically, 
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Giá
-                    Text(
-                        text = PropertySheetHelper.formatPrice(item.price),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Text("·", color = Color.Gray.copy(alpha = 0.5f))
-
-                    // Diện tích
-                    if (item.areaSize != null && item.areaSize > 0.0) {
-                        val sizeStr = if (item.areaSize % 1.0 == 0.0) "${item.areaSize.toInt()} m²" else "${item.areaSize} m²"
-                        Text(
-                            text = sizeStr,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    } else {
-                        PlaceholderBox()
-                    }
-                }
-
-                Text(
-                    text = "${item.propertyType ?: "BĐS"} · ${item.distanceKm?.let { distanceFormat.format(it) + " km" } ?: "---"}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // TẦNG EXPAND (Luôn compose để giữ chiều cao ổn định, LazyRow tự động quản lý load ảnh)
-        val galleryImages = remember(imagesList) {
-            if (imagesList.size > 1) imagesList.drop(1) else emptyList()
-        }
-        
-        if (galleryImages.isNotEmpty()) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(galleryImages) { model ->
-                    Card(
-                        modifier = Modifier
-                            .size(width = 160.dp, height = 120.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        elevation = CardDefaults.cardElevation(2.dp)
-                    ) {
-                        AsyncImage(
-                            model = model,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Bảng thông tin sâu
-        val address = if (item.isUnverified) {
-            fullUnverifiedProperty?.address ?: fullUnverifiedProperty?.area?.toString() ?: "---"
-        } else {
-            fullProperty?.area ?: "---"
-        }
-
-        val rawTextForDimensions = if (item.isUnverified) {
-            fullUnverifiedProperty?.rawText ?: fullUnverifiedProperty?.description
-        } else {
-            fullProperty?.rawText ?: fullProperty?.description
-        }
-        val dimensions = PropertySheetHelper.extractDimensions(rawTextForDimensions)
-        val notes = if (item.isUnverified) {
-            fullUnverifiedProperty?.description?.takeIf { it.isNotBlank() } ?: "---"
-        } else {
-            fullProperty?.diary?.takeIf { it.isNotBlank() } ?: "---"
-        }
-
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            ),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp)
-            ) {
-                InfoRow(label = "Địa chỉ", value = address)
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                InfoRow(label = "Kích thước", value = dimensions)
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                InfoRow(label = "Chủ nhà", value = "${ownerName ?: "---"} (${formattedPhone ?: "---"})")
-                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                InfoRow(label = "Ghi chú", value = notes)
-            }
-        }
-
-        // 3. Hàng nút: Sửa nhanh | Chi tiết đầy đủ
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            OutlinedButton(
-                onClick = { showQuickEditDialog = true },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Sửa nhanh")
-            }
-
-            Button(
-                onClick = {
-                    if (item.isUnverified) {
-                        onNavigateToUnverifiedDetail(item.id)
-                    } else {
-                        onNavigateToDetail(item.id)
-                    }
-                    onDismiss()
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Chi tiết đầy đủ")
-            }
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-    }
+    CustomerMatchesBottomSheet(
+        matchResults = matchResults,
+        onDismiss = { viewModel.resetMatchState() },
+        onNavigateToCustomerDetail = onNavigateToCustomerDetail
+    )
 }
 
-private val combiningMarksPattern = java.util.regex.Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
-private val qRegex1 = Regex("^q\\s*(\\d+)")
-private val qRegex2 = Regex("^q\\.(\\d+)")
-private val qRegex3 = Regex("^q\\s+")
-private val pRegex1 = Regex("^p\\s*(\\d+)")
-private val pRegex2 = Regex("^p\\.(\\d+)")
-private val tpRegex = Regex("^tp\\s+")
-private val spaceRegex = Regex("\\s+")
 
-private fun String.normalizeForSearch(): String {
-    val temp = java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
-    return combiningMarksPattern.matcher(temp).replaceAll("")
-        .replace('đ', 'd')
-        .replace('Đ', 'D')
-        .lowercase(java.util.Locale.getDefault())
-        .trim()
-}
 
-private fun matchesArea(area: String, normInput: String): Boolean {
-    if (normInput.isBlank()) return true
-    val normArea = area.normalizeForSearch()
-    
-    if (normArea.contains(normInput)) return true
-    
-    val expandedInput = normInput
-        .replace(qRegex1, "quan $1")
-        .replace(qRegex2, "quan $1")
-        .replace(qRegex3, "quan ")
-        .replace(pRegex1, "phuong $1")
-        .replace(pRegex2, "phuong $1")
-        .replace(tpRegex, "thanh pho ")
-    if (normArea.contains(expandedInput)) return true
-    
-    val words = normArea.split(spaceRegex).filter { it.isNotEmpty() }
-    val initials = words.mapNotNull { it.firstOrNull() }.joinToString("")
-    if (initials.contains(normInput)) return true
-    
-    val inputWords = normInput.split(spaceRegex).filter { it.isNotEmpty() }
-    if (inputWords.isNotEmpty() && inputWords.all { word -> normArea.contains(word) }) {
-        return true
-    }
-    
-    return false
-}
 
 sealed interface ClusterResult {
     data class Single(val item: MapSurveyItem) : ClusterResult
     data class Cluster(val latitude: Double, val longitude: Double, val points: List<MapSurveyItem>) : ClusterResult
 }
 
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(2.5f),
-            textAlign = TextAlign.End
-        )
-    }
-}
+

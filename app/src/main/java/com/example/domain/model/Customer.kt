@@ -5,6 +5,8 @@ import java.util.Locale
 import java.util.UUID
 import java.util.regex.Pattern
 
+const val AUTO_NOTE_PREFIX = "Tự động tạo từ thông tin BĐS"
+
 data class Customer(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -51,3 +53,14 @@ fun String.normalizeVietnamesePhone(): String {
         }
     }
 }
+
+val Customer.isBuyerSide: Boolean
+    get() = customerRole == CustomerRole.BUYER || demandType == "Cần mua"
+
+val Customer.isAutoDemand: Boolean
+    get() = note.startsWith(AUTO_NOTE_PREFIX)
+
+fun Customer.isEligibleForMatching(): Boolean {
+    return !isDeleted && customerStatus == CustomerStatus.ACTIVE && isBuyerSide
+}
+

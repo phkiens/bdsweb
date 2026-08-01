@@ -61,7 +61,6 @@ class SyncAlarmReceiver : BroadcastReceiver() {
 
         // Start the sync process
         try {
-            Log.d("SYNC_UPLOAD_DEBUG", "Nguồn trigger: alarm, propertyId liên quan: ALL/Batch")
             AppLogger.log("AutoSync", "Bắt đầu tự động đồng bộ lên Google Drive lúc $syncTime...")
             val serviceIntent = Intent(appContext, SyncForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

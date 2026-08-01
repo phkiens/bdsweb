@@ -19,7 +19,7 @@ import com.example.data.local.dao.SyncLogDao
         CustomerPropertyLink::class,
         SyncLogEntity::class
     ],
-    version = 26,
+    version = 28,
     exportSchema = true
 )
 @androidx.room.TypeConverters(Converters::class)
@@ -578,11 +578,75 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_26_27 = object : androidx.room.migration.Migration(26, 27) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                val now = System.currentTimeMillis()
+                db.execSQL("""
+                    UPDATE customers
+                    SET role = 'BUYER',
+                        isSynced = 0,
+                        updatedAt = $now
+                    WHERE role = 'VIEWER'
+                      AND isDeleted = 0
+                """.trimIndent())
+            }
+        }
+
+        private val MIGRATION_27_28 = object : androidx.room.migration.Migration(27, 28) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                // SQLite trên minSdk 24 chưa có DROP COLUMN (cần 3.35+), phải tạo bảng mới rồi đổi tên.
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `properties_new` (
+                        `id` TEXT NOT NULL, `area` TEXT NOT NULL, `latitude` REAL, `longitude` REAL,
+                        `imagePath` TEXT, `driveMediaIds` TEXT, `driveFolderId` TEXT,
+                        `priceAtFolderCreation` REAL, `documentUrl` TEXT NOT NULL, `areaSize` REAL,
+                        `price` REAL NOT NULL, `description` TEXT NOT NULL, `status` TEXT NOT NULL,
+                        `surveyDate` TEXT NOT NULL, `direction` TEXT NOT NULL, `ownerName` TEXT NOT NULL,
+                        `ownerPhone` TEXT NOT NULL, `propertyType` TEXT NOT NULL,
+                        `needToViewToday` INTEGER NOT NULL, `isDraft` INTEGER NOT NULL,
+                        `isTextSynced` INTEGER NOT NULL, `rawText` TEXT NOT NULL, `diary` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL, `isDeleted` INTEGER NOT NULL,
+                        `propertyDetailJsonFileId` TEXT, `txtFileId` TEXT,
+                        `isMediaSynced` INTEGER NOT NULL, `title` TEXT, `mapLink` TEXT,
+                        `extractedBy` TEXT, `createdAt` INTEGER NOT NULL, `isVerified` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO `properties_new` (
+                        id, area, latitude, longitude, imagePath, driveMediaIds, driveFolderId,
+                        priceAtFolderCreation, documentUrl, areaSize, price, description, status,
+                        surveyDate, direction, ownerName, ownerPhone, propertyType, needToViewToday,
+                        isDraft, isTextSynced, rawText, diary, updatedAt, isDeleted,
+                        propertyDetailJsonFileId, txtFileId, isMediaSynced, title, mapLink,
+                        extractedBy, createdAt, isVerified
+                    )
+                    SELECT
+                        id, area, latitude, longitude, imagePath, driveMediaIds, driveFolderId,
+                        priceAtFolderCreation, documentUrl, areaSize, price, description, status,
+                        surveyDate, direction, ownerName, ownerPhone, propertyType, needToViewToday,
+                        isDraft, isTextSynced, rawText, diary, updatedAt, isDeleted,
+                        propertyDetailJsonFileId, txtFileId, isMediaSynced, title, mapLink,
+                        extractedBy, createdAt, isVerified
+                    FROM `properties`
+                """.trimIndent())
+                db.execSQL("DROP TABLE `properties`")
+                db.execSQL("ALTER TABLE `properties_new` RENAME TO `properties`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_properties_latitude` ON `properties` (`latitude`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_properties_longitude` ON `properties` (`longitude`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_properties_status` ON `properties` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_properties_propertyType` ON `properties` (`propertyType`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_properties_area` ON `properties` (`area`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_properties_price` ON `properties` (`price`)")
+            }
+        }
+
         internal val ALL_MIGRATIONS = arrayOf(
             MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
             MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
-            MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26
+            MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26,
+            MIGRATION_26_27, MIGRATION_27_28
         )
 
         @Volatile

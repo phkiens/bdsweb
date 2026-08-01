@@ -7,11 +7,13 @@ interface CustomerRepository {
     fun getAllActiveCustomersFlow(): Flow<List<Customer>>
     fun getDeletedCustomersFlow(): Flow<List<Customer>>
     suspend fun getCustomerById(id: String): Customer?
+    fun getCustomerByIdFlow(id: String): Flow<Customer?>
     suspend fun insertCustomer(customer: Customer, fromSync: Boolean = false)
     suspend fun insertCustomerWithLink(customer: Customer, propertyId: String, role: String = "VIEWER", viewDate: String? = null, viewNote: String? = null)
     suspend fun updateCustomer(customer: Customer, fromSync: Boolean = false)
     suspend fun softDeleteCustomer(id: String)
-    suspend fun softDeleteCustomerLocalOnly(id: String, timestamp: Long)
+    suspend fun softDeleteCustomerLocalOnly(id: String, timestamp: Long): Int
+    suspend fun markCustomerUnsynced(id: String): Int
     suspend fun restoreCustomer(id: String)
     suspend fun permanentlyDeleteCustomer(id: String)
     suspend fun deleteOldDeletedCustomers(thirtyDaysAgo: Long)
@@ -24,12 +26,14 @@ interface CustomerRepository {
     suspend fun getPropertiesForCustomer(customerId: String): List<com.example.domain.model.Property>
     suspend fun getLinksForCustomer(customerId: String): List<com.example.data.local.entity.CustomerPropertyLink>
     suspend fun getLinksForProperty(propertyId: String): List<com.example.data.local.entity.CustomerPropertyLink>
+    suspend fun getActiveOwnerLinksForProperty(propertyId: String): List<com.example.data.local.entity.CustomerPropertyLink>
     suspend fun getLinkByIds(customerId: String, propertyId: String): com.example.data.local.entity.CustomerPropertyLink?
     suspend fun getUnsyncedLinks(): List<com.example.data.local.entity.CustomerPropertyLink>
     suspend fun markLinkSyncedIfUnchanged(customerId: String, propertyId: String, pushedUpdatedAt: Long): Boolean
     suspend fun updateCustomerPropertyLinkSyncStatus(customerId: String, propertyId: String, isSynced: Boolean)
     suspend fun softDeleteCustomerPropertyLink(customerId: String, propertyId: String)
-    suspend fun softDeleteCustomerPropertyLinkLocalOnly(customerId: String, propertyId: String, timestamp: Long)
+    suspend fun softDeleteCustomerPropertyLinkLocalOnly(customerId: String, propertyId: String, timestamp: Long): Int
+    suspend fun markCustomerPropertyLinkUnsynced(customerId: String, propertyId: String): Int
     suspend fun getUnsyncedCustomers(): List<Customer>
     fun getOwnerPropertyCountsFlow(): Flow<Map<String, Int>>
     suspend fun searchOwnersByName(nameNormalized: String): List<Customer>

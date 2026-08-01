@@ -31,7 +31,7 @@ data class UnverifiedProperty(
     val isTextSynced: Boolean = false,
     val isMediaSynced: Boolean = false,
     val description: String = "",
-    val status: String = "Chờ khảo sát",
+    val status: String = PropertyStatus.PENDING_SURVEY.value,
     val surveyDate: String = "",
     val isDraft: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),

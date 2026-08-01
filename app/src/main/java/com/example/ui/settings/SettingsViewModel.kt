@@ -9,6 +9,7 @@ import com.example.domain.repository.CustomerRepository
 import com.example.domain.repository.PropertyRepository
 import com.example.domain.model.toUnverified
 import com.example.domain.model.toProperty
+import com.example.domain.model.PropertyStatus
 import com.example.ui.common.AppLogger
 import com.example.data.remote.supabase.SupabaseTestHelper
 import com.example.ui.common.SettingsManager
@@ -41,6 +42,9 @@ import com.example.ui.common.SyncScheduler
 import com.example.domain.usecase.sync.SyncMediaUseCase
 import com.example.domain.usecase.sync.SyncSingleCustomerUseCase
 import com.example.domain.usecase.sync.SyncTextUseCase
+import com.example.data.remote.drive.DriveAccountInfoProvider
+import com.example.data.remote.drive.DriveAuthorizationProvider
+import com.example.data.remote.drive.DriveAuthorizationResult
 import com.example.data.remote.drive.DriveHelper
 import com.example.domain.model.ApiConfig
 import com.example.domain.repository.ApiConfigRepository
@@ -63,12 +67,14 @@ class SettingsViewModel @Inject constructor(
     private val syncSingleCustomerUseCase: SyncSingleCustomerUseCase,
     private val syncTextUseCase: SyncTextUseCase,
     private val driveHelper: DriveHelper,
-    private val oAuthTokenManager: com.example.data.remote.drive.OAuthTokenManager,
+    private val driveAuthorizationProvider: DriveAuthorizationProvider,
+    private val driveAccountInfoProvider: DriveAccountInfoProvider,
     private val supabaseTestHelper: SupabaseTestHelper,
     private val apiConfigRepository: ApiConfigRepository,
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     val networkStateObserver: com.example.ui.common.NetworkStateObserver,
-    private val realtimeSyncManager: com.example.data.remote.supabase.RealtimeSyncManager
+    private val realtimeSyncManager: com.example.data.remote.supabase.RealtimeSyncManager,
+    private val findOrphanDriveFoldersUseCase: com.example.domain.usecase.media.FindOrphanDriveFoldersUseCase
 ) : ViewModel() {
 
     private val TAG = "SettingsViewModel"
@@ -88,9 +94,6 @@ class SettingsViewModel @Inject constructor(
 
     private val _promptTemplate = MutableStateFlow(settingsManager.promptTemplate)
     val promptTemplate = _promptTemplate.asStateFlow()
-
-    private val _driveToken = MutableStateFlow(settingsManager.driveToken)
-    val driveToken = _driveToken.asStateFlow()
 
     private val _googleEmail = MutableStateFlow(settingsManager.googleEmail)
     val googleEmail = _googleEmail.asStateFlow()
@@ -167,6 +170,15 @@ class SettingsViewModel @Inject constructor(
         settingsManager.mapMinZoomScope = scope.key
         _mapMinZoomScope.value = scope.key
         AppLogger.log("Map", "Đặt mức thu nhỏ tối đa bản đồ: ${scope.displayName} (minZoom=${scope.minZoom})")
+    }
+
+    private val _mapDefaultRadius = MutableStateFlow(settingsManager.mapDefaultRadius)
+    val mapDefaultRadius = _mapDefaultRadius.asStateFlow()
+
+    fun setMapDefaultRadius(radiusDefault: com.example.ui.common.MapRadiusDefault) {
+        settingsManager.mapDefaultRadius = radiusDefault.key
+        _mapDefaultRadius.value = radiusDefault.key
+        AppLogger.log("Map", "Đặt bán kính quét mặc định bản đồ: ${radiusDefault.displayName}")
     }
 
     fun toggleRememberLastFilter(enabled: Boolean) {
@@ -284,9 +296,8 @@ class SettingsViewModel @Inject constructor(
             }
             return
         }
-        val token = settingsManager.driveToken
         val email = settingsManager.googleEmail
-        if (token.isBlank() || email.isBlank()) {
+        if (email.isBlank() || !driveHelper.isAuthorized()) {
             viewModelScope.launch {
                 _toastMessage.emit("Lỗi: Bạn chưa đăng nhập Google!")
             }
@@ -366,35 +377,39 @@ class SettingsViewModel @Inject constructor(
         AppLogger.log(TAG, "Custom AI Prompt Template updated.")
     }
 
-    fun saveGoogleAccount(email: String, name: String) {
-        settingsManager.googleEmail = email
-        settingsManager.googleName = name
-        _googleEmail.value = email
-        _googleName.value = name
-        AppLogger.log(TAG, "Đã lưu tài khoản Google: $email ($name)")
+    suspend fun requestDriveAuthorization(): DriveAuthorizationResult {
+        return driveAuthorizationProvider.requestAuthorization()
     }
 
-    fun savePkceVerifier(v: String) {
-        settingsManager.pkceVerifier = v
+    fun completeDriveAuthorization(intent: Intent?): DriveAuthorizationResult {
+        return driveAuthorizationProvider.getAuthorizationResultFromIntent(intent)
     }
 
-    fun buildAuthUrl(challenge: String): String {
-        return oAuthTokenManager.buildAuthUrl(challenge)
-    }
+    suspend fun onDriveAuthorized(accessToken: String): Boolean {
+        val accountInfo = driveAccountInfoProvider.fetchAccountInfo(accessToken)
+        if (accountInfo != null && accountInfo.email.isNotBlank()) {
+            driveHelper.clearAuthorizationCache()
 
-    fun refreshDriveTokenState() {
-        _driveToken.value = settingsManager.driveToken
+            settingsManager.googleEmail = accountInfo.email
+            settingsManager.googleName = accountInfo.name
+            _googleEmail.value = accountInfo.email
+            _googleName.value = accountInfo.name
+
+            AppLogger.log(TAG, "Liên kết Google Drive thành công.")
+            return true
+        } else {
+            AppLogger.log(TAG, "Không thể lấy thông tin tài khoản Google.")
+            return false
+        }
     }
 
     fun signOutGoogle(onComplete: () -> Unit) {
+        driveHelper.clearAuthorizationCache()
         settingsManager.googleEmail = ""
         settingsManager.googleName = ""
-        settingsManager.driveToken = ""
         _googleEmail.value = ""
         _googleName.value = ""
-        _driveToken.value = ""
-        com.example.ui.common.LoginEventBus.reset()
-        AppLogger.log(TAG, "Logged out of Google account.")
+        AppLogger.log(TAG, "Đã đăng xuất tài khoản Google.")
         onComplete()
     }
 
@@ -721,7 +736,7 @@ class SettingsViewModel @Inject constructor(
                                 areaSize = obj.optSafeDouble("areaSize", 0.0),
                                 price = obj.optSafeDouble("price", 0.0),
                                 description = obj.optString("description", ""),
-                                status = obj.optString("status", "Đang bán"),
+                                status = obj.optString("status", PropertyStatus.FOR_SALE.value),
                                 surveyDate = obj.optString("surveyDate", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())),
                                 direction = obj.optString("direction", ""),
                                 ownerName = obj.optString("ownerName", ""),
@@ -804,7 +819,7 @@ class SettingsViewModel @Inject constructor(
                                 extractedBy = extractedBy,
                                 isTextSynced = obj.optBoolean("isTextSynced", false),
                                 isMediaSynced = obj.optBoolean("isMediaSynced", false),
-                                status = obj.optString("status", "Chờ khảo sát"),
+                                status = obj.optString("status", PropertyStatus.PENDING_SURVEY.value),
                                 isDraft = obj.optBoolean("isDraft", false),
                                 description = obj.optString("description", ""),
                                 surveyDate = obj.optString("surveyDate", ""),
@@ -840,7 +855,7 @@ class SettingsViewModel @Inject constructor(
                                 demandAreas = obj.optString("demandAreas", ""),
                                 demandDirections = obj.optString("demandDirections", ""),
                                 priceMin = obj.optSafeDouble("priceMin", 0.0),
-                                priceMax = obj.optSafeDouble("priceMax", 100.0),
+                                priceMax = obj.optSafeDouble("priceMax", 0.0),
                                 note = obj.optString("note", ""),
                                 role = obj.optString("role", "BUYER"),
                                 status = obj.optString("status", "ACTIVE"),
@@ -991,5 +1006,40 @@ class SettingsViewModel @Inject constructor(
     fun restoreDefaultRegex() {
         settingsManager.customExtractionRegex = ""
         AppLogger.log("Settings", "Đã khôi phục bộ regex bóc tách về mặc định.")
+    }
+
+    private val _isScanningOrphanDriveFolders = MutableStateFlow(false)
+    val isScanningOrphanDriveFolders: StateFlow<Boolean> = _isScanningOrphanDriveFolders.asStateFlow()
+
+    fun scanAndMarkOrphanDriveFolders(onResult: (String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Bổ sung 1: Kiểm tra an toàn trước khi chạy — nếu còn bản ghi chưa đồng bộ thì ngắt ngay
+            val unsynced = propertyRepository.getUnsyncedTextProperties()
+            if (unsynced.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    onResult("⚠️ Còn ${unsynced.size} bản ghi chưa đồng bộ lên máy chủ. Vui lòng nhấn 'Đồng bộ ngay' trước khi dọn dẹp folder!")
+                }
+                return@launch
+            }
+
+            _isScanningOrphanDriveFolders.value = true
+            try {
+                val result = findOrphanDriveFoldersUseCase()
+                val msg = if (result.error != null) {
+                    "Lỗi khi dọn thư mục rác: ${result.error}"
+                } else {
+                    "Đã đánh dấu ${result.renamed} folder rác (ZZZ_MOCOI_), giữ nguyên ${result.skipped} folder."
+                }
+                withContext(Dispatchers.Main) {
+                    onResult(msg)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onResult("Lỗi khi quét folder rác: ${e.message}")
+                }
+            } finally {
+                _isScanningOrphanDriveFolders.value = false
+            }
+        }
     }
 }

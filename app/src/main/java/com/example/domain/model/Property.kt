@@ -18,7 +18,7 @@ data class Property(
     val areaSize: Double?,
     val price: Double, // tỷ VNĐ
     val description: String,
-    val status: String = "Đang bán", // "Đang bán", "Đã bán"
+    val status: String = PropertyStatus.FOR_SALE.value, // "Đang bán", "Đã bán", "Chờ khảo sát"
     val surveyDate: String = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()),
     val direction: String = "",
     val ownerName: String = "",
@@ -36,7 +36,6 @@ data class Property(
     val isMediaSynced: Boolean = false,
     val linkedCustomerId: String? = null,
     val title: String? = null,
-    val address: String? = null,
     val mapLink: String? = null,
     val extractedBy: ExtractionType? = null,
     val createdAt: Long = System.currentTimeMillis(),
@@ -79,7 +78,6 @@ fun Property.toJsonDetail(overrideTextSynced: Boolean? = null): JSONObject {
         put("isDeleted", isDeleted)
         put("linkedCustomerId", linkedCustomerId ?: JSONObject.NULL)
         put("title", title ?: JSONObject.NULL)
-        put("address", address ?: JSONObject.NULL)
         put("mapLink", mapLink ?: JSONObject.NULL)
         put("extractedBy", extractedBy?.name ?: JSONObject.NULL)
         put("createdAt", createdAt)
@@ -88,7 +86,7 @@ fun Property.toJsonDetail(overrideTextSynced: Boolean? = null): JSONObject {
 }
 
 fun Property.getFolderName(): String {
-    val displayArea = if (isVerified) area else (address ?: "Chua_ro")
+    val displayArea = area
     val sanitizedArea = displayArea.replace(Regex("[/\\\\\\n\\r]"), "").trim().ifBlank { "Chua_ro" }
     val sanitizedOwner = ownerName.replace(Regex("[/\\\\\\n\\r]"), "").trim()
     val shortId = id.takeLast(4)
@@ -142,7 +140,7 @@ fun Property.toUnverified(): UnverifiedProperty {
         id = id,
         rawText = rawText,
         title = title,
-        address = address ?: area,
+        address = area,
         area = areaSize,
         price = price,
         direction = direction,
@@ -225,7 +223,6 @@ fun UnverifiedProperty.toProperty(): Property {
         txtFileId = null,
         isMediaSynced = finalIsMediaSynced,
         title = title,
-        address = address,
         mapLink = mapLink,
         extractedBy = extEnum,
         createdAt = createdAt,
@@ -233,3 +230,33 @@ fun UnverifiedProperty.toProperty(): Property {
     )
 }
 
+fun Property.toFullPost(formattedPrice: String, customBody: String? = null): String {
+    val builder = StringBuilder()
+    builder.append("📢 BĐS ĐẸP ĐANG BÁN:\n")
+    builder.append("📍 Khu vực: $area\n")
+    builder.append("💰 Giá: $formattedPrice\n")
+    if (areaSize != null && areaSize > 0) {
+        builder.append("📐 Diện tích: $areaSize m²\n")
+    }
+    if (propertyType.isNotBlank()) {
+        builder.append("🏠 Loại hình: $propertyType\n")
+    }
+    if (direction.isNotBlank()) {
+        val firstDir = direction.split("|||").firstOrNull { it.isNotBlank() } ?: direction
+        builder.append("🧭 Hướng: $firstDir\n")
+    }
+    val body = customBody ?: description.ifBlank { rawText }
+    if (body.isNotBlank()) {
+        builder.append("📝 Mô tả: $body\n")
+    }
+    if (latitude != null && latitude != 0.0 && longitude != null && longitude != 0.0) {
+        val mapUrl = "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude"
+        builder.append("📌 Định vị: $mapUrl\n")
+    }
+    if (ownerName.isNotBlank() || ownerPhone.isNotBlank()) {
+        val nameStr = ownerName.ifBlank { "Chủ nhà" }
+        val phoneStr = ownerPhone.ifBlank { "Chưa có SĐT" }
+        builder.append("📞 Liên hệ: $nameStr - $phoneStr\n")
+    }
+    return builder.toString().trimEnd()
+}

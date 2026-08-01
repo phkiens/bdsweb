@@ -20,6 +20,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getCustomerById(id: String): CustomerEntity?
 
+    @Query("SELECT * FROM customers WHERE id = :id")
+    fun getCustomerByIdFlow(id: String): Flow<CustomerEntity?>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCustomer(customer: CustomerEntity)
 
@@ -29,9 +32,12 @@ interface CustomerDao {
     @Query("UPDATE customers SET isDeleted = 1, isSynced = 0, updatedAt = :timestamp WHERE id = :id")
     suspend fun softDeleteCustomer(id: String, timestamp: Long)
 
-    // Xóa mềm do nhận từ remote (pull/realtime): đánh dấu ĐÃ synced để không push echo ngược lại
-    @Query("UPDATE customers SET isDeleted = 1, isSynced = 1, updatedAt = :timestamp WHERE id = :id")
-    suspend fun softDeleteCustomerFromRemote(id: String, timestamp: Long)
+    // Xóa mềm do nhận từ remote (pull/realtime): đánh dấu ĐÃ synced để không push echo ngược lại (chỉ áp nếu local không mới hơn)
+    @Query("UPDATE customers SET isDeleted = 1, isSynced = 1, updatedAt = :timestamp WHERE id = :id AND updatedAt <= :timestamp")
+    suspend fun softDeleteCustomerFromRemote(id: String, timestamp: Long): Int
+
+    @Query("UPDATE customers SET isSynced = 0 WHERE id = :id")
+    suspend fun markCustomerUnsynced(id: String): Int
 
     @Query("UPDATE customers SET isDeleted = 0, updatedAt = :timestamp WHERE id = :id")
     suspend fun restoreCustomer(id: String, timestamp: Long)
@@ -39,7 +45,7 @@ interface CustomerDao {
     @Query("DELETE FROM customers WHERE id = :id")
     suspend fun permanentlyDeleteCustomer(id: String)
 
-    @Query("DELETE FROM customers WHERE isDeleted = 1 AND updatedAt < :thirtyDaysAgo")
+    @Query("DELETE FROM customers WHERE isDeleted = 1 AND isSynced = 1 AND updatedAt < :thirtyDaysAgo")
     suspend fun deleteOldDeletedCustomers(thirtyDaysAgo: Long)
 
     @Query("SELECT * FROM customers")
@@ -94,6 +100,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customer_property_links WHERE propertyId = :propertyId AND isDeleted = 0")
     suspend fun getLinksForProperty(propertyId: String): List<com.example.data.local.entity.CustomerPropertyLink>
 
+    @Query("SELECT * FROM customer_property_links WHERE propertyId = :propertyId AND role = 'OWNER' AND isDeleted = 0")
+    suspend fun getActiveOwnerLinksForProperty(propertyId: String): List<com.example.data.local.entity.CustomerPropertyLink>
+
     @Query("SELECT * FROM customer_property_links WHERE customerId = :customerId AND propertyId = :propertyId")
     suspend fun getLinkByIds(customerId: String, propertyId: String): com.example.data.local.entity.CustomerPropertyLink?
 
@@ -109,11 +118,14 @@ interface CustomerDao {
     @Query("UPDATE customer_property_links SET isDeleted = 1, isSynced = 0, updatedAt = :timestamp WHERE customerId = :customerId AND propertyId = :propertyId")
     suspend fun softDeleteCustomerPropertyLink(customerId: String, propertyId: String, timestamp: Long)
 
-    // Xóa mềm do nhận từ remote (pull/realtime): đánh dấu ĐÃ synced để không push echo ngược lại
-    @Query("UPDATE customer_property_links SET isDeleted = 1, isSynced = 1, updatedAt = :timestamp WHERE customerId = :customerId AND propertyId = :propertyId")
-    suspend fun softDeleteCustomerPropertyLinkFromRemote(customerId: String, propertyId: String, timestamp: Long)
+    // Xóa mềm do nhận từ remote (pull/realtime): đánh dấu ĐÃ synced để không push echo ngược lại (chỉ áp nếu local không mới hơn)
+    @Query("UPDATE customer_property_links SET isDeleted = 1, isSynced = 1, updatedAt = :timestamp WHERE customerId = :customerId AND propertyId = :propertyId AND updatedAt <= :timestamp")
+    suspend fun softDeleteCustomerPropertyLinkFromRemote(customerId: String, propertyId: String, timestamp: Long): Int
 
-    @Query("SELECT * FROM customers WHERE isSynced = 0 AND isDeleted = 0")
+    @Query("UPDATE customer_property_links SET isSynced = 0 WHERE customerId = :customerId AND propertyId = :propertyId")
+    suspend fun markCustomerPropertyLinkUnsynced(customerId: String, propertyId: String): Int
+
+    @Query("SELECT * FROM customers WHERE isSynced = 0")
     suspend fun getUnsyncedCustomers(): List<CustomerEntity>
 
     @Query("SELECT customerId, COUNT(*) AS cnt FROM customer_property_links WHERE role = 'OWNER' AND isDeleted = 0 GROUP BY customerId")

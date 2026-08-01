@@ -48,11 +48,14 @@ class CustomerRestoreFromSupabaseWorker(
                 val existing = customerRepository.getCustomerById(supabaseCust.id)
                 val customerDomain = supabaseCust.toDomain() // toDomain set isSynced = true
                 if (existing == null) {
-                    customerRepository.insertCustomer(customerDomain)
+                    customerRepository.insertCustomer(customerDomain.copy(avatarPath = null), fromSync = true)
                     AppLogger.log(TAG, "Thêm mới customer từ Supabase: ${supabaseCust.name} (ID: ${supabaseCust.id})")
                 } else {
                     if (supabaseCust.updatedAt > existing.updatedAt) {
-                        customerRepository.updateCustomer(customerDomain)
+                        customerRepository.updateCustomer(
+                            customerDomain.copy(avatarPath = existing.avatarPath),
+                            fromSync = true
+                        )
                         AppLogger.log(TAG, "Cập nhật customer từ Supabase: ${supabaseCust.name} (ID: ${supabaseCust.id}) do Supabase mới hơn")
                     } else {
                         Log.d(TAG, "Bỏ qua customer ${supabaseCust.id} do Room mới hơn hoặc bằng.")

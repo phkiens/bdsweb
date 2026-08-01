@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.ui.common.SettingsManager
 import com.example.ui.common.PropertyActionKey
+import com.example.ui.common.ActionMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,6 +26,8 @@ fun IconSortingScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectedMode by rememberSaveable { mutableStateOf(ActionMode.VERIFIED) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -60,16 +64,50 @@ fun IconSortingScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "Tùy chỉnh các icon chức năng hiển thị trực tiếp trên thanh tác vụ chính (Ngoài) hoặc ẩn trong menu tùy chọn (Trong) tại trang chi tiết Bất động sản.",
+                text = "Bật để hiện trực tiếp trên thanh tác vụ, tắt để ẩn vào menu. Cấu hình riêng cho SP bán và SP chờ.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                FilterChip(
+                    selected = selectedMode == ActionMode.VERIFIED,
+                    onClick = { selectedMode = ActionMode.VERIFIED },
+                    label = { Text("SP bán") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChip(
+                    selected = selectedMode == ActionMode.UNVERIFIED,
+                    onClick = { selectedMode = ActionMode.UNVERIFIED },
+                    label = { Text("SP chờ") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
 
-            PropertyActionKey.values().forEach { actionKey ->
-                var isOuter by remember(actionKey) {
-                    mutableStateOf(settingsManager.getActionPosition(actionKey.name, actionKey.defaultPosition) == "OUTER")
+            val filteredActions = remember(selectedMode) {
+                PropertyActionKey.entries.filter { actionKey ->
+                    if (selectedMode == ActionMode.VERIFIED) {
+                        actionKey != PropertyActionKey.VERIFY
+                    } else {
+                        true
+                    }
+                }
+            }
+
+            filteredActions.forEach { actionKey ->
+                val defaultPos = if (selectedMode == ActionMode.VERIFIED) {
+                    actionKey.defaultPosition
+                } else {
+                    actionKey.defaultPositionUnverified
+                }
+
+                var isOuter by remember(actionKey, selectedMode) {
+                    mutableStateOf(settingsManager.getActionPosition(actionKey.name, defaultPos, selectedMode) == "OUTER")
                 }
 
                 Card(
@@ -113,9 +151,15 @@ fun IconSortingScreen(
                                 checked = isOuter,
                                 onCheckedChange = { checked ->
                                     isOuter = checked
-                                    settingsManager.setActionPosition(actionKey.name, if (checked) "OUTER" else "INNER")
+                                    settingsManager.setActionPosition(actionKey.name, if (checked) "OUTER" else "INNER", selectedMode)
                                 },
-                                modifier = Modifier.testTag("switch_action_${actionKey.name.lowercase()}")
+                                modifier = Modifier.testTag(
+                                    if (selectedMode == ActionMode.VERIFIED) {
+                                        "switch_action_${actionKey.name.lowercase()}"
+                                    } else {
+                                        "switch_action_unv_${actionKey.name.lowercase()}"
+                                    }
+                                )
                             )
                         }
                     }

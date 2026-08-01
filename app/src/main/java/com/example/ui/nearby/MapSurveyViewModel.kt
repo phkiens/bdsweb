@@ -16,10 +16,20 @@ import com.example.ui.common.LocationState
 import com.example.ui.common.MapSurveyItem
 import com.example.ui.common.MapsIntentHelper
 import com.example.ui.common.RouteOptimizer
+import com.example.ui.common.RouteResult
+import com.example.domain.repository.CustomerRepository
+import com.example.domain.usecase.match.MatchEngineUseCase
+import com.example.domain.model.isEligibleForMatching
+import com.example.ui.property.CustomerMatchUiState
+import com.example.ui.property.FilterBuckets
 import com.example.ui.property.FilterState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -28,6 +38,8 @@ import javax.inject.Inject
 @HiltViewModel
 class MapSurveyViewModel @Inject constructor(
     private val propertyRepository: PropertyRepository,
+    private val customerRepository: CustomerRepository,
+    private val matchEngineUseCase: MatchEngineUseCase,
     private val savedStateHandle: androidx.lifecycle.SavedStateHandle,
     private val settingsManager: com.example.ui.common.SettingsManager
 ) : ViewModel() {
@@ -46,7 +58,10 @@ class MapSurveyViewModel @Inject constructor(
     private val _centerPropertyId = MutableStateFlow<String?>(null)
     val centerPropertyId = _centerPropertyId.asStateFlow()
 
-    private val _radiusKm = MutableStateFlow<Double?>(5.0) // Default 5km radius
+    private val _mapPointCenter = MutableStateFlow<Pair<Double, Double>?>(null)
+    val mapPointCenter = _mapPointCenter.asStateFlow()
+
+    private val _radiusKm = MutableStateFlow<Double?>(settingsManager.getMapDefaultRadius())
     val radiusKm = _radiusKm.asStateFlow()
 
     private val _filterState = MutableStateFlow(FilterState())
@@ -83,6 +98,12 @@ class MapSurveyViewModel @Inject constructor(
     private val _moveCameraEvent = MutableSharedFlow<Pair<Double, Double>>(extraBufferCapacity = 1)
     val moveCameraEvent = _moveCameraEvent.asSharedFlow()
 
+    private val _isBuildingRoute = MutableStateFlow(false)
+    val isBuildingRoute = _isBuildingRoute.asStateFlow()
+
+    private val _openRouteEvent = MutableSharedFlow<RouteResult>(extraBufferCapacity = 1)
+    val openRouteEvent = _openRouteEvent.asSharedFlow()
+
     init {
         val centerId = savedStateHandle.get<String>("centerPropertyId")
         if (centerId != null) {
@@ -97,60 +118,52 @@ class MapSurveyViewModel @Inject constructor(
         _recentAreas.value = settingsManager.getRecentAreas()
     }
 
+    private val _matchResults = MutableStateFlow<CustomerMatchUiState>(CustomerMatchUiState.Idle)
+    val matchResults: StateFlow<CustomerMatchUiState> = _matchResults.asStateFlow()
+
+    fun onScanMatchingCustomers(property: Property) {
+        viewModelScope.launch {
+            _matchResults.value = CustomerMatchUiState.Loading
+            try {
+                val allCustomers = customerRepository.getAllCustomers()
+                val candidateCustomers = allCustomers.filter {
+                    it.isEligibleForMatching() && (property.linkedCustomerId == null || it.id != property.linkedCustomerId)
+                }
+                val results = matchEngineUseCase.findMatchingCustomers(property, candidateCustomers)
+                _matchResults.value = if (results.isEmpty()) {
+                    CustomerMatchUiState.Empty("Không tìm thấy khách hàng phù hợp")
+                } else {
+                    CustomerMatchUiState.Success(results)
+                }
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "Error scanning matching customers: ${e.localizedMessage}", e)
+                _matchResults.value = CustomerMatchUiState.Empty("Có lỗi xảy ra khi quét tìm khách hàng")
+            }
+        }
+    }
+
+    fun resetMatchState() {
+        _matchResults.value = CustomerMatchUiState.Idle
+    }
+
     // 1. Filter and Map official properties to MapSurveyItem
     fun matchesOfficialFilter(p: Property, f: FilterState): Boolean {
         if (f.propertyTypes.isNotEmpty() && p.propertyType !in f.propertyTypes) return false
         if (f.statuses.isNotEmpty() && p.propertyStatus !in f.statuses) return false
         
-        var resolvedMin = f.priceMin
-        var resolvedMax = f.priceMax
-        if (f.selectedPrices.isNotEmpty() && (resolvedMin == null && resolvedMax == null)) {
-            var absoluteMin: Double? = null
-            var absoluteMax: Double? = null
-            f.selectedPrices.forEach { label ->
-                val (min, max) = when (label) {
-                    "<1" -> null to 1.0
-                    "1-2" -> 1.0 to 2.0
-                    "2-3" -> 2.0 to 3.0
-                    "3-4" -> 3.0 to 4.0
-                    "4-5" -> 4.0 to 5.0
-                    "5-7" -> 5.0 to 7.0
-                    "7-10" -> 7.0 to 10.0
-                    ">10" -> 10.0 to null
-                    else -> null to null
-                }
-                if (min != null) absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                if (max != null) absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-            }
-            resolvedMin = absoluteMin
-            resolvedMax = absoluteMax
+        if (f.priceMin != null || f.priceMax != null) {
+            if (f.priceMin != null && p.price < f.priceMin) return false
+            if (f.priceMax != null && p.price > f.priceMax) return false
+        } else if (f.selectedPrices.isNotEmpty()) {
+            if (!FilterBuckets.matchesAnyBucket(p.price, f.selectedPrices, FilterBuckets.PRICE_BUCKETS)) return false
         }
-        if (resolvedMin != null && p.price < resolvedMin) return false
-        if (resolvedMax != null && p.price > resolvedMax) return false
 
-        var resolvedSizeMin = f.sizeMin
-        var resolvedSizeMax = f.sizeMax
-        if (f.selectedSizes.isNotEmpty() && (resolvedSizeMin == null && resolvedSizeMax == null)) {
-            var absoluteMin: Double? = null
-            var absoluteMax: Double? = null
-            f.selectedSizes.forEach { label ->
-                val (min, max) = when (label) {
-                    "<30" -> null to 30.0
-                    "30-50" -> 30.0 to 50.0
-                    "50-80" -> 50.0 to 80.0
-                    "80-100" -> 80.0 to 100.0
-                    "100-150" -> 100.0 to 150.0
-                    ">150" -> 150.0 to null
-                    else -> null to null
-                }
-                if (min != null) absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                if (max != null) absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-            }
-            resolvedSizeMin = absoluteMin
-            resolvedSizeMax = absoluteMax
+        if (f.sizeMin != null || f.sizeMax != null) {
+            if (f.sizeMin != null && p.areaSize != null && p.areaSize < f.sizeMin) return false
+            if (f.sizeMax != null && p.areaSize != null && p.areaSize > f.sizeMax) return false
+        } else if (f.selectedSizes.isNotEmpty()) {
+            if (!FilterBuckets.matchesAnyBucket(p.areaSize, f.selectedSizes, FilterBuckets.SIZE_BUCKETS)) return false
         }
-        if (resolvedSizeMin != null && p.areaSize != null && p.areaSize < resolvedSizeMin) return false
-        if (resolvedSizeMax != null && p.areaSize != null && p.areaSize > resolvedSizeMax) return false
 
         if (f.areas.isNotEmpty() && p.area !in f.areas) return false
         if (f.directions.isNotEmpty() && p.direction !in f.directions) return false
@@ -170,58 +183,18 @@ class MapSurveyViewModel @Inject constructor(
         
         if (f.statuses.isNotEmpty() && p.propertyStatus !in f.statuses) return false
 
-        if (p.price != null) {
-            var resolvedMin = f.priceMin
-            var resolvedMax = f.priceMax
-            if (f.selectedPrices.isNotEmpty() && (resolvedMin == null && resolvedMax == null)) {
-                var absoluteMin: Double? = null
-                var absoluteMax: Double? = null
-                f.selectedPrices.forEach { label ->
-                    val (min, max) = when (label) {
-                        "<1" -> null to 1.0
-                        "1-2" -> 1.0 to 2.0
-                        "2-3" -> 2.0 to 3.0
-                        "3-4" -> 3.0 to 4.0
-                        "4-5" -> 4.0 to 5.0
-                        "5-7" -> 5.0 to 7.0
-                        "7-10" -> 7.0 to 10.0
-                        ">10" -> 10.0 to null
-                        else -> null to null
-                    }
-                    if (min != null) absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                    if (max != null) absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-                }
-                resolvedMin = absoluteMin
-                resolvedMax = absoluteMax
-            }
-            if (resolvedMin != null && p.price < resolvedMin) return false
-            if (resolvedMax != null && p.price > resolvedMax) return false
+        if (f.priceMin != null || f.priceMax != null) {
+            if (f.priceMin != null && p.price != null && p.price < f.priceMin) return false
+            if (f.priceMax != null && p.price != null && p.price > f.priceMax) return false
+        } else if (f.selectedPrices.isNotEmpty()) {
+            if (!FilterBuckets.matchesAnyBucket(p.price, f.selectedPrices, FilterBuckets.PRICE_BUCKETS)) return false
         }
 
-        if (p.area != null) {
-            var resolvedSizeMin = f.sizeMin
-            var resolvedSizeMax = f.sizeMax
-            if (f.selectedSizes.isNotEmpty() && (resolvedSizeMin == null && resolvedSizeMax == null)) {
-                var absoluteMin: Double? = null
-                var absoluteMax: Double? = null
-                f.selectedSizes.forEach { label ->
-                    val (min, max) = when (label) {
-                        "<30" -> null to 30.0
-                        "30-50" -> 30.0 to 50.0
-                        "50-80" -> 50.0 to 80.0
-                        "80-100" -> 80.0 to 100.0
-                        "100-150" -> 100.0 to 150.0
-                        ">150" -> 150.0 to null
-                        else -> null to null
-                    }
-                    if (min != null) absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                    if (max != null) absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-                }
-                resolvedSizeMin = absoluteMin
-                resolvedSizeMax = absoluteMax
-            }
-            if (resolvedSizeMin != null && p.area < resolvedSizeMin) return false
-            if (resolvedSizeMax != null && p.area > resolvedSizeMax) return false
+        if (f.sizeMin != null || f.sizeMax != null) {
+            if (f.sizeMin != null && p.area != null && p.area < f.sizeMin) return false
+            if (f.sizeMax != null && p.area != null && p.area > f.sizeMax) return false
+        } else if (f.selectedSizes.isNotEmpty()) {
+            if (!FilterBuckets.matchesAnyBucket(p.area, f.selectedSizes, FilterBuckets.SIZE_BUCKETS)) return false
         }
 
         if (f.areas.isNotEmpty() && p.address != null) {
@@ -296,22 +269,51 @@ class MapSurveyViewModel @Inject constructor(
         officialItems + unverifiedItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 4. Determine the scanning center (either GPS or the selected property coordinates)
+    init {
+        viewModelScope.launch {
+            allMapItems.collect { items ->
+                if (items.isEmpty()) return@collect
+                val validKeys = items.map { it.toKey() }.toSet()
+                val pruned = _selectedKeys.value.filter { it in validKeys }
+                if (pruned != _selectedKeys.value) {
+                    _selectedKeys.value = pruned
+                }
+            }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val centerProperty: StateFlow<Property?> = _centerPropertyId
+        .flatMapLatest { id ->
+            if (id != null) {
+                propertyRepository.getPropertyByIdFlow(id)
+            } else {
+                flowOf(null)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // 4. Determine the scanning center (either GPS, PROPERTY, or MAP_POINT)
     val scanCenter: StateFlow<Pair<Double, Double>?> = combine(
         _scanMode,
         _centerPropertyId,
-        _gpsLocation,
-        allMapItems
-    ) { mode, centerId, gps, items ->
-        if (mode == "PROPERTY" && centerId != null) {
-            val found = items.firstOrNull { it.id == centerId && !it.isUnverified }
-            if (found != null) {
-                Pair(found.latitude, found.longitude)
-            } else {
-                gps
+        centerProperty,
+        _mapPointCenter,
+        _gpsLocation
+    ) { mode, centerId, property, mapPoint, gps ->
+        when (mode) {
+            "PROPERTY" -> {
+                if (centerId != null && property != null && property.id == centerId && !property.isDeleted && MapsIntentHelper.isValidCoordinate(property.latitude, property.longitude)) {
+                    Pair(property.latitude!!, property.longitude!!)
+                } else null
             }
-        } else {
-            gps
+            "MAP_POINT" -> {
+                if (mapPoint != null && MapsIntentHelper.isValidCoordinate(mapPoint.first, mapPoint.second)) {
+                    mapPoint
+                } else null
+            }
+            "GPS" -> gps
+            else -> null
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -336,21 +338,32 @@ class MapSurveyViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // 6. Output filteredCount representing matching items
-    val filteredCount: StateFlow<Int> = allMapItems.map { it.size }
+    val filteredCount: StateFlow<Int> = filteredMapItems.map { it.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     fun setScanMode(mode: String) {
         _scanMode.value = mode
         if (mode == "GPS") {
             _centerPropertyId.value = null
+            _mapPointCenter.value = null
         }
     }
 
     fun setCenterProperty(propertyId: String?) {
         _centerPropertyId.value = propertyId
+        _mapPointCenter.value = null
         if (propertyId != null) {
             _scanMode.value = "PROPERTY"
+            _radiusKm.value = 5.0
         }
+    }
+
+    fun setMapPointCenter(latitude: Double, longitude: Double) {
+        if (!MapsIntentHelper.isValidCoordinate(latitude, longitude)) return
+        _mapPointCenter.value = Pair(latitude, longitude)
+        _centerPropertyId.value = null
+        _scanMode.value = "MAP_POINT"
+        _radiusKm.value = 5.0
     }
 
     fun setRadius(radius: Double?) {
@@ -408,34 +421,86 @@ class MapSurveyViewModel @Inject constructor(
         _selectedKeys.value = keys
     }
 
-    fun fetchCurrentGPSLocation(context: Context) {
+    fun buildDirectionsRoute(center: Pair<Double, Double>?) {
+        if (_isBuildingRoute.value) return
+        _isBuildingRoute.value = true
+
         viewModelScope.launch {
-            LocationHelper.getCurrentLocation(context).collect { state ->
-                when (state) {
-                    is LocationState.Idle -> {
-                        _isFetchingLocation.value = false
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    val selectedItems = getSelectedItemsOrdered()
+                    if (selectedItems.isEmpty()) return@withContext null
+
+                    val optResult = RouteOptimizer.optimize(center, selectedItems)
+                    if (optResult.optimizedPoints.isEmpty()) {
+                        return@withContext RouteResult.NoValidPoints(optResult.invalidPointsCount)
                     }
-                    is LocationState.Loading -> {
-                        _isFetchingLocation.value = true
-                    }
-                    is LocationState.Success -> {
-                        _isFetchingLocation.value = false
-                        _gpsLocation.value = Pair(state.latitude, state.longitude)
-                        _locationLastUpdated.value = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                        _moveCameraEvent.tryEmit(state.latitude to state.longitude)
-                    }
-                    is LocationState.Error -> {
-                        _isFetchingLocation.value = false
-                        _errorMessage.emit(state.message)
+
+                    val maxPoints = MapsIntentHelper.maxSelectablePoints(center != null)
+                    val droppedCount = if (optResult.optimizedPoints.size > maxPoints) {
+                        optResult.optimizedPoints.size - maxPoints
+                    } else 0
+
+                    val routeCoords = optResult.optimizedPoints.map { Pair(it.latitude, it.longitude) }
+                    val mapsUrl = MapsIntentHelper.buildDirectionsUrl(center, routeCoords, null)
+
+                    RouteResult.Success(
+                        mapsUrl = mapsUrl,
+                        invalidPointsCount = optResult.invalidPointsCount,
+                        droppedByLimitCount = droppedCount,
+                        maxPoints = maxPoints
+                    )
+                }
+
+                if (result != null) {
+                    _openRouteEvent.emit(result)
+                }
+            } finally {
+                _isBuildingRoute.value = false
+            }
+        }
+    }
+
+    private var locationFetchJob: Job? = null
+
+    fun fetchCurrentGPSLocation(context: Context) {
+        if (locationFetchJob?.isActive == true) return
+        locationFetchJob = viewModelScope.launch {
+            try {
+                LocationHelper.getCurrentLocation(context).collect { state ->
+                    when (state) {
+                        is LocationState.Idle -> {
+                            _isFetchingLocation.value = false
+                        }
+                        is LocationState.Loading -> {
+                            _isFetchingLocation.value = true
+                        }
+                        is LocationState.Success -> {
+                            _isFetchingLocation.value = false
+                            _gpsLocation.value = Pair(state.latitude, state.longitude)
+                            _locationLastUpdated.value = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            _moveCameraEvent.tryEmit(state.latitude to state.longitude)
+                        }
+                        is LocationState.Error -> {
+                            _isFetchingLocation.value = false
+                            _errorMessage.emit(state.message)
+                        }
                     }
                 }
+            } finally {
+                _isFetchingLocation.value = false
             }
         }
     }
 
     fun triggerMoveCameraToGps() {
-        _gpsLocation.value?.let { (lat, lng) ->
-            _moveCameraEvent.tryEmit(lat to lng)
+        val currentGps = _gpsLocation.value
+        if (currentGps != null) {
+            _moveCameraEvent.tryEmit(currentGps)
+        } else {
+            viewModelScope.launch {
+                _errorMessage.emit("Đang lấy vị trí của bạn...")
+            }
         }
     }
 

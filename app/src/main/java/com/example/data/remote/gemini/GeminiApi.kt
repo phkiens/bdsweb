@@ -1,7 +1,6 @@
 package com.example.data.remote.gemini
 
 import android.util.Log
-import com.example.BuildConfig
 import com.example.ui.common.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,10 +27,10 @@ object GeminiApi {
         customApiKey: String? = null,
         customModel: String? = null
     ): String? = withContext(Dispatchers.IO) {
-        val apiKey = if (!customApiKey.isNullOrBlank()) customApiKey else BuildConfig.GEMINI_API_KEY
+        val apiKey = customApiKey?.trim().orEmpty()
         
         // Safety check
-        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+        if (apiKey.isBlank()) {
             Log.w(TAG, "No valid Gemini API Key found.")
             AppLogger.log("GeminiApi", "Không tìm thấy Gemini API Key hợp lệ.")
             return@withContext null
@@ -123,7 +122,7 @@ object GeminiApi {
                             AppLogger.log("GeminiApi", "Bóc tách AI phản hồi thành công.")
                             return@withContext resultText
                         } else {
-                            AppLogger.log("GeminiApi", "Phản hồi rỗng hoặc sai định dạng: $responseBody")
+                            AppLogger.log("GeminiApi", "Phản hồi rỗng hoặc sai định dạng từ mô hình.")
                         }
                     } else {
                         AppLogger.log("GeminiApi", "Phản hồi rỗng từ API.")
@@ -214,8 +213,9 @@ object GeminiApi {
     }
 
     suspend fun validateApiKey(apiKey: String): Boolean = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) return@withContext false
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey"
+        val trimmedKey = apiKey.trim()
+        if (trimmedKey.isBlank()) return@withContext false
+        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$trimmedKey"
         val jsonRequest = JSONObject().apply {
             put("contents", JSONArray().apply {
                 put(JSONObject().apply {

@@ -42,10 +42,10 @@ class PurgeWorker(
         val sevenDaysAgo = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000)
 
         try {
-            // 1. Lọc ra các folder của unverified property bị xóa cũ hơn 30 ngày cần dọn dẹp trên Google Drive
-            val allUnverified = propertyRepository.getAllUnverified()
-            val toPurgeDriveFolders = allUnverified.filter {
-                it.isDeleted && it.updatedAt < thirtyDaysAgo && !it.driveFolderId.isNullOrBlank()
+            // 1. Lọc ra các folder của unverified property bị xóa cũ hơn 30 ngày đã sync thành công cần dọn dẹp trên Google Drive
+            val allProperties = propertyRepository.getAllProperties()
+            val toPurgeDriveFolders = allProperties.filter {
+                it.isDeleted && it.isTextSynced && it.updatedAt < thirtyDaysAgo && !it.driveFolderId.isNullOrBlank()
             }
             if (toPurgeDriveFolders.isNotEmpty()) {
                 com.example.ui.common.AppLogger.log(TAG, "Phát hiện ${toPurgeDriveFolders.size} tin thô đã xóa cũ cần dọn dẹp folder trên Drive...")
@@ -62,7 +62,6 @@ class PurgeWorker(
 
             // 2. Physically delete rows from local Room DB
             propertyRepository.deleteOldDeletedProperties(thirtyDaysAgo)
-            propertyRepository.deleteOldDeletedUnverified(thirtyDaysAgo)
             customerRepository.deleteOldDeletedCustomers(thirtyDaysAgo)
             syncLogDao.purgeOlderThan(sevenDaysAgo)
             com.example.ui.common.AppLogger.log(TAG, "Đã dọn dẹp xong cơ sở dữ liệu local (Room DB & logs).")

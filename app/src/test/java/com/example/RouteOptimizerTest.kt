@@ -11,7 +11,7 @@ class RouteOptimizerTest {
     @Test
     fun testOptimize_EmptyPoints() {
         val result = RouteOptimizer.optimize(
-            start = Pair(10.0, 10.6),
+            start = Pair(10.776, 106.700),
             points = emptyList()
         )
         assertTrue(result.optimizedPoints.isEmpty())
@@ -21,13 +21,13 @@ class RouteOptimizerTest {
     @Test
     fun testOptimize_InvalidPointsFiltered() {
         val points = listOf(
-            MapSurveyItem("1", false, 10.0, 10.6, "Normal", ""),
+            MapSurveyItem("1", false, 10.0, 106.6, "Normal", ""),
             MapSurveyItem("2", false, 0.0, 0.0, "Zero Lat Lng", ""),
-            MapSurveyItem("3", false, 12.0, 12.1, "Normal 2", "")
+            MapSurveyItem("3", false, 12.0, 108.1, "Normal 2", "")
         )
 
         val result = RouteOptimizer.optimize(
-            start = Pair(10.0, 10.6),
+            start = Pair(10.0, 106.6),
             points = points
         )
 
@@ -38,11 +38,11 @@ class RouteOptimizerTest {
 
     @Test
     fun testOptimize_BruteForceOptimalPath() {
-        val start = Pair(0.0, 0.0)
+        val start = Pair(10.776, 106.700)
         // 3 points along a line: pt1 is far, pt2 is close, pt3 is intermediate
-        val pt1 = MapSurveyItem("pt1", false, 0.0, 0.027, "Far (approx 3km)", "")
-        val pt2 = MapSurveyItem("pt2", false, 0.0, 0.009, "Close (approx 1km)", "")
-        val pt3 = MapSurveyItem("pt3", false, 0.0, 0.018, "Medium (approx 2km)", "")
+        val pt1 = MapSurveyItem("pt1", false, 10.776, 106.727, "Far (approx 3km)", "")
+        val pt2 = MapSurveyItem("pt2", false, 10.776, 106.709, "Close (approx 1km)", "")
+        val pt3 = MapSurveyItem("pt3", false, 10.776, 106.718, "Medium (approx 2km)", "")
 
         // Give them in a shuffled order: pt1, pt3, pt2
         val points = listOf(pt1, pt3, pt2)
@@ -61,10 +61,10 @@ class RouteOptimizerTest {
 
     @Test
     fun testOptimize_TwoOptImprovement() {
-        val start = Pair(10.0, 10.0)
-        // Create 12 points spaced randomly
+        val start = Pair(10.776, 106.700)
+        // Create 12 points spaced randomly within Vietnam
         val points = (1..12).map { i ->
-            MapSurveyItem("pt$i", false, 10.0 + (i * 0.05), 10.0 + (i * 0.05), "Point $i", "")
+            MapSurveyItem("pt$i", false, 10.776 + (i * 0.01), 106.700 + (i * 0.01), "Point $i", "")
         }
 
         // Shuffle the points to create a sub-optimal initial order

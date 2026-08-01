@@ -38,57 +38,20 @@ class FilterPagingMultiSelectTest {
         }
 
         // 3. Price
-        var resolvedMin = f.priceMin
-        var resolvedMax = f.priceMax
-        if (f.selectedPrices.isNotEmpty() && (resolvedMin == null && resolvedMax == null)) {
-            var absoluteMin: Double? = null
-            var absoluteMax: Double? = null
-            f.selectedPrices.forEach { label ->
-                val (min, max) = when (label) {
-                    "<1" -> null to 1.0
-                    "1-2" -> 1.0 to 2.0
-                    "2-3" -> 2.0 to 3.0
-                    "3-4" -> 3.0 to 4.0
-                    "4-5" -> 4.0 to 5.0
-                    "5-7" -> 5.0 to 7.0
-                    "7-10" -> 7.0 to 10.0
-                    ">10" -> 10.0 to null
-                    else -> null to null
-                }
-                if (min != null) {
-                    absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                }
-                if (max != null) {
-                    absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-                }
-            }
-            resolvedMin = absoluteMin
-            resolvedMax = absoluteMax
+        if (f.priceMin != null || f.priceMax != null) {
+            if (f.priceMin != null && p.price < f.priceMin) return false
+            if (f.priceMax != null && p.price > f.priceMax) return false
+        } else if (f.selectedPrices.isNotEmpty()) {
+            if (!FilterBuckets.matchesAnyBucket(p.price, f.selectedPrices, FilterBuckets.PRICE_BUCKETS)) return false
         }
-        if (resolvedMin != null && p.price < resolvedMin) return false
-        if (resolvedMax != null && p.price > resolvedMax) return false
 
         // 4. Size
-        val matchSize = (
-            f.selectedSizes.isEmpty() || f.selectedSizes.any { label ->
-                val (min, max) = when (label) {
-                    "<30" -> null to 30.0
-                    "30-50" -> 30.0 to 50.0
-                    "50-80" -> 50.0 to 80.0
-                    "80-100" -> 80.0 to 100.0
-                    "100-150" -> 100.0 to 150.0
-                    ">150" -> 150.0 to null
-                    else -> null to null
-                }
-                val minOk = p.areaSize == null || min == null || p.areaSize >= min
-                val maxOk = p.areaSize == null || max == null || p.areaSize <= max
-                minOk && maxOk
-            }
-        ) && (
-            (p.areaSize == null || f.sizeMin == null || p.areaSize >= f.sizeMin) &&
-            (p.areaSize == null || f.sizeMax == null || p.areaSize <= f.sizeMax)
-        )
-        if (!matchSize) return false
+        if (f.sizeMin != null || f.sizeMax != null) {
+            if (f.sizeMin != null && p.areaSize != null && p.areaSize < f.sizeMin) return false
+            if (f.sizeMax != null && p.areaSize != null && p.areaSize > f.sizeMax) return false
+        } else if (f.selectedSizes.isNotEmpty()) {
+            if (!FilterBuckets.matchesAnyBucket(p.areaSize, f.selectedSizes, FilterBuckets.SIZE_BUCKETS)) return false
+        }
 
         // 5. Area
         val matchArea = f.areas.isEmpty() || f.areas.any {
@@ -213,35 +176,12 @@ class FilterPagingMultiSelectTest {
                 p.ownerName.contains(trimmedQuery, ignoreCase = true) ||
                 p.ownerPhone.contains(trimmedQuery, ignoreCase = true)
 
-        var resolvedMin = filter.priceMin
-        var resolvedMax = filter.priceMax
-        if (filter.selectedPrices.isNotEmpty() && (resolvedMin == null && resolvedMax == null)) {
-            var absoluteMin: Double? = null
-            var absoluteMax: Double? = null
-            filter.selectedPrices.forEach { label ->
-                val (min, max) = when (label) {
-                    "<1" -> null to 1.0
-                    "1-2" -> 1.0 to 2.0
-                    "2-3" -> 2.0 to 3.0
-                    "3-4" -> 3.0 to 4.0
-                    "4-5" -> 4.0 to 5.0
-                    "5-7" -> 5.0 to 7.0
-                    "7-10" -> 7.0 to 10.0
-                    ">10" -> 10.0 to null
-                    else -> null to null
-                }
-                if (min != null) {
-                    absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                }
-                if (max != null) {
-                    absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-                }
-            }
-            resolvedMin = absoluteMin
-            resolvedMax = absoluteMax
+        val matchesDbPrice = if (filter.priceMin != null || filter.priceMax != null) {
+            (filter.priceMin == null || p.price >= filter.priceMin) &&
+            (filter.priceMax == null || p.price <= filter.priceMax)
+        } else {
+            FilterBuckets.matchesAnyBucket(p.price, filter.selectedPrices, FilterBuckets.PRICE_BUCKETS)
         }
-        val matchesDbPrice = (resolvedMin == null || p.price >= resolvedMin) &&
-                (resolvedMax == null || p.price <= resolvedMax)
 
         if (!matchesDbKeyword || !matchesDbPrice) return false
 
@@ -387,5 +327,18 @@ class FilterPagingMultiSelectTest {
         // This demonstrates the discrepancy!
         assertNotEquals(count3, list3)
         assertEquals(list3, new3)
+    }
+
+    @Test
+    fun testNonContiguousPriceBuckets_matchesBothRanges() {
+        val pCheap = makeProperty("cheap").copy(price = 0.5)
+        val pMid = makeProperty("mid").copy(price = 5.0)
+        val pExpensive = makeProperty("expensive").copy(price = 15.0)
+
+        val filter = FilterState(selectedPrices = setOf("<1", ">10"))
+
+        assertTrue(PropertyFilter.matches(pCheap, filter, "", false))
+        assertFalse(PropertyFilter.matches(pMid, filter, "", false))
+        assertTrue(PropertyFilter.matches(pExpensive, filter, "", false))
     }
 }

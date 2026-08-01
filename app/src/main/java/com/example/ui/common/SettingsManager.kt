@@ -12,19 +12,29 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-enum class PropertyActionKey(val displayName: String, val defaultPosition: String) {
-    TOGGLE_POTENTIAL("Đánh dấu tiềm năng", "OUTER"),
-    BACKUP("Sao lưu lên Drive", "OUTER"),
-    ADD_CUSTOMER("Thêm khách quan tâm", "OUTER"),
-    CALL("Gọi điện", "INNER"),
-    ZALO("Mở Zalo", "INNER"),
-    DIRECTIONS("Chỉ đường", "OUTER"),
-    SHARE("Chia sẻ", "INNER"),
-    EDIT("Chỉnh sửa", "OUTER"),
-    DELETE("Xóa", "INNER"),
-    SCAN_CUSTOMERS("Quét tìm khách hàng", "INNER"),
-    NEARBY("Tìm quanh đây", "INNER"),
-    DOWNLOAD_MEDIA("Tải ảnh về máy", "INNER")
+enum class ActionMode {
+    VERIFIED,
+    UNVERIFIED
+}
+
+enum class PropertyActionKey(
+    val displayName: String,
+    val defaultPosition: String,
+    val defaultPositionUnverified: String
+) {
+    TOGGLE_POTENTIAL("Đánh dấu tiềm năng", "OUTER", "INNER"),
+    BACKUP("Sao lưu lên Drive", "OUTER", "OUTER"),
+    ADD_CUSTOMER("Thêm khách quan tâm", "OUTER", "INNER"),
+    CALL("Gọi điện", "INNER", "INNER"),
+    ZALO("Mở Zalo", "INNER", "INNER"),
+    DIRECTIONS("Chỉ đường", "OUTER", "OUTER"),
+    SHARE("Chia sẻ", "INNER", "INNER"),
+    EDIT("Chỉnh sửa", "OUTER", "OUTER"),
+    DELETE("Xóa", "INNER", "INNER"),
+    SCAN_CUSTOMERS("Quét tìm khách hàng", "INNER", "INNER"),
+    NEARBY("Tìm quanh đây", "INNER", "INNER"),
+    DOWNLOAD_MEDIA("Tải ảnh về máy", "INNER", "OUTER"),
+    VERIFY("Xác thực", "INNER", "OUTER")
 }
 
 // Mức thu nhỏ tối đa của bản đồ, chọn theo phạm vi địa lý cho dễ hiểu.
@@ -38,6 +48,18 @@ enum class MapZoomScope(val key: String, val minZoom: Double, val displayName: S
 
     companion object {
         fun fromKey(key: String?): MapZoomScope = entries.firstOrNull { it.key == key } ?: DISTRICT
+    }
+}
+
+enum class MapRadiusDefault(val key: String, val radiusKm: Double?, val displayName: String) {
+    ALL("all", null, "Tất cả"),
+    ONE("1km", 1.0, "1 km"),
+    TWO("2km", 2.0, "2 km"),
+    FIVE("5km", 5.0, "5 km"),
+    TEN("10km", 10.0, "10 km");
+
+    companion object {
+        fun fromKey(key: String?): MapRadiusDefault = entries.firstOrNull { it.key == key } ?: ALL
     }
 }
 
@@ -74,20 +96,29 @@ class SettingsManager @Inject constructor(
 
     init {
         try {
-            val keysToMigrate = listOf(KEY_DRIVE_TOKEN, KEY_GOOGLE_EMAIL, KEY_GOOGLE_NAME)
-            for (key in keysToMigrate) {
+            val legacyOAuthKeys = listOf(KEY_DRIVE_TOKEN, KEY_REFRESH_TOKEN, KEY_PKCE_VERIFIER)
+            for (key in legacyOAuthKeys) {
+                if (prefs.contains(key)) {
+                    prefs.edit().remove(key).apply()
+                }
+                if (securePrefs.contains(key)) {
+                    securePrefs.edit().remove(key).apply()
+                }
+            }
+
+            val userKeys = listOf(KEY_GOOGLE_EMAIL, KEY_GOOGLE_NAME)
+            for (key in userKeys) {
                 val oldValue = prefs.getString(key, "") ?: ""
                 if (oldValue.isNotBlank()) {
                     val secureValue = securePrefs.getString(key, "") ?: ""
                     if (secureValue.isBlank()) {
                         securePrefs.edit().putString(key, oldValue).apply()
-                        prefs.edit().remove(key).apply()
-                        android.util.Log.d("SettingsManager", "Migrated key: $key to secure storage successfully.")
                     }
+                    prefs.edit().remove(key).apply()
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("SettingsManager", "Error during migration to secure storage", e)
+            android.util.Log.e("SettingsManager", "Error during init cleanup", e)
         }
     }
 
@@ -116,10 +147,6 @@ class SettingsManager @Inject constructor(
         get() = prefs.getString(KEY_DEFAULT_STATUS, PropertyStatus.FOR_SALE.value) ?: PropertyStatus.FOR_SALE.value
         set(value) = prefs.edit().putString(KEY_DEFAULT_STATUS, value).apply()
 
-    var pkceVerifier: String
-        get() = securePrefs.getString(KEY_PKCE_VERIFIER, "") ?: ""
-        set(value) = securePrefs.edit().putString(KEY_PKCE_VERIFIER, value).apply()
-
     var googleEmail: String
         get() = securePrefs.getString(KEY_GOOGLE_EMAIL, "") ?: ""
         set(value) = securePrefs.edit().putString(KEY_GOOGLE_EMAIL, value).apply()
@@ -139,14 +166,6 @@ class SettingsManager @Inject constructor(
     var promptTemplate: String
         get() = prefs.getString(KEY_PROMPT_TEMPLATE, "") ?: ""
         set(value) = prefs.edit().putString(KEY_PROMPT_TEMPLATE, value).apply()
-
-    var driveRefreshToken: String
-        get() = securePrefs.getString(KEY_REFRESH_TOKEN, "") ?: ""
-        set(value) = securePrefs.edit().putString(KEY_REFRESH_TOKEN, value).apply()
-
-    var driveToken: String
-        get() = securePrefs.getString(KEY_DRIVE_TOKEN, "") ?: ""
-        set(value) = securePrefs.edit().putString(KEY_DRIVE_TOKEN, value).apply()
 
     var mapsApiKey: String
         get() = prefs.getString(KEY_MAPS_API_KEY, "") ?: ""
@@ -192,6 +211,12 @@ class SettingsManager @Inject constructor(
     // Trả về mức minZoom (osmdroid) tương ứng phạm vi đã chọn.
     fun getMapMinZoomLevel(): Double = MapZoomScope.fromKey(mapMinZoomScope).minZoom
 
+    var mapDefaultRadius: String
+        get() = prefs.getString("map_default_radius", MapRadiusDefault.ALL.key) ?: MapRadiusDefault.ALL.key
+        set(value) = prefs.edit().putString("map_default_radius", value).apply()
+
+    fun getMapDefaultRadius(): Double? = MapRadiusDefault.fromKey(mapDefaultRadius).radiusKm
+
     var lastFilterJson: String
         get() = prefs.getString("last_filter_json", "") ?: ""
         set(value) = prefs.edit().putString("last_filter_json", value).apply()
@@ -206,12 +231,14 @@ class SettingsManager @Inject constructor(
             _fabOnLeftFlow.value = value
         }
 
-    fun getActionPosition(actionKey: String, defaultPos: String): String {
-        return prefs.getString("action_position_$actionKey", defaultPos) ?: defaultPos
+    fun getActionPosition(actionKey: String, defaultPos: String, mode: ActionMode = ActionMode.VERIFIED): String {
+        val key = if (mode == ActionMode.UNVERIFIED) "action_position_UNV_$actionKey" else "action_position_$actionKey"
+        return prefs.getString(key, defaultPos) ?: defaultPos
     }
 
-    fun setActionPosition(actionKey: String, position: String) {
-        prefs.edit().putString("action_position_$actionKey", position).apply()
+    fun setActionPosition(actionKey: String, position: String, mode: ActionMode = ActionMode.VERIFIED) {
+        val key = if (mode == ActionMode.UNVERIFIED) "action_position_UNV_$actionKey" else "action_position_$actionKey"
+        prefs.edit().putString(key, position).apply()
     }
 
     fun getRecentAreas(): List<String> {

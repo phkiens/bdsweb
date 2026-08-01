@@ -35,7 +35,7 @@ object RouteOptimizer {
             return OptimizationResult(emptyList(), invalidCount)
         }
 
-        val optimized = if (validPoints.size <= 9) {
+        val optimized = if (validPoints.size <= 7) {
             permute(start, validPoints)
         } else {
             twoOpt(start, validPoints)

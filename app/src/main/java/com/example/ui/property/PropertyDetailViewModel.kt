@@ -6,12 +6,17 @@ import android.os.Build
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.domain.model.Customer
+import com.example.domain.model.CustomerStatus
+import com.example.domain.model.customerStatus
 import com.example.domain.model.CustomerMatchResult
+import com.example.domain.model.isEligibleForMatching
 import com.example.domain.model.Property
 import com.example.domain.model.PropertyStatus
 import com.example.domain.model.propertyStatus
 import com.example.domain.repository.CustomerRepository
 import com.example.domain.repository.PropertyRepository
+import com.example.domain.usecase.property.TransferPropertyOwnershipUseCase
 import com.example.domain.usecase.match.MatchEngineUseCase
 import com.example.ui.common.AppLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -46,7 +51,9 @@ class PropertyDetailViewModel @Inject constructor(
     private val prepareImageUseCase: com.example.domain.usecase.media.PrepareImageUseCase,
     val settingsManager: com.example.ui.common.SettingsManager,
     val networkStateObserver: com.example.ui.common.NetworkStateObserver,
-    private val snackbarManager: com.example.ui.common.SnackbarManager
+    private val snackbarManager: com.example.ui.common.SnackbarManager,
+    private val transferPropertyOwnershipUseCase: TransferPropertyOwnershipUseCase,
+    private val exportPhotosForPostingUseCase: com.example.domain.usecase.media.ExportPhotosForPostingUseCase
 ) : ViewModel() {
 
     private val TAG = "PropertyDetailViewModel"
@@ -55,24 +62,21 @@ class PropertyDetailViewModel @Inject constructor(
     private val _actionPositions = MutableStateFlow<Map<String, String>>(emptyMap())
     val actionPositions: StateFlow<Map<String, String>> = _actionPositions.asStateFlow()
 
-    fun loadActionPositions() {
+    fun loadActionPositions(mode: com.example.ui.common.ActionMode? = null) {
+        val effectiveMode = mode ?: propertyState.value?.let {
+            if (it.isVerified) com.example.ui.common.ActionMode.VERIFIED else com.example.ui.common.ActionMode.UNVERIFIED
+        } ?: com.example.ui.common.ActionMode.VERIFIED
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val positions = mapOf(
-                "TOGGLE_POTENTIAL" to settingsManager.getActionPosition("TOGGLE_POTENTIAL", "OUTER"),
-                "BACKUP" to settingsManager.getActionPosition("BACKUP", "OUTER"),
-                "ADD_CUSTOMER" to settingsManager.getActionPosition("ADD_CUSTOMER", "OUTER"),
-                "CALL" to settingsManager.getActionPosition("CALL", "INNER"),
-                "ZALO" to settingsManager.getActionPosition("ZALO", "INNER"),
-                "DIRECTIONS" to settingsManager.getActionPosition("DIRECTIONS", "OUTER"),
-                "SHARE" to settingsManager.getActionPosition("SHARE", "INNER"),
-                "EDIT" to settingsManager.getActionPosition("EDIT", "OUTER"),
-                "DELETE" to settingsManager.getActionPosition("DELETE", "INNER"),
-                "SCAN_CUSTOMERS" to settingsManager.getActionPosition("SCAN_CUSTOMERS", "INNER"),
-                "NEARBY" to settingsManager.getActionPosition("NEARBY", "INNER"),
-                "DOWNLOAD_MEDIA" to settingsManager.getActionPosition("DOWNLOAD_MEDIA", "INNER")
-            )
+            val positions = com.example.ui.common.PropertyActionKey.entries.associate { actionKey ->
+                val defaultPos = if (effectiveMode == com.example.ui.common.ActionMode.UNVERIFIED) actionKey.defaultPositionUnverified else actionKey.defaultPosition
+                actionKey.name to settingsManager.getActionPosition(actionKey.name, defaultPos, effectiveMode)
+            }
             _actionPositions.value = positions
         }
+    }
+
+    suspend fun getValidToken(): String {
+        return driveHelper.getValidToken(null) ?: ""
     }
 
     fun syncSingleProperty(propertyId: String) {
@@ -85,7 +89,6 @@ class PropertyDetailViewModel @Inject constructor(
             return
         }
         try {
-            Log.d("SYNC_UPLOAD_DEBUG", "Nguồn trigger: PropertyDetailViewModel, propertyId liên quan: $propertyId")
             val intent = Intent(context, SyncForegroundService::class.java).apply {
                 putExtra("PROPERTY_ID", propertyId)
             }
@@ -126,7 +129,10 @@ class PropertyDetailViewModel @Inject constructor(
             _matchResults.value = CustomerMatchUiState.Loading
             try {
                 val allCustomers = customerRepository.getAllCustomers()
-                val results = matchEngineUseCase.findMatchingCustomers(property, allCustomers)
+                val candidateCustomers = allCustomers.filter {
+                    it.isEligibleForMatching() && (property.linkedCustomerId == null || it.id != property.linkedCustomerId)
+                }
+                val results = matchEngineUseCase.findMatchingCustomers(property, candidateCustomers)
                 _matchResults.value = if (results.isEmpty()) {
                     CustomerMatchUiState.Empty("Không tìm thấy khách hàng phù hợp")
                 } else {
@@ -143,16 +149,39 @@ class PropertyDetailViewModel @Inject constructor(
         _matchResults.value = CustomerMatchUiState.Idle
     }
     
+    private var currentActionMode: com.example.ui.common.ActionMode? = null
+
     val propertyState: StateFlow<Property?> = _propertyId
         .filterNotNull()
         .flatMapLatest { id ->
             propertyRepository.getPropertyByIdFlow(id).onEach { property ->
                 if (property != null) {
                     AppLogger.log(TAG, "Đang hiển thị chi tiết tài sản: ${property.area}")
+                    val mode = if (property.isVerified) com.example.ui.common.ActionMode.VERIFIED else com.example.ui.common.ActionMode.UNVERIFIED
+                    if (mode != currentActionMode) {
+                        currentActionMode = mode
+                        loadActionPositions(mode)
+                    }
                 }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val ownerCustomerState: StateFlow<Customer?> = propertyState
+        .map { it?.linkedCustomerId }
+        .distinctUntilChanged()
+        .flatMapLatest { customerId ->
+            if (customerId != null) {
+                customerRepository.getCustomerByIdFlow(customerId)
+            } else {
+                flowOf(null)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val activeOwners: StateFlow<List<Customer>> = customerRepository.getAllActiveCustomersFlow()
+        .map { list -> list.filter { it.role == "OWNER" } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val syncUiState: StateFlow<SyncUiState> = propertyState
         .map { property ->
@@ -169,6 +198,7 @@ class PropertyDetailViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncUiState.Idle)
 
     fun setPropertyId(id: String) {
+        currentActionMode = null
         _propertyId.value = id
         loadActionPositions()
     }
@@ -275,5 +305,153 @@ class PropertyDetailViewModel @Inject constructor(
             AppLogger.log("PropertyDetailViewModel", "Đã thêm ${uris.size} hình ảnh vào tài sản '${property.area}'")
         }
     }
+
+    fun transferOwner(newOwnerId: String) {
+        val propertyId = _propertyId.value ?: return
+        viewModelScope.launch {
+            try {
+                transferPropertyOwnershipUseCase(propertyId, newOwnerId)
+                // Force re-fetch of property state
+                _propertyId.value = null
+                _propertyId.value = propertyId
+                AppLogger.log(TAG, "Đã chuyển quyền sở hữu tài sản $propertyId sang khách hàng $newOwnerId")
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Lỗi khi chuyển quyền sở hữu: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
+
+    fun exportPhotos(
+        property: Property,
+        mode: com.example.domain.usecase.media.ExportMode,
+        onComplete: (com.example.domain.usecase.media.ExportResult) -> Unit
+    ) {
+        if (_isExporting.value) return
+        viewModelScope.launch {
+            _isExporting.value = true
+            try {
+                val result = exportPhotosForPostingUseCase.execute(property, mode)
+                onComplete(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi khi xuất ảnh", e)
+                snackbarManager.showSnackbar("Lỗi khi xuất ảnh: ${e.localizedMessage}")
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    fun updateDescription(property: Property, newDescription: String) {
+        viewModelScope.launch {
+            propertyRepository.updateProperty(
+                property.copy(
+                    description = newDescription,
+                    updatedAt = System.currentTimeMillis()
+                ),
+                fromSync = false
+            )
+            AppLogger.log(TAG, "Đã cập nhật nội dung tin đăng cho tài sản '${property.area}'.")
+        }
+    }
+
+    private val _viewingRefreshTrigger = MutableStateFlow(0)
+
+    val viewingItemsState: StateFlow<List<PropertyViewingItem>> = combine(
+        _propertyId.filterNotNull(),
+        _viewingRefreshTrigger
+    ) { id, _ -> id }
+        .flatMapLatest { id ->
+            flow {
+                val links = customerRepository.getLinksForProperty(id)
+                    .filter { it.role == "VIEWER" && !it.isDeleted }
+                val allCustomers = customerRepository.getAllCustomers().associateBy { it.id }
+                val items = links.mapNotNull { link ->
+                    val customer = allCustomers[link.customerId]
+                    if (customer == null || customer.isDeleted) return@mapNotNull null
+                    val displayName = if (customer.customerStatus == CustomerStatus.CLOSED) {
+                        "${customer.name} (đã đóng)"
+                    } else {
+                        customer.name
+                    }
+                    PropertyViewingItem(
+                        link = link,
+                        customerName = displayName
+                    )
+                }
+                emit(items)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun deleteViewingLink(customerId: String, propertyId: String) {
+        viewModelScope.launch {
+            try {
+                customerRepository.softDeleteCustomerPropertyLink(customerId, propertyId)
+                _viewingRefreshTrigger.value += 1
+                AppLogger.log(TAG, "Đã xóa lượt xem nhà của khách $customerId đối với BĐS $propertyId")
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Lỗi khi xóa lượt xem nhà: ${e.localizedMessage}")
+            }
+        }
+    }
+
+    val allLinkedCustomerIdsState: StateFlow<Set<String>> = combine(
+        _propertyId.filterNotNull(),
+        _viewingRefreshTrigger
+    ) { id, _ -> id }
+        .flatMapLatest { id ->
+            flow {
+                val links = customerRepository.getLinksForProperty(id).filter { !it.isDeleted }
+                emit(links.map { it.customerId }.toSet())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun addViewingLink(
+        customerId: String,
+        viewDate: String?,
+        viewNote: String?,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        val propId = _propertyId.value ?: run {
+            onResult(false, "Không xác định được bất động sản")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val existing = customerRepository.getLinkByIds(customerId, propId)
+                if (existing != null && !existing.isDeleted) {
+                    onResult(false, "Khách này đã có liên kết với BĐS này")
+                    return@launch
+                }
+                val dateStr = if (!viewDate.isNullOrBlank()) {
+                    viewDate
+                } else {
+                    java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date())
+                }
+                customerRepository.insertCustomerPropertyLink(
+                    customerId = customerId,
+                    propertyId = propId,
+                    role = "VIEWER",
+                    viewDate = dateStr,
+                    viewNote = viewNote?.ifBlank { null },
+                    fromSync = false
+                )
+                _viewingRefreshTrigger.value += 1
+                onResult(true, null)
+            } catch (e: Exception) {
+                AppLogger.log(TAG, "Error adding viewing link: ${e.localizedMessage}")
+                onResult(false, "Lỗi khi lưu lịch sử xem nhà: ${e.localizedMessage}")
+            }
+        }
+    }
 }
+
+data class PropertyViewingItem(
+    val link: com.example.data.local.entity.CustomerPropertyLink,
+    val customerName: String
+)
 

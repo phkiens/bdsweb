@@ -8,18 +8,20 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.domain.model.UnverifiedProperty
-import com.example.domain.model.UnverifiedPropertyType
 import com.example.domain.model.ExtractionType
 import com.example.domain.model.Property
 import com.example.domain.model.Customer
 import com.example.domain.model.toUnverified
 import com.example.domain.model.toProperty
+import com.example.domain.model.PropertyStatus
 import com.example.domain.repository.PropertyRepository
 import com.example.domain.repository.CustomerRepository
 import com.example.domain.usecase.ai.ExtractPropertyUseCase
 import com.example.ui.common.AppLogger
 import com.example.ui.common.SettingsManager
+import com.example.ui.common.StringUtils
 import com.example.ui.property.FilterState
+import com.example.ui.property.PropertyFilter
 import com.example.ui.property.SortType
 import com.example.data.remote.gemini.GeminiApi
 import com.example.data.remote.gemini.GeminiHelper
@@ -41,8 +43,8 @@ import java.util.UUID
 import javax.inject.Inject
 
 data class PropertyCluster(
-    val center: UnverifiedProperty,
-    val properties: List<UnverifiedProperty>
+    val center: Property,
+    val properties: List<Property>
 )
 
 enum class FieldState { EMPTY, AI_FILLED, USER_CONFIRMED }
@@ -143,19 +145,16 @@ class UnverifiedViewModel @Inject constructor(
     private val _recentAreas = MutableStateFlow<List<String>>(emptyList())
     val recentAreas = _recentAreas.asStateFlow()
 
-    private val _areaSuggestions = MutableStateFlow<List<String>>(emptyList())
-    val areaSuggestions: StateFlow<List<String>> = _areaSuggestions.asStateFlow()
+    val areaSuggestions: StateFlow<List<String>> = propertyRepository.getAllDistinctAreasFlow()
+        .catch { e -> Log.e(TAG, "Failed to load area suggestions", e) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     init {
         _recentAreas.value = settingsManager.getRecentAreas()
-        viewModelScope.launch {
-            try {
-                val areas = propertyRepository.getAllDistinctAreas()
-                _areaSuggestions.value = areas.distinct().sorted()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to load area suggestions", e)
-            }
-        }
     }
 
     val geminiApiKey: String get() = settingsManager.geminiApiKey
@@ -234,21 +233,23 @@ class UnverifiedViewModel @Inject constructor(
         _filterState.value = FilterState()
     }
 
-    private val rawUnverifiedProperties = propertyRepository.getAllUnverifiedFlow()
-        .map { list -> list.map { it.toUnverified() } }
+    private val rawUnverifiedProperties: StateFlow<List<Property>> = propertyRepository.getAllUnverifiedFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val unverifiedProperties: StateFlow<List<UnverifiedProperty>> = combine(
+    val unverifiedProperties: StateFlow<List<Property>> = combine(
         rawUnverifiedProperties,
         searchQuery,
         filterState
     ) { list, query, filter ->
-        val filtered = list.filter { matchesUnverified(it, filter, query) }
+        // SP chờ: status là cờ kỹ thuật (mặc định "Chờ khảo sát"), không phải thuộc tính
+        // lọc theo. Xoá vế status để PropertyFilter bỏ qua bước 2 — nếu không, chip
+        // "Đang bán"/"Đã bán" sẽ giấu mất 30/39 SP chờ mà KHÔNG có chip nào lấy lại.
+        val filtered = list.filter { PropertyFilter.matches(it, filter.copy(statuses = emptySet()), query, todayOnly = false) }
         when (filter.sortBy) {
             SortType.NEWEST -> filtered.sortedByDescending { it.createdAt }
-            SortType.PRICE_ASC -> filtered.sortedBy { it.price ?: Double.MAX_VALUE }
-            SortType.PRICE_DESC -> filtered.sortedByDescending { it.price ?: Double.MIN_VALUE }
-            SortType.SIZE -> filtered.sortedByDescending { it.area ?: Double.MIN_VALUE }
+            SortType.PRICE_ASC -> filtered.sortedBy { it.price }
+            SortType.PRICE_DESC -> filtered.sortedByDescending { it.price }
+            SortType.SIZE -> filtered.sortedByDescending { it.areaSize ?: 0.0 }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -257,115 +258,9 @@ class UnverifiedViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val distinctAreas: StateFlow<List<String>> = rawUnverifiedProperties
-        .map { list -> list.mapNotNull { it.address }.filter { it.isNotBlank() }.distinct().sorted() }
+        .map { list -> list.map { StringUtils.toTitleCase(it.area) }.filter { it.isNotBlank() }.distinct().sorted() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private fun matchesUnverified(p: UnverifiedProperty, f: FilterState, searchQuery: String): Boolean {
-        // 1. Property Type
-        if (f.propertyTypes.isNotEmpty()) {
-            val typeStr = when (p.propertyType) {
-                com.example.domain.model.UnverifiedPropertyType.HOUSE -> "Nhà"
-                com.example.domain.model.UnverifiedPropertyType.LAND -> "Đất"
-            }
-            if (typeStr !in f.propertyTypes) return false
-        }
-
-        // 2. Price
-        val price = p.price
-        if (price != null) {
-            var resolvedMin = f.priceMin
-            var resolvedMax = f.priceMax
-            if (f.selectedPrices.isNotEmpty() && (resolvedMin == null && resolvedMax == null)) {
-                var absoluteMin: Double? = null
-                var absoluteMax: Double? = null
-                f.selectedPrices.forEach { label ->
-                    val (min, max) = when (label) {
-                        "<1" -> null to 1.0
-                        "1-2" -> 1.0 to 2.0
-                        "2-3" -> 2.0 to 3.0
-                        "3-4" -> 3.0 to 4.0
-                        "4-5" -> 4.0 to 5.0
-                        "5-7" -> 5.0 to 7.0
-                        "7-10" -> 7.0 to 10.0
-                        ">10" -> 10.0 to null
-                        else -> null to null
-                    }
-                    if (min != null) absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                    if (max != null) absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-                }
-                resolvedMin = absoluteMin
-                resolvedMax = absoluteMax
-            }
-            if (resolvedMin != null && price < resolvedMin) return false
-            if (resolvedMax != null && price > resolvedMax) return false
-        }
-
-        // 3. Size (p.area is areaSize in UnverifiedProperty)
-        val size = p.area
-        if (size != null) {
-            var resolvedSizeMin = f.sizeMin
-            var resolvedSizeMax = f.sizeMax
-            if (f.selectedSizes.isNotEmpty() && (resolvedSizeMin == null && resolvedSizeMax == null)) {
-                var absoluteMin: Double? = null
-                var absoluteMax: Double? = null
-                f.selectedSizes.forEach { label ->
-                    val (min, max) = when (label) {
-                        "<30" -> null to 30.0
-                        "30-50" -> 30.0 to 50.0
-                        "50-80" -> 50.0 to 80.0
-                        "80-100" -> 80.0 to 100.0
-                        "100-150" -> 100.0 to 150.0
-                        ">150" -> 150.0 to null
-                        else -> null to null
-                    }
-                    if (min != null) absoluteMin = if (absoluteMin == null) min else minOf(absoluteMin!!, min)
-                    if (max != null) absoluteMax = if (absoluteMax == null) max else maxOf(absoluteMax!!, max)
-                }
-                resolvedSizeMin = absoluteMin
-                resolvedSizeMax = absoluteMax
-            }
-            if (resolvedSizeMin != null && size < resolvedSizeMin) return false
-            if (resolvedSizeMax != null && size > resolvedSizeMax) return false
-        }
-
-        // 4. Area (p.address is the area name in UnverifiedProperty)
-        val areaName = p.address
-        if (f.areas.isNotEmpty()) {
-            if (areaName == null) return false
-            if (!f.areas.any { area -> areaName.contains(area, ignoreCase = true) }) {
-                return false
-            }
-        }
-
-        // 5. Direction
-        val direction = p.direction
-        if (f.directions.isNotEmpty()) {
-            if (direction == null) return false
-            val matchDirection = direction.split("|||").any { dir ->
-                f.directions.any {
-                    dir.contains(it, ignoreCase = true)
-                }
-            }
-            if (!matchDirection) return false
-        }
-
-        // 6. Search query (matches address/area, ownerName, ownerPhone, rawText, description)
-        if (searchQuery.isNotBlank()) {
-            val q = searchQuery.trim()
-            val match = (p.address?.contains(q, ignoreCase = true) == true) ||
-                        (p.ownerName?.contains(q, ignoreCase = true) == true) ||
-                        (p.ownerPhone?.contains(q, ignoreCase = true) == true) ||
-                        (p.rawText.contains(q, ignoreCase = true)) ||
-                        (p.description.contains(q, ignoreCase = true))
-            if (!match) return false
-        }
-
-        return true
-    }
-
-    fun getById(id: String): Flow<UnverifiedProperty?> {
-        return propertyRepository.getUnverifiedByIdFlow(id).map { it?.toUnverified() }
-    }
 
     fun setPastedText(text: String) {
         _pastedText.value = text
@@ -391,7 +286,7 @@ class UnverifiedViewModel @Inject constructor(
                 )
                 // Ensure default values are filled
                 unverifiedProperty = unverifiedProperty.copy(
-                    status = "Chờ khảo sát",
+                    status = PropertyStatus.PENDING_SURVEY.value,
                     surveyDate = "",
                     isDraft = false
                 )
@@ -671,14 +566,14 @@ class UnverifiedViewModel @Inject constructor(
     /**
      * Part 6: GeoClustering grouping algorithm (radius 2km).
      */
-    fun getGeoClusteredProperties(properties: List<UnverifiedProperty>): List<PropertyCluster> {
+    fun getGeoClusteredProperties(properties: List<Property>): List<PropertyCluster> {
         val withCoords = properties.filter { it.latitude != null && it.longitude != null }
         val clusters = mutableListOf<PropertyCluster>()
         val visited = mutableSetOf<String>()
 
         for (prop in withCoords) {
             if (prop.id in visited) continue
-            val currentCluster = mutableListOf<UnverifiedProperty>()
+            val currentCluster = mutableListOf<Property>()
             currentCluster.add(prop)
             visited.add(prop.id)
 

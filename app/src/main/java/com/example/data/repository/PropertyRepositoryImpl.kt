@@ -3,6 +3,9 @@ package com.example.data.repository
 import android.content.Context
 import com.example.data.local.dao.PropertyDao
 import com.example.data.local.entity.PropertyEntity
+import com.example.data.local.database.AppDatabase
+import androidx.room.withTransaction
+import com.example.domain.model.AUTO_NOTE_PREFIX
 import com.example.domain.model.CustomerRole
 import com.example.domain.model.CustomerStatus
 import com.example.domain.model.Property
@@ -35,7 +38,8 @@ class PropertyRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val propertySupabaseSyncUseCase: com.example.domain.usecase.sync.PropertySupabaseSyncUseCase,
     private val customerPropertyLinkSupabaseSyncUseCase: CustomerPropertyLinkSupabaseSyncUseCase,
-    private val customerSupabaseSyncUseCase: CustomerSupabaseSyncUseCase
+    private val customerSupabaseSyncUseCase: CustomerSupabaseSyncUseCase,
+    private val database: AppDatabase
 ) : PropertyRepository {
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -246,10 +250,50 @@ class PropertyRepositoryImpl @Inject constructor(
 
     override suspend fun updateProperty(property: Property, fromSync: Boolean) {
         val titleCasedArea = StringUtils.toTitleCase(property.area)
-        val existing = propertyDao.getPropertyById(property.id)
+        val existing = getPropertyById(property.id)
         val isMediaChanged = !fromSync && existing != null && !sameImageSet(existing.imagePath, property.imagePath)
+        // Phát hiện thay đổi field text/synced (đối chiếu với bản trong DB). Nếu có đổi và
+        // KHÔNG phải update do pull/realtime (!fromSync) thì hạ isTextSynced=false để push.
+        // Đây là fix tập trung cho việc các call-site (toggle sao/trạng thái/nhật ký...) quên
+        // reset cờ — cơ chế song song với isMediaChanged ở trên. Chỉ so sánh các field THỰC SỰ
+        // được đẩy lên Supabase (khớp Property.toJsonDetail): KHÔNG gồm imagePath (local-only),
+        // updatedAt (luôn đổi), isTextSynced/isMediaSynced (chính là cờ), priceAtFolderCreation
+        // (không nằm trong payload text).
+        val isTextChanged = !fromSync && existing != null && (
+            existing.area           != titleCasedArea ||
+            existing.latitude       != property.latitude ||
+            existing.longitude      != property.longitude ||
+            existing.driveMediaIds  != property.driveMediaIds ||
+            existing.driveFolderId  != property.driveFolderId ||
+            existing.documentUrl    != property.documentUrl ||
+            existing.areaSize       != property.areaSize ||
+            existing.price          != property.price ||
+            existing.description    != property.description ||
+            existing.status         != property.status ||
+            existing.surveyDate     != property.surveyDate ||
+            existing.direction      != property.direction ||
+            existing.ownerName      != property.ownerName ||
+            existing.ownerPhone     != property.ownerPhone ||
+            existing.propertyType   != property.propertyType ||
+            existing.needToViewToday != property.needToViewToday ||
+            existing.isDraft        != property.isDraft ||
+            existing.rawText        != property.rawText ||
+            existing.diary          != property.diary ||
+            existing.isDeleted      != property.isDeleted ||
+            existing.title          != property.title ||
+            existing.mapLink        != property.mapLink ||
+            existing.extractedBy    != property.extractedBy ||
+            existing.createdAt      != property.createdAt ||
+            existing.linkedCustomerId != property.linkedCustomerId ||
+            existing.isVerified     != property.isVerified
+        )
         val normalized = property.copy(
             area = titleCasedArea,
+            isTextSynced = if (fromSync) {
+                property.isTextSynced
+            } else {
+                if (isTextChanged) false else property.isTextSynced
+            },
             isMediaSynced = if (fromSync) {
                 existing?.isMediaSynced ?: property.isMediaSynced
             } else {
@@ -320,8 +364,8 @@ class PropertyRepositoryImpl @Inject constructor(
                 demandDirections = property.direction,
                 priceMin = property.price,
                 priceMax = property.price,
-                note = "Tự động tạo từ thông tin BĐS: ${property.area}",
-                noteNormalized = "Tự động tạo từ thông tin BĐS: ${property.area}".normalizeVietnamese(),
+                note = "$AUTO_NOTE_PREFIX: ${property.area}",
+                noteNormalized = "$AUTO_NOTE_PREFIX: ${property.area}".normalizeVietnamese(),
                 role = CustomerRole.OWNER.value,
                 status = CustomerStatus.ACTIVE.value,
                 updatedAt = System.currentTimeMillis(),
@@ -379,8 +423,12 @@ class PropertyRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun softDeletePropertyLocalOnly(id: String, timestamp: Long) {
-        propertyDao.softDeletePropertyFromRemote(id, timestamp)
+    override suspend fun softDeletePropertyLocalOnly(id: String, timestamp: Long): Int {
+        return propertyDao.softDeletePropertyFromRemote(id, timestamp)
+    }
+
+    override suspend fun markPropertyTextUnsynced(id: String): Int {
+        return propertyDao.markPropertyTextUnsynced(id)
     }
 
     override suspend fun deleteOldDeletedProperties(thirtyDaysAgo: Long) {
@@ -410,6 +458,14 @@ class PropertyRepositoryImpl @Inject constructor(
             .sorted()
     }
 
+    override fun getAllDistinctAreasFlow(): Flow<List<String>> {
+        return propertyDao.getAllDistinctAreasFlow().map { areas ->
+            areas.map { StringUtils.toTitleCase(it) }
+                .distinct()
+                .sorted()
+        }
+    }
+
     override suspend fun updateMediaSyncStatus(id: String, isSynced: Boolean, expectedImagePath: String?): Boolean {
         return propertyDao.updateMediaSyncStatus(id, isSynced, expectedImagePath) > 0
     }
@@ -428,15 +484,6 @@ class PropertyRepositoryImpl @Inject constructor(
         val now = System.currentTimeMillis()
         propertyDao.updateDriveFolderInfo(id, folderId, price, now, false)
         syncPropertyToSupabase(id)
-    }
-
-    override suspend fun getPropertiesForMatching(
-        propertyType: String,
-        priceMin: Double,
-        priceMax: Double,
-        status: String
-    ): List<Property> {
-        return propertyDao.getPropertiesForMatching(propertyType, priceMin, priceMax, status).map { it.toDomain() }
     }
 
     override suspend fun getPropertiesFiltered(
@@ -525,6 +572,7 @@ class PropertyRepositoryImpl @Inject constructor(
         propertyDao.softDeletePropertyFromRemote(id, timestamp)
     }
 
+    @Deprecated("Use deleteOldDeletedProperties instead.")
     override suspend fun deleteOldDeletedUnverified(thirtyDaysAgo: Long) {
         propertyDao.deleteOldDeletedProperties(thirtyDaysAgo)
     }
@@ -561,5 +609,70 @@ class PropertyRepositoryImpl @Inject constructor(
         }
 
         return duplicates.distinctBy { it.id }.map { it.toDomain() }
+    }
+
+    override suspend fun findByCoordinates(
+        latMin: Double,
+        latMax: Double,
+        lngMin: Double,
+        lngMax: Double
+    ): List<Property> {
+        return propertyDao.findByCoordinates(latMin, latMax, lngMin, lngMax).map { it.toDomain() }
+    }
+
+    override suspend fun transferPropertyOwnership(propertyId: String, newOwnerId: String) {
+
+        val now = System.currentTimeMillis()
+
+        // 1. Get the new owner customer info
+        val newOwner = customerDao.getCustomerById(newOwnerId)?.toDomain()
+            ?: throw IllegalArgumentException("Customer with ID $newOwnerId not found")
+
+        // 2. Fetch the active owner links before we soft-delete them, so we know which old owners to sync
+        val activeOwnerLinks = customerDao.getActiveOwnerLinksForProperty(propertyId)
+        val oldOwnerIds = activeOwnerLinks.map { it.customerId }
+
+        // 3. Perform atomic database updates
+        database.withTransaction {
+            // Soft-delete current owner links
+            for (link in activeOwnerLinks) {
+                customerDao.softDeleteCustomerPropertyLink(link.customerId, link.propertyId, now)
+            }
+
+            // Create and insert new owner link
+            val newLink = com.example.data.local.entity.CustomerPropertyLink(
+                customerId = newOwnerId,
+                propertyId = propertyId,
+                role = "OWNER",
+                viewDate = null,
+                viewNote = null,
+                updatedAt = now,
+                isDeleted = false,
+                isSynced = false
+            )
+            customerDao.insertCustomerPropertyLink(newLink)
+
+            // Update property with ownerName / ownerPhone
+            val propEntity = propertyDao.getPropertyById(propertyId)
+            if (propEntity != null) {
+                val updatedProp = propEntity.copy(
+                    ownerName = newOwner.name,
+                    ownerPhone = newOwner.phone,
+                    updatedAt = now,
+                    isTextSynced = false
+                )
+                propertyDao.updateProperty(updatedProp)
+            }
+        }
+
+        // 4. Asynchronously push updates to Supabase (after transaction has completed successfully)
+        // Sync old links (soft-deleted)
+        for (oldOwnerId in oldOwnerIds) {
+            syncCustomerPropertyLinkToSupabase(oldOwnerId, propertyId)
+        }
+        // Sync new link
+        syncCustomerPropertyLinkToSupabase(newOwnerId, propertyId)
+        // Sync property
+        syncPropertyToSupabase(propertyId)
     }
 }

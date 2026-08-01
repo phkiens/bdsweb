@@ -50,6 +50,23 @@ class PropertyListViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
+    private val _showDuplicateCheckDialog = MutableStateFlow(false)
+    val showDuplicateCheckDialog: StateFlow<Boolean> = _showDuplicateCheckDialog.asStateFlow()
+
+    private val _duplicateCheckInitialText = MutableStateFlow("")
+    val duplicateCheckInitialText: StateFlow<String> = _duplicateCheckInitialText.asStateFlow()
+
+    fun openDuplicateCheckDialog(initialText: String = "") {
+        _duplicateCheckInitialText.value = initialText
+        _showDuplicateCheckDialog.value = true
+    }
+
+    fun closeDuplicateCheckDialog() {
+        _showDuplicateCheckDialog.value = false
+        _duplicateCheckInitialText.value = ""
+    }
+
+
     internal fun serializeFilter(f: FilterState): String {
         val o = JSONObject()
         o.put("propertyTypes", JSONArray(f.propertyTypes.toList()))
@@ -103,17 +120,21 @@ class PropertyListViewModel @Inject constructor(
         }
     }
 
-    private fun buildDefaultFilterState(): FilterState {
-        // Ưu tiên filter đã lưu NẾU toggle bật
-        if (settingsManager.rememberLastFilter) {
-            deserializeFilter(settingsManager.lastFilterJson)?.let { return it }
-        }
+    fun baseDefaultFilter(): FilterState {
         val pt = settingsManager.defaultPropertyType
         val st = settingsManager.defaultStatus
         return FilterState(
             propertyTypes = if (pt.isBlank()) emptySet() else setOf(pt),
             statuses = if (st.isBlank()) emptySet() else setOf(PropertyStatus.fromValue(st))
         )
+    }
+
+    private fun buildDefaultFilterState(): FilterState {
+        // Ưu tiên filter đã lưu NẾU toggle bật
+        if (settingsManager.rememberLastFilter) {
+            deserializeFilter(settingsManager.lastFilterJson)?.let { return it }
+        }
+        return baseDefaultFilter()
     }
 
     private val _filterState = MutableStateFlow(buildDefaultFilterState())
@@ -448,7 +469,7 @@ class PropertyListViewModel @Inject constructor(
     }
 
     fun resetFilter() {
-        _filterState.value = buildDefaultFilterState()
+        _filterState.value = baseDefaultFilter()
         AppLogger.log("PropertyList", "Đã đặt lại toàn bộ bộ lọc tài sản về mặc định.")
     }
 

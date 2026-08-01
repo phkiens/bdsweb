@@ -24,19 +24,28 @@ import javax.inject.Singleton
 
 @Singleton
 class DriveHelper @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val settingsManager: SettingsManager,
-    private val oAuthTokenManager: OAuthTokenManager
+    private val driveAuthorizationProvider: DriveAuthorizationProvider
 ) {
     private val TAG = "DriveHelper"
 
     @Volatile
     private var cachedToken: String? = null
     @Volatile
-    private var cachedEmail: String? = null
-    @Volatile
     private var tokenExpiresAt: Long = 0L
+    @Volatile
+    private var cacheEpoch: Long = 0L
     private val tokenMutex = Mutex()
+
+    fun clearAuthorizationCache() {
+        synchronized(this) {
+            cachedToken = null
+            tokenExpiresAt = 0L
+            cacheEpoch++
+        }
+        com.example.ui.common.AppLogger.log(TAG, "Đã xóa toàn bộ cache xác thực Google Drive.")
+    }
 
     private val client = OkHttpClient.Builder()
         .addInterceptor { chain ->
@@ -83,8 +92,7 @@ class DriveHelper @Inject constructor(
      * Finds or creates the folder named "BDS_Collector_Media" on Google Drive.
      */
     private fun getOrCreateFolder(token: String): String? {
-        val userEmail = settingsManager.googleEmail
-        com.example.ui.common.AppLogger.log(TAG, "Đang kiểm tra tài khoản Google: $userEmail")
+        com.example.ui.common.AppLogger.log(TAG, "Đang kiểm tra tài khoản Google Drive...")
         com.example.ui.common.AppLogger.log(TAG, "Tìm hoặc tạo thư mục 'BDS_Collector_Media' trên Drive...")
         try {
             // 1. Search for existing folder
@@ -182,27 +190,13 @@ class DriveHelper @Inject constructor(
         return null
     }
 
-    /**
-     * Helper to obtain a valid access token. If signed in, it dynamically fetches/refreshes the token
-     * on a background thread using OAuthTokenManager.
-     */
     internal suspend fun getValidToken(accessToken: String?): String? {
         if (!accessToken.isNullOrBlank()) {
             return accessToken
         }
 
-        val refreshToken = settingsManager.driveRefreshToken
-        if (refreshToken.isBlank()) {
-            val manualToken = settingsManager.driveToken
-            if (manualToken.isNotBlank()) {
-                Log.d(TAG, "getValidToken: Using manually provided drive token.")
-                return manualToken
-            }
-            return null
-        }
-
         val now = System.currentTimeMillis()
-        val buffer = 5 * 60 * 1000 // 5 minutes buffer
+        val buffer = 5 * 60 * 1000L // 5 minutes buffer
         
         // Check if cached token is still valid
         val currentCached = cachedToken
@@ -210,7 +204,9 @@ class DriveHelper @Inject constructor(
             return currentCached
         }
 
-        // Token is missing or expired, fetch/refresh it using Mutex
+        val startEpoch = cacheEpoch
+
+        // Token is missing or expired, request new token using Mutex
         return tokenMutex.withLock {
             // Double-checked locking
             val currentCachedDoubleCheck = cachedToken
@@ -219,36 +215,34 @@ class DriveHelper @Inject constructor(
                 return@withLock currentCachedDoubleCheck
             }
 
-            // Determine the reason for refreshing
-            val reason = if (currentCachedDoubleCheck == null) {
-                "lần đầu / đổi tài khoản"
-            } else {
-                "hết hạn"
+            if (startEpoch != cacheEpoch) {
+                return@withLock null
             }
 
-            com.example.ui.common.AppLogger.log(TAG, "Tiến hành lấy/refresh mã xác thực mới (Lý do: $reason)...")
-            try {
-                val token = oAuthTokenManager.refreshAccessToken()
-                if (!token.isNullOrBlank()) {
-                    cachedToken = token
-                    tokenExpiresAt = System.currentTimeMillis() + 3600_000 // 1 hour validity
-                    Log.d(TAG, "getValidToken: Token dynamically refreshed (length: ${token.length})")
-                    com.example.ui.common.AppLogger.log(TAG, "Mã xác thực Google Drive đã được cấp mới thành công.")
-                    return@withLock token
+            com.example.ui.common.AppLogger.log(TAG, "Đang yêu cầu cấp mã xác thực Google Drive mới...")
+            val result = driveAuthorizationProvider.requestAuthorization()
+            when (result) {
+                is DriveAuthorizationResult.Authorized -> {
+                    synchronized(this) {
+                        if (startEpoch == cacheEpoch) {
+                            cachedToken = result.accessToken
+                            tokenExpiresAt = System.currentTimeMillis() + 50 * 60 * 1000L // 50 minutes cache
+                            com.example.ui.common.AppLogger.log(TAG, "Mã xác thực Google Drive đã được cấp mới thành công.")
+                            result.accessToken
+                        } else {
+                            com.example.ui.common.AppLogger.log(TAG, "Tài khoản Google đã thay đổi trong khi cấp quyền. Bỏ qua token cũ.")
+                            null
+                        }
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "getValidToken: Failed to dynamically fetch token", e)
-                com.example.ui.common.AppLogger.log(TAG, "Không thể cập nhật mã xác thực mới: ${e.message}. Sẽ dùng mã cũ đã lưu.")
-            }
-
-            // Fallback to settingsManager value
-            val cachedInSettings = settingsManager.driveToken
-            if (cachedInSettings.isNotBlank()) {
-                cachedToken = cachedInSettings
-                tokenExpiresAt = System.currentTimeMillis() + 10 * 60 * 1000 // 10 minutes fallback
-                cachedInSettings
-            } else {
-                null
+                is DriveAuthorizationResult.NeedsUserInteraction -> {
+                    com.example.ui.common.AppLogger.log(TAG, "Cần tương tác người dùng để cấp quyền Google Drive.")
+                    null
+                }
+                is DriveAuthorizationResult.Failed -> {
+                    com.example.ui.common.AppLogger.log(TAG, "Không thể lấy mã xác thực Google Drive: ${result.message}")
+                    null
+                }
             }
         }
     }
@@ -264,8 +258,6 @@ class DriveHelper @Inject constructor(
         accessToken: String? = null,
         onProgress: (Int, Int) -> Unit = { _, _ -> }
     ): Boolean = withContext(Dispatchers.IO) {
-        val token = getValidToken(accessToken)
-        val userEmail = settingsManager.googleEmail
         try {
             // 1. Write locally for safety
             writeLocalFile("bds_collector_backup.json", propertiesJson)
@@ -275,14 +267,14 @@ class DriveHelper @Inject constructor(
             com.example.ui.common.AppLogger.log(TAG, "Đã lưu bản sao lưu dữ liệu văn bản cục bộ vào bộ nhớ thiết bị.")
 
             // 2. Check token
+            val token = getValidToken(accessToken)
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "Drive token is empty/null.")
                 com.example.ui.common.AppLogger.log(TAG, "Thất bại: Token Google Drive trống hoặc chưa đăng nhập. Vui lòng vào Cài đặt để kết nối.")
                 return@withContext false
             }
 
-            com.example.ui.common.AppLogger.log(TAG, "Bắt đầu tải dữ liệu văn bản lên Drive cho tài khoản: $userEmail")
-            com.example.ui.common.AppLogger.log(TAG, "Độ dài Access Token: ${token.length} ký tự. Token prefix: ${token.take(15)}...")
+            com.example.ui.common.AppLogger.log(TAG, "Bắt đầu tải dữ liệu văn bản lên Drive...")
 
             val folderId = getOrCreateFolder(token)
             if (folderId == null) {
@@ -470,6 +462,53 @@ class DriveHelper @Inject constructor(
         return@withContext result
     }
 
+    suspend fun listSubFoldersInFolder(folderId: String, accessToken: String? = null): Map<String, String> = withContext(Dispatchers.IO) {
+        val result = mutableMapOf<String, String>()
+        val token = getValidToken(accessToken) ?: return@withContext result
+        try {
+            var pageToken: String? = null
+            do {
+                var url = "https://www.googleapis.com/drive/v3/files?q='$folderId'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name),nextPageToken&pageSize=1000"
+                if (pageToken != null) {
+                    url += "&pageToken=$pageToken"
+                }
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    val responseBody = response.body?.string() ?: ""
+                    if (response.isSuccessful && responseBody.isNotBlank()) {
+                        val json = JSONObject(responseBody)
+                        val files = json.optJSONArray("files")
+                        if (files != null) {
+                            for (i in 0 until files.length()) {
+                                val f = files.getJSONObject(i)
+                                val id = f.optString("id")
+                                val name = f.optString("name")
+                                if (!id.isNullOrBlank() && !name.isNullOrBlank()) {
+                                    result[name] = id
+                                }
+                            }
+                        }
+                        pageToken = json.optString("nextPageToken", null)
+                        if (pageToken.isNullOrBlank() || pageToken == "null") {
+                            pageToken = null
+                        }
+                    } else {
+                        Log.e(TAG, "listSubFoldersInFolder failed with code: ${response.code}, body: $responseBody")
+                        pageToken = null
+                    }
+                }
+            } while (pageToken != null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in listSubFoldersInFolder", e)
+        }
+        return@withContext result
+    }
+
     suspend fun getOrCreateFolderPublic(accessToken: String? = null): String? = withContext(Dispatchers.IO) {
         val token = getValidToken(accessToken) ?: return@withContext null
         return@withContext getOrCreateFolder(token)
@@ -477,8 +516,6 @@ class DriveHelper @Inject constructor(
 
     suspend fun checkFolderExists(folderId: String, accessToken: String? = null): Boolean = withContext(Dispatchers.IO) {
         val token = getValidToken(accessToken) ?: return@withContext false
-        com.example.ui.common.AppLogger.log("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists bắt đầu kiểm tra folderId: $folderId")
-        android.util.Log.d("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists bắt đầu kiểm tra folderId: $folderId")
         try {
             val url = "https://www.googleapis.com/drive/v3/files/$folderId?fields=id,trashed"
             val request = Request.Builder()
@@ -494,23 +531,15 @@ class DriveHelper @Inject constructor(
                         val json = JSONObject(responseBody)
                         val trashed = json.optBoolean("trashed", false)
                         val exists = !trashed
-                        com.example.ui.common.AppLogger.log("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists kết quả cho $folderId: $exists (trashed: $trashed)")
-                        android.util.Log.d("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists kết quả cho $folderId: $exists (trashed: $trashed)")
                         return@withContext exists
                     }
                 } else if (response.code == 404) {
-                    com.example.ui.common.AppLogger.log("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists kết quả cho $folderId: false (HTTP 404)")
-                    android.util.Log.d("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists kết quả cho $folderId: false (HTTP 404)")
                     return@withContext false
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error checking folder existence: $folderId", e)
-            com.example.ui.common.AppLogger.log("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists lỗi kiểm tra $folderId: ${e.message}")
-            android.util.Log.d("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists lỗi kiểm tra $folderId: ${e.message}")
         }
-        com.example.ui.common.AppLogger.log("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists kết quả mặc định cho $folderId: false")
-        android.util.Log.d("PropertyFolderDebug", "[PropertyFolderDebug] checkFolderExists kết quả mặc định cho $folderId: false")
         return@withContext false
     }
 
@@ -664,7 +693,6 @@ class DriveHelper @Inject constructor(
         val token = getValidToken(accessToken)
         val file = File(localPath)
         val fileName = customFileName ?: file.name
-        val userEmail = settingsManager.googleEmail
         if (!file.exists()) {
             Log.e(TAG, "Local media file does not exist: $localPath")
             com.example.ui.common.AppLogger.log(TAG, "Lỗi: Không tìm thấy tệp ảnh cục bộ tại đường dẫn: $localPath")
@@ -678,7 +706,7 @@ class DriveHelper @Inject constructor(
                 return@withContext null
             }
 
-            com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh: $fileName cho tài khoản: $userEmail")
+            com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh: $fileName")
             val targetFolderId = folderId ?: getOrCreateFolder(token)
             if (targetFolderId == null) {
                 com.example.ui.common.AppLogger.log(TAG, "Lỗi: Không thể lấy thư mục đích trên Drive cho ảnh: $fileName")
@@ -762,7 +790,6 @@ class DriveHelper @Inject constructor(
             return@withContext false
         }
         try {
-            Log.d(TAG, "TOKEN_CHECK: prefix=${token.take(5)}, length=${token.length}, driveId=$driveId")
             val request = Request.Builder()
                 .url("https://www.googleapis.com/drive/v3/files/$driveId?alt=media")
                 .header("Authorization", "Bearer $token")
@@ -995,6 +1022,6 @@ class DriveHelper @Inject constructor(
     }
 
     fun isAuthorized(): Boolean {
-        return settingsManager.googleEmail.isNotBlank() || settingsManager.driveToken.isNotBlank()
+        return settingsManager.googleEmail.isNotBlank()
     }
 }

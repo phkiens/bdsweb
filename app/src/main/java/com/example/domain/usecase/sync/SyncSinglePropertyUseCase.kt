@@ -73,7 +73,6 @@ class SyncSinglePropertyUseCase @Inject constructor(
                     try {
                         JSONArray(existingContent)
                     } catch (e: Exception) {
-                        Log.e("SYNC_UPLOAD_DEBUG", "Lỗi parse backup file JSON", e)
                         JSONArray()
                     }
                 } else {
@@ -160,7 +159,6 @@ class SyncSinglePropertyUseCase @Inject constructor(
                 } catch (e: Exception) {
                     textFileSuccess = false
                     textErrorMessage = e.localizedMessage ?: "Lỗi ghi tệp .txt"
-                    Log.e("SYNC_UPLOAD_DEBUG", "Ghi tệp txt thất bại cho property $propertyId", e)
                     com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Ghi tệp txt thất bại: ${e.localizedMessage}")
                 }
 
@@ -182,7 +180,6 @@ class SyncSinglePropertyUseCase @Inject constructor(
                 errorMessage = textErrorMessage
             )
         } catch (e: Exception) {
-            Log.e("SYNC_UPLOAD_DEBUG", "Lỗi trong SyncSinglePropertyUseCase cho property $propertyId", e)
             return SyncSinglePropertyResult(
                 mediaSuccess = false,
                 textFileSuccess = false,

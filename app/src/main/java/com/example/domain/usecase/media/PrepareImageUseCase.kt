@@ -25,7 +25,6 @@ class PrepareImageUseCase @Inject constructor(
         retryDelayMs: Long = 150L,
         index: Int = 0
     ): Result = withContext(Dispatchers.IO) {
-        com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "Image[$index] start, ts=${System.currentTimeMillis()}")
         var isReady = false
         var lastError: Exception? = null
         val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -53,7 +52,6 @@ class PrepareImageUseCase @Inject constructor(
         }
 
         if (!isReady) {
-            com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "Image[$index] done, retryCount=$retryCount, ts=${System.currentTimeMillis()}")
             return@withContext Result.Failure("Không đọc được ảnh sau $maxRetries lần thử" + (lastError?.let { ": ${it.localizedMessage}" } ?: ""))
         }
 
@@ -73,7 +71,6 @@ class PrepareImageUseCase @Inject constructor(
         }
 
         if (originalBitmap == null) {
-            com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "Image[$index] done, retryCount=$retryCount, ts=${System.currentTimeMillis()}")
             return@withContext Result.Failure("Không giải mã được ảnh")
         }
 
@@ -86,7 +83,6 @@ class PrepareImageUseCase @Inject constructor(
                 resizedBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
             }
         } catch (e: Exception) {
-            com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "Image[$index] done, retryCount=$retryCount, ts=${System.currentTimeMillis()}")
             return@withContext Result.Failure("Lỗi lưu file: ${e.localizedMessage}")
         } finally {
             if (originalBitmap != resizedBitmap) {
@@ -98,7 +94,6 @@ class PrepareImageUseCase @Inject constructor(
         // Bước 4 — Sửa EXIF rotation:
         correctImageRotationIfNeeded(outputFile)
 
-        com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "Image[$index] done, retryCount=$retryCount, ts=${System.currentTimeMillis()}")
         return@withContext Result.Success(outputFile.absolutePath)
     }
 
@@ -108,12 +103,10 @@ class PrepareImageUseCase @Inject constructor(
         maxEdge: Int,
         quality: Int
     ): List<Result> = withContext(Dispatchers.IO) {
-        com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "T3 start loading ${uris.size} images, ts=${System.currentTimeMillis()}")
         val results = uris.mapIndexed { index, uri ->
             val file = outputFiles.getOrNull(index) ?: File(context.cacheDir, "temp_img_${index}.jpg")
             execute(uri, file, maxEdge, quality, index = index)
         }
-        com.example.ui.common.AppLogger.log("EDIT_PERF_DEBUG", "T5 all images ready, ts=${System.currentTimeMillis()}")
         results
     }
 

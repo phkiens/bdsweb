@@ -1,0 +1,50 @@
+package com.example.ui.common
+
+import java.text.Normalizer
+import java.util.Locale
+import java.util.regex.Pattern
+
+private val combiningMarksPattern = Pattern.compile("\\p{InCombiningDiacriticalMarks}+")
+private val qRegex1 = Regex("^q\\s*(\\d+)")
+private val qRegex2 = Regex("^q\\.(\\d+)")
+private val qRegex3 = Regex("^q\\s+")
+private val pRegex1 = Regex("^p\\s*(\\d+)")
+private val pRegex2 = Regex("^p\\.(\\d+)")
+private val tpRegex = Regex("^tp\\s+")
+private val spaceRegex = Regex("\\s+")
+
+internal fun String.normalizeForSearch(): String {
+    val temp = Normalizer.normalize(this, Normalizer.Form.NFD)
+    return combiningMarksPattern.matcher(temp).replaceAll("")
+        .replace('đ', 'd')
+        .replace('Đ', 'D')
+        .lowercase(Locale.getDefault())
+        .trim()
+}
+
+internal fun matchesArea(area: String, normInput: String): Boolean {
+    if (normInput.isBlank()) return true
+    val normArea = area.normalizeForSearch()
+    
+    if (normArea.contains(normInput)) return true
+    
+    val expandedInput = normInput
+        .replace(qRegex1, "quan $1")
+        .replace(qRegex2, "quan $1")
+        .replace(qRegex3, "quan ")
+        .replace(pRegex1, "phuong $1")
+        .replace(pRegex2, "phuong $1")
+        .replace(tpRegex, "thanh pho ")
+    if (normArea.contains(expandedInput)) return true
+    
+    val words = normArea.split(spaceRegex).filter { it.isNotEmpty() }
+    val initials = words.mapNotNull { it.firstOrNull() }.joinToString("")
+    if (initials.contains(normInput)) return true
+    
+    val inputWords = normInput.split(spaceRegex).filter { it.isNotEmpty() }
+    if (inputWords.isNotEmpty() && inputWords.all { word -> normArea.contains(word) }) {
+        return true
+    }
+    
+    return false
+}

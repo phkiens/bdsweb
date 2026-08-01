@@ -16,3 +16,15 @@
 local.properties
 .env
 debug.keystore
+
+# DB dump / pull từ máy thật (không commit)
+*.db
+*.db-wal
+*.db-shm
+*-wal
+*-shm
+/mayA/
+/mayB/
+applog*.txt
+test_delete_check.txt
+.fuse_hidden*

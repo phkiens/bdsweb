@@ -22,6 +22,8 @@ import io.github.jan.supabase.realtime.decodeOldRecord
 import io.github.jan.supabase.realtime.RealtimeChannel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,17 +37,18 @@ class RealtimeSyncManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var syncJob: Job? = null
-    private var channel: RealtimeChannel? = null
+    private val syncMutex = Mutex()
+    @Volatile private var syncJob: Job? = null
+    @Volatile private var channel: RealtimeChannel? = null
 
     // Debounce cho việc tự động tải ảnh về sau khi có thay đổi qua realtime.
     // Nhiều event realtime dồn dập chỉ kích hoạt 1 lần enqueue sau khoảng lặng.
     private var mediaRestoreDebounceJob: Job? = null
 
-    suspend fun start() {
-        if (syncJob != null) {
+    suspend fun start() = syncMutex.withLock {
+        if (syncJob?.isActive == true) {
             AppLogger.log("Realtime", "RealtimeSyncManager already running.")
-            return
+            return@withLock
         }
         AppLogger.log("Realtime", "Starting RealtimeSyncManager...")
         syncJob = scope.launch {
@@ -92,15 +95,19 @@ class RealtimeSyncManager @Inject constructor(
             } catch (e: Exception) {
                 AppLogger.log("Realtime", "Error starting realtime sync: ${e.localizedMessage}")
                 e.printStackTrace()
-                syncJob = null   // cho phép lần start() sau chạy lại
             }
         }
     }
 
-    suspend fun stop() {
+    suspend fun stop() = syncMutex.withLock {
         AppLogger.log("Realtime", "Stopping RealtimeSyncManager...")
-        syncJob?.cancel()
+        val jobToCancel = syncJob
         syncJob = null
+        if (jobToCancel != null && jobToCancel.isActive) {
+            withTimeoutOrNull(5000) {
+                jobToCancel.cancelAndJoin()
+            }
+        }
         channel?.let { ch ->
             runCatching { supabaseClientProvider.getClient().realtime.removeChannel(ch) }
         }
@@ -135,7 +142,15 @@ class RealtimeSyncManager @Inject constructor(
 
     private suspend fun upsertProperty(supabaseProp: SupabaseProperty) {
         if (supabaseProp.isDeleted) {
-            propertyRepository.softDeletePropertyLocalOnly(supabaseProp.id, supabaseProp.updatedAt)
+            val rowsAffected = propertyRepository.softDeletePropertyLocalOnly(supabaseProp.id, supabaseProp.updatedAt)
+            if (rowsAffected == 0) {
+                val existing = propertyRepository.getPropertyById(supabaseProp.id)
+                if (existing != null) {
+                    propertyRepository.markPropertyTextUnsynced(supabaseProp.id)
+                    enqueuePropertySyncRetryWorker()
+                    AppLogger.log("Realtime", "Chặn tombstone cũ cho BĐS: ${supabaseProp.id} (Remote: ${supabaseProp.updatedAt}, Local: ${existing.updatedAt})")
+                }
+            }
             return
         }
         val existing = propertyRepository.getPropertyById(supabaseProp.id)
@@ -213,7 +228,15 @@ class RealtimeSyncManager @Inject constructor(
 
     private suspend fun upsertCustomer(supabaseCust: SupabaseCustomer) {
         if (supabaseCust.isDeleted) {
-            customerRepository.softDeleteCustomerLocalOnly(supabaseCust.id, supabaseCust.updatedAt)
+            val rowsAffected = customerRepository.softDeleteCustomerLocalOnly(supabaseCust.id, supabaseCust.updatedAt)
+            if (rowsAffected == 0) {
+                val existing = customerRepository.getCustomerById(supabaseCust.id)
+                if (existing != null) {
+                    customerRepository.markCustomerUnsynced(supabaseCust.id)
+                    enqueueCustomerSyncRetryWorker()
+                    AppLogger.log("Realtime", "Chặn tombstone cũ cho Khách hàng: ${supabaseCust.id} (Remote: ${supabaseCust.updatedAt}, Local: ${existing.updatedAt})")
+                }
+            }
             return
         }
         val existing = customerRepository.getCustomerById(supabaseCust.id)
@@ -261,7 +284,15 @@ class RealtimeSyncManager @Inject constructor(
 
     private suspend fun upsertCustomerPropertyLink(supabaseLink: SupabaseCustomerPropertyLink) {
         if (supabaseLink.isDeleted) {
-            customerRepository.softDeleteCustomerPropertyLinkLocalOnly(supabaseLink.customerId, supabaseLink.propertyId, supabaseLink.updatedAt)
+            val rowsAffected = customerRepository.softDeleteCustomerPropertyLinkLocalOnly(supabaseLink.customerId, supabaseLink.propertyId, supabaseLink.updatedAt)
+            if (rowsAffected == 0) {
+                val existing = customerRepository.getLinkByIds(supabaseLink.customerId, supabaseLink.propertyId)
+                if (existing != null) {
+                    customerRepository.markCustomerPropertyLinkUnsynced(supabaseLink.customerId, supabaseLink.propertyId)
+                    enqueueCustomerPropertyLinkSyncRetryWorker()
+                    AppLogger.log("Realtime", "Chặn tombstone cũ cho Link: ${supabaseLink.customerId}_${supabaseLink.propertyId} (Remote: ${supabaseLink.updatedAt}, Local: ${existing.updatedAt})")
+                }
+            }
             return
         }
         val existing = customerRepository.getLinkByIds(supabaseLink.customerId, supabaseLink.propertyId)
@@ -434,6 +465,81 @@ class RealtimeSyncManager @Inject constructor(
         mediaRestoreDebounceJob = scope.launch {
             delay(2000)
             updatePendingMediaCounts(showNotification = false)
+        }
+    }
+
+    private fun enqueuePropertySyncRetryWorker() {
+        try {
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.data.worker.PropertySyncRetryWorker>()
+                .setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .build()
+                )
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.LINEAR,
+                    30,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "property_sync_retry_work",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Property qua WorkManager.")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun enqueueCustomerSyncRetryWorker() {
+        try {
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.data.worker.CustomerSyncRetryWorker>()
+                .setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .build()
+                )
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.LINEAR,
+                    30,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "customer_sync_retry_work",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Customer qua WorkManager.")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun enqueueCustomerPropertyLinkSyncRetryWorker() {
+        try {
+            val request = androidx.work.OneTimeWorkRequestBuilder<com.example.data.worker.CustomerPropertyLinkSyncRetryWorker>()
+                .setConstraints(
+                    androidx.work.Constraints.Builder()
+                        .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                        .build()
+                )
+                .setBackoffCriteria(
+                    androidx.work.BackoffPolicy.LINEAR,
+                    30,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+                .build()
+            androidx.work.WorkManager.getInstance(context).enqueueUniqueWork(
+                "customer_property_link_sync_retry_work",
+                androidx.work.ExistingWorkPolicy.KEEP,
+                request
+            )
+            AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Link qua WorkManager.")
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

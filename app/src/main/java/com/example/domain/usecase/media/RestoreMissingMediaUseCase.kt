@@ -67,7 +67,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
         try {
             val allUnverified = propertyRepository.getAllUnverified().filter { !it.isDeleted }
             for (unv in allUnverified) {
-                val displayName = unv.title?.takeIf { it.isNotBlank() } ?: (unv.address?.takeIf { it.isNotBlank() } ?: "Tin khảo sát")
+                val displayName = unv.title?.takeIf { it.isNotBlank() } ?: (unv.area.takeIf { it.isNotBlank() } ?: "Tin khảo sát")
                 val rawDriveMediaIds = unv.driveMediaIds
                 if (!rawDriveMediaIds.isNullOrBlank() && rawDriveMediaIds != "null") {
                     try {
@@ -294,14 +294,14 @@ class RestoreMissingMediaUseCase @Inject constructor(
                         
                         if (destFile.exists() && destFile.length() > 0L) {
                             val updatedCust = c.copy(avatarPath = localPath, isSynced = true)
-                            customerRepository.updateCustomer(updatedCust)
+                            customerRepository.updateCustomer(updatedCust, fromSync = true)
                             Log.d(TAG, "TEMPORARY DIAGNOSTIC: Restored existing avatarPath for customer ${c.name} -> $localPath")
                         } else {
                             try {
                                 val success = driveHelper.downloadImageFile(driveUrl, destFile)
                                 if (success) {
                                     val updatedCust = c.copy(avatarPath = localPath, isSynced = true)
-                                    customerRepository.updateCustomer(updatedCust)
+                                    customerRepository.updateCustomer(updatedCust, fromSync = true)
                                     Log.d(TAG, "TEMPORARY DIAGNOSTIC: Downloaded and restored avatarPath for customer ${c.name} -> $localPath")
                                 } else {
                                     Log.e(TAG, "Tải avatar cho ${c.name} thất bại: driveId=$driveUrl, localPath=$localPath")
@@ -336,7 +336,6 @@ class RestoreMissingMediaUseCase @Inject constructor(
             message = "Bắt đầu tải ảnh Property $propertyId"
         )
 
-        Log.d("DOWNLOAD_DEBUG", "propertyId: $propertyId, driveMediaIds: ${p.driveMediaIds}")
         val rawDriveMediaIds = p.driveMediaIds
         if (rawDriveMediaIds.isNullOrBlank() || rawDriveMediaIds == "null") {
             com.example.ui.common.AppLogger.record(
@@ -372,19 +371,15 @@ class RestoreMissingMediaUseCase @Inject constructor(
                 if (driveId.isNullOrBlank() || driveId == "null") continue
 
                 val destFile = File(localPath)
-                Log.d("DOWNLOAD_DEBUG", "File: $localPath - exists=${destFile.exists()}, length=${destFile.length()}")
                 val exists = com.example.data.remote.supabase.MediaReconciler.isImagePresent(localPath, isVerified = true, context = context)
                 if (!exists) {
                     destFile.parentFile?.mkdirs()
-                    Log.d("DOWNLOAD_DEBUG", "Bắt đầu tải file từ Drive: driveId=$driveId -> localPath=$localPath")
                     try {
                         val success = driveHelper.downloadMediaFile(driveId, destFile, token)
                         if (success) {
-                            Log.d("DOWNLOAD_DEBUG", "Tải file THÀNH CÔNG: localPath=$localPath")
                             successCount++
                             validLocalPaths.add(localPath)
                         } else {
-                            Log.e("DOWNLOAD_DEBUG", "Tải file THẤT BẠI: localPath=$localPath")
                             com.example.ui.common.AppLogger.record(
                                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                                 status = com.example.data.local.entity.SyncStatus.FAILED,
@@ -394,7 +389,6 @@ class RestoreMissingMediaUseCase @Inject constructor(
                             failCount++
                         }
                     } catch (e: Exception) {
-                        Log.e("DOWNLOAD_DEBUG", "Exception khi tải file: driveId=$driveId, localPath=$localPath", e)
                         com.example.ui.common.AppLogger.record(
                             type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
@@ -443,7 +437,6 @@ class RestoreMissingMediaUseCase @Inject constructor(
             )
             return DownloadResult.Success(successCount)
         } catch (e: Exception) {
-            Log.e("DOWNLOAD_DEBUG", "Exception trong downloadSinglePropertyImages: ${e.message}", e)
             Log.e(TAG, "Error in downloadSinglePropertyImages for $propertyId", e)
             com.example.ui.common.AppLogger.record(
                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
