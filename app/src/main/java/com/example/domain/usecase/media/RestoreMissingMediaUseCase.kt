@@ -159,7 +159,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                         type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Lỗi khôi phục ảnh $driveId (xem chi tiết ở log)"
+                        message = "Lỗi khôi phục hình ảnh"
                     )
                 }
             } catch (e: Exception) {
@@ -243,7 +243,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                         type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Lỗi khôi phục ảnh khảo sát $driveId"
+                        message = "Lỗi khôi phục hình ảnh tin thô"
                     )
                 }
             } catch (e: Exception) {
@@ -272,7 +272,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                         type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Lỗi khôi phục avatar $driveId"
+                        message = "Lỗi khôi phục ảnh đại diện"
                     )
                 }
             } catch (e: Exception) {
@@ -333,7 +333,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
             type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
             status = com.example.data.local.entity.SyncStatus.STARTED,
             tag = TAG,
-            message = "Bắt đầu tải ảnh Property $propertyId"
+            message = "Bắt đầu tải ảnh BĐS"
         )
 
         val rawDriveMediaIds = p.driveMediaIds
@@ -342,7 +342,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                 status = com.example.data.local.entity.SyncStatus.INFO,
                 tag = TAG,
-                message = "Property $propertyId không có ảnh trên Drive"
+                message = "BĐS không có ảnh trên Drive"
             )
             return DownloadResult.Success(0)
         }
@@ -354,7 +354,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                 status = com.example.data.local.entity.SyncStatus.FAILED,
                 tag = TAG,
-                message = "Chưa xác thực Drive"
+                message = "Chưa liên kết Google Drive"
             )
             return DownloadResult.NoDriveAuth
         }
@@ -384,7 +384,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                                 status = com.example.data.local.entity.SyncStatus.FAILED,
                                 tag = TAG,
-                                message = "Ảnh ${destFile.name} (driveId: $driveId) thất bại"
+                                message = "Tải ảnh BĐS thất bại"
                             )
                             failCount++
                         }
@@ -393,7 +393,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                             type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = TAG,
-                            message = "Ảnh ${destFile.name} (driveId: $driveId) lỗi: ${e.message}"
+                            message = "Tải ảnh BĐS thất bại"
                         )
                         failCount++
                     }
@@ -421,7 +421,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                     type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                     status = com.example.data.local.entity.SyncStatus.FAILED,
                     tag = TAG,
-                    message = "Tải ảnh Property $propertyId: $failCount/$total thất bại",
+                    message = "Tải ảnh BĐS thất bại",
                     itemCount = successCount,
                     totalCount = total
                 )
@@ -431,7 +431,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                 status = com.example.data.local.entity.SyncStatus.SUCCESS,
                 tag = TAG,
-                message = "Tải ảnh Property $propertyId: $successCount ảnh",
+                message = "Tải ảnh BĐS hoàn tất",
                 itemCount = successCount,
                 totalCount = total
             )
@@ -442,7 +442,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                 status = com.example.data.local.entity.SyncStatus.FAILED,
                 tag = TAG,
-                message = "Lỗi khi tải ảnh Property $propertyId: ${e.message}"
+                message = "Tải ảnh BĐS thất bại"
             )
             return DownloadResult.Failed(e.localizedMessage ?: "Lỗi không xác định")
         }
@@ -491,7 +491,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                             type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = TAG,
-                            message = "Ảnh khảo sát ${destFile.name} (driveId: $driveId) thất bại"
+                            message = "Tải ảnh tin thô thất bại"
                         )
                     }
                 } catch (e: Exception) {
@@ -500,7 +500,7 @@ class RestoreMissingMediaUseCase @Inject constructor(
                         type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Ảnh khảo sát ${destFile.name} (driveId: $driveId) lỗi: ${e.message}"
+                        message = "Tải ảnh tin thô thất bại"
                     )
                 }
             }

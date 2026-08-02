@@ -1,4 +1,5 @@
 package com.example.ui.property
+import com.example.BuildConfig
 
 import android.content.Context
 import android.content.Intent
@@ -139,7 +140,9 @@ class PropertyDetailViewModel @Inject constructor(
                     CustomerMatchUiState.Success(results)
                 }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error scanning matching customers: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error scanning matching customers: ${e.localizedMessage}")
+                }
                 _matchResults.value = CustomerMatchUiState.Empty("Có lỗi xảy ra khi quét tìm khách hàng")
             }
         }
@@ -156,7 +159,9 @@ class PropertyDetailViewModel @Inject constructor(
         .flatMapLatest { id ->
             propertyRepository.getPropertyByIdFlow(id).onEach { property ->
                 if (property != null) {
-                    AppLogger.log(TAG, "Đang hiển thị chi tiết tài sản: ${property.area}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đang hiển thị chi tiết tài sản: ${property.area}")
+                    }
                     val mode = if (property.isVerified) com.example.ui.common.ActionMode.VERIFIED else com.example.ui.common.ActionMode.UNVERIFIED
                     if (mode != currentActionMode) {
                         currentActionMode = mode
@@ -212,7 +217,9 @@ class PropertyDetailViewModel @Inject constructor(
             } else {
                 "Đã bỏ đánh dấu dẫn khách hôm nay đối với tài sản '${property.area}'."
             }
-            AppLogger.log(TAG, logMsg)
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, logMsg)
+            }
         }
     }
 
@@ -224,7 +231,9 @@ class PropertyDetailViewModel @Inject constructor(
         }
         viewModelScope.launch {
             propertyRepository.updateProperty(property.copy(status = newStatus, updatedAt = System.currentTimeMillis()))
-            AppLogger.log(TAG, "Đã đổi trạng thái tài sản '${property.area}' sang: '$newStatus'")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã đổi trạng thái tài sản '${property.area}' sang: '$newStatus'")
+            }
         }
     }
 
@@ -237,7 +246,9 @@ class PropertyDetailViewModel @Inject constructor(
             val newImagePath = paths.joinToString("|||")
             viewModelScope.launch {
                 propertyRepository.updateProperty(property.copy(imagePath = newImagePath, updatedAt = System.currentTimeMillis()))
-                AppLogger.log(TAG, "Đã đặt một hình ảnh làm ảnh đại diện cho tài sản '${property.area}'.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã đặt một hình ảnh làm ảnh đại diện cho tài sản '${property.area}'.")
+                }
             }
         }
     }
@@ -250,7 +261,9 @@ class PropertyDetailViewModel @Inject constructor(
             val newImagePath = if (paths.isEmpty()) null else paths.joinToString("|||")
             viewModelScope.launch {
                 propertyRepository.updateProperty(property.copy(imagePath = newImagePath, updatedAt = System.currentTimeMillis()))
-                AppLogger.log(TAG, "Đã xóa 1 hình ảnh khỏi tài sản '${property.area}'.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã xóa 1 hình ảnh khỏi tài sản '${property.area}'.")
+                }
             }
         }
     }
@@ -263,7 +276,9 @@ class PropertyDetailViewModel @Inject constructor(
         val updatedDiary = if (property.diary.isBlank()) newEntry else "$newEntry\n${property.diary}"
         viewModelScope.launch {
             propertyRepository.updateProperty(property.copy(diary = updatedDiary, updatedAt = System.currentTimeMillis()))
-            AppLogger.log(TAG, "Đã thêm nhật ký mới cho tài sản '${property.area}'.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã thêm nhật ký mới cho tài sản '${property.area}'.")
+            }
         }
     }
 
@@ -271,7 +286,9 @@ class PropertyDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val property = propertyRepository.getPropertyById(propertyId)
             propertyRepository.softDeleteProperty(propertyId, System.currentTimeMillis())
-            AppLogger.log(TAG, "Đã xóa tạm tài sản '${property?.area ?: propertyId}'.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã xóa tạm tài sản '${property?.area ?: propertyId}'.")
+            }
             onDeleted()
         }
     }
@@ -302,7 +319,9 @@ class PropertyDetailViewModel @Inject constructor(
             
             val newImagePath = if (newPaths.isEmpty()) null else newPaths.joinToString("|||")
             propertyRepository.updateProperty(property.copy(imagePath = newImagePath, updatedAt = System.currentTimeMillis()))
-            AppLogger.log("PropertyDetailViewModel", "Đã thêm ${uris.size} hình ảnh vào tài sản '${property.area}'")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("PropertyDetailViewModel", "Đã thêm ${uris.size} hình ảnh vào tài sản '${property.area}'")
+            }
         }
     }
 
@@ -314,9 +333,13 @@ class PropertyDetailViewModel @Inject constructor(
                 // Force re-fetch of property state
                 _propertyId.value = null
                 _propertyId.value = propertyId
-                AppLogger.log(TAG, "Đã chuyển quyền sở hữu tài sản $propertyId sang khách hàng $newOwnerId")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã chuyển quyền sở hữu tài sản $propertyId sang khách hàng $newOwnerId")
+                }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Lỗi khi chuyển quyền sở hữu: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Lỗi khi chuyển quyền sở hữu: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -353,7 +376,9 @@ class PropertyDetailViewModel @Inject constructor(
                 ),
                 fromSync = false
             )
-            AppLogger.log(TAG, "Đã cập nhật nội dung tin đăng cho tài sản '${property.area}'.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã cập nhật nội dung tin đăng cho tài sản '${property.area}'.")
+            }
         }
     }
 
@@ -391,9 +416,13 @@ class PropertyDetailViewModel @Inject constructor(
             try {
                 customerRepository.softDeleteCustomerPropertyLink(customerId, propertyId)
                 _viewingRefreshTrigger.value += 1
-                AppLogger.log(TAG, "Đã xóa lượt xem nhà của khách $customerId đối với BĐS $propertyId")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã xóa lượt xem nhà của khách $customerId đối với BĐS $propertyId")
+                }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Lỗi khi xóa lượt xem nhà: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Lỗi khi xóa lượt xem nhà: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -443,7 +472,9 @@ class PropertyDetailViewModel @Inject constructor(
                 _viewingRefreshTrigger.value += 1
                 onResult(true, null)
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error adding viewing link: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error adding viewing link: ${e.localizedMessage}")
+                }
                 onResult(false, "Lỗi khi lưu lịch sử xem nhà: ${e.localizedMessage}")
             }
         }

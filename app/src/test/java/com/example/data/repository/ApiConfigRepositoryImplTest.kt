@@ -165,4 +165,23 @@ class ApiConfigRepositoryImplTest {
         assertEquals("https://saved.supabase.co", result.supabaseUrl)
         assertEquals("sb_publishable_saved_xyz", result.supabaseAnonKey)
     }
+
+    @Test
+    fun resolve_savedHttpUrl_discardsSavedPairAndUsesDefault() {
+        val savedUrl = "http://saved.supabase.co"
+        val savedKey = "sb_publishable_saved_xyz"
+
+        val result = resolveSupabaseConfig(
+            savedUrl = savedUrl,
+            savedKey = savedKey,
+            defaultUrl = defaultUrl,
+            defaultKey = defaultPublishableKey
+        )
+
+        assertEquals(defaultUrl, result.supabaseUrl)
+        assertEquals(defaultPublishableKey, result.supabaseAnonKey)
+
+        assertNotEquals(savedUrl, result.supabaseUrl)
+        assertNotEquals(savedKey, result.supabaseAnonKey)
+    }
 }

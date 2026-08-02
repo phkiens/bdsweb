@@ -59,41 +59,59 @@ class SupabaseTestHelper @Inject constructor(
     private val supabaseClientProvider: SupabaseClientProvider
 ) {
     suspend fun runConnectionTest(): Boolean {
-        AppLogger.log("SupabaseTest", "Bắt đầu chạy thử nghiệm kết nối Supabase...")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("SupabaseTest", "Bắt đầu chạy thử nghiệm kết nối Supabase...")
+        }
         return try {
             val supabaseClient = supabaseClientProvider.getClient()
             val postgrest = supabaseClient.postgrest
             val table = postgrest.from("customers")
 
             // 1. Insert 1 dòng test
-            AppLogger.log("SupabaseTest", "1. Đang insert dòng test (id='test_ping', name='Test Connection')...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "1. Đang insert dòng test (id='test_ping', name='Test Connection')...")
+            }
             val testCustomer = SupabaseCustomerTest(id = "test_ping", name = "Test Connection")
             table.insert(testCustomer)
-            AppLogger.log("SupabaseTest", "   ✓ Insert thành công!")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "   ✓ Insert thành công!")
+            }
 
             // 2. Đọc lại dòng đó
-            AppLogger.log("SupabaseTest", "2. Đang đọc lại dòng test vừa insert...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "2. Đang đọc lại dòng test vừa insert...")
+            }
             val selectResult = table.select(columns = Columns.list("id", "name")) {
                 filter {
                     eq("id", "test_ping")
                 }
             }
             val decodedList = selectResult.decodeList<SupabaseCustomerTest>()
-            AppLogger.log("SupabaseTest", "   ✓ Đọc thành công! Kết quả nhận về: $decodedList")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "   ✓ Đọc thành công! Kết quả nhận về: $decodedList")
+            }
 
             // 3. Xoá dòng test
-            AppLogger.log("SupabaseTest", "3. Đang xoá dòng test sau khi hoàn tất...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "3. Đang xoá dòng test sau khi hoàn tất...")
+            }
             table.delete {
                 filter {
                     eq("id", "test_ping")
                 }
             }
-            AppLogger.log("SupabaseTest", "   ✓ Xoá thành công!")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "   ✓ Xoá thành công!")
+            }
 
-            AppLogger.log("SupabaseTest", "★ Thử nghiệm kết nối Supabase HOÀN TẤT THÀNH CÔNG ✓")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "★ Thử nghiệm kết nối Supabase HOÀN TẤT THÀNH CÔNG ✓")
+            }
             true
         } catch (e: Exception) {
-            AppLogger.log("SupabaseTest", "❌ Thử nghiệm thất bại: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SupabaseTest", "❌ Thử nghiệm thất bại: ${e.localizedMessage}")
+            }
             e.printStackTrace()
             false
         }

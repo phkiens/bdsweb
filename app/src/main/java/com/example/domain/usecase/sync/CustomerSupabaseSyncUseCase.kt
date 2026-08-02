@@ -1,4 +1,5 @@
 package com.example.domain.usecase.sync
+import com.example.BuildConfig
 
 import com.example.data.remote.supabase.SupabaseClientProvider
 import com.example.data.remote.supabase.model.SupabaseCustomer
@@ -14,14 +15,20 @@ class CustomerSupabaseSyncUseCase @Inject constructor(
 ) {
     suspend fun pushToSupabase(customer: Customer): Boolean {
         return try {
-            AppLogger.log("CustomerSupabaseSync", "Đang push customer ${customer.id} lên Supabase...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("CustomerSupabaseSync", "Đang push customer ${customer.id} lên Supabase...")
+            }
             val client = supabaseClientProvider.getClient()
             val supabaseCustomer = SupabaseCustomer.fromDomain(customer)
             client.postgrest.from("customers").upsert(supabaseCustomer)
-            AppLogger.log("CustomerSupabaseSync", "✓ Đã push customer ${customer.id} thành công!")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("CustomerSupabaseSync", "✓ Đã push customer ${customer.id} thành công!")
+            }
             true
         } catch (e: Exception) {
-            AppLogger.log("CustomerSupabaseSync", "❌ Lỗi khi push customer ${customer.id}: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("CustomerSupabaseSync", "❌ Lỗi khi push customer ${customer.id}: ${e.localizedMessage}")
+            }
             e.printStackTrace()
             false
         }

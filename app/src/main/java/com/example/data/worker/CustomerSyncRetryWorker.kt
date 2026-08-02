@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.BuildConfig
 import com.example.di.WorkerEntryPoint
 import com.example.ui.common.AppLogger
 import com.example.ui.common.NotificationHelper
@@ -36,11 +37,15 @@ class CustomerSyncRetryWorker(
                         allSuccess = false
                         remainingUnsyncedCount++
                     }
-                    AppLogger.log("CustomerSupabaseSync", "Retry push thành công cho customer ${customer.id} (CAS: $syncSuccess)")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("CustomerSupabaseSync", "Retry push thành công cho customer ${customer.id} (CAS: $syncSuccess)")
+                    }
                 } else {
                     allSuccess = false
                     remainingUnsyncedCount++
-                    AppLogger.log("CustomerSupabaseSync", "Retry push thất bại cho customer ${customer.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("CustomerSupabaseSync", "Retry push thất bại cho customer ${customer.id}")
+                    }
                 }
             }
 
@@ -52,7 +57,7 @@ class CustomerSyncRetryWorker(
                         type = com.example.data.local.entity.SyncType.RETRY,
                         status = com.example.data.local.entity.SyncStatus.SUCCESS,
                         tag = "CustomerSyncRetry",
-                        message = "Đồng bộ lại Khách hàng thành công: đã đẩy ${unsyncedCustomers.size} mục.",
+                        message = "Thử lại đồng bộ Khách hàng thành công",
                         itemCount = unsyncedCustomers.size
                     )
                 }
@@ -78,7 +83,8 @@ class CustomerSyncRetryWorker(
                             type = com.example.data.local.entity.SyncType.RETRY,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = "CustomerSyncRetry",
-                            message = "Cảnh báo đồng bộ Khách hàng: còn $remainingUnsyncedCount mục chưa đồng bộ lên máy chủ"
+                            message = "Cảnh báo đồng bộ Khách hàng chưa hoàn tất",
+                            itemCount = remainingUnsyncedCount
                         )
                         prefs.edit().putLong("customer_retry_warned_at", currentTime).apply()
                     }

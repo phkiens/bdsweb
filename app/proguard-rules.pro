@@ -19,3 +19,28 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# WorkManager creates InputMerger instances through reflection using class
+# names persisted in its database. Preserve the built-in no-arg constructors.
+-keep,allowoptimization class androidx.work.OverwritingInputMerger {
+    public <init>();
+}
+
+-keep,allowoptimization class androidx.work.ArrayCreatingInputMerger {
+    public <init>();
+}
+
+# Strip Android Logcat invocations in optimized release & r8Test builds
+-assumenosideeffects class android.util.Log {
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
+    public static *** w(...);
+    public static *** e(...);
+    public static *** wtf(...);
+}
+
+# Strip Throwable.printStackTrace() invocations in optimized release & r8Test builds
+-assumenosideeffects class java.lang.Throwable {
+    public void printStackTrace();
+}

@@ -1,4 +1,5 @@
 package com.example.data.remote.drive
+import com.example.BuildConfig
 
 import android.content.Context
 import android.util.Log
@@ -44,7 +45,9 @@ class DriveHelper @Inject constructor(
             tokenExpiresAt = 0L
             cacheEpoch++
         }
-        com.example.ui.common.AppLogger.log(TAG, "Đã xóa toàn bộ cache xác thực Google Drive.")
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log(TAG, "Đã xóa toàn bộ cache xác thực Google Drive.")
+        }
     }
 
     private val client = OkHttpClient.Builder()
@@ -65,7 +68,9 @@ class DriveHelper @Inject constructor(
                         }
                     }
                     if (tokenCleared) {
-                        com.example.ui.common.AppLogger.log(TAG, "Phát hiện mã xác thực bị từ chối (HTTP 401). Tiến hành xóa cache và lấy mã mới...")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Phát hiện mã xác thực bị từ chối (HTTP 401). Tiến hành xóa cache và lấy mã mới...")
+                        }
                     }
                     
                     // Fetch fresh token using block
@@ -92,8 +97,12 @@ class DriveHelper @Inject constructor(
      * Finds or creates the folder named "BDS_Collector_Media" on Google Drive.
      */
     private fun getOrCreateFolder(token: String): String? {
-        com.example.ui.common.AppLogger.log(TAG, "Đang kiểm tra tài khoản Google Drive...")
-        com.example.ui.common.AppLogger.log(TAG, "Tìm hoặc tạo thư mục 'BDS_Collector_Media' trên Drive...")
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log(TAG, "Đang kiểm tra tài khoản Google Drive...")
+        }
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log(TAG, "Tìm hoặc tạo thư mục 'BDS_Collector_Media' trên Drive...")
+        }
         try {
             // 1. Search for existing folder
             val url = "https://www.googleapis.com/drive/v3/files?q=name='BDS_Collector_Media'+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id)"
@@ -112,18 +121,24 @@ class DriveHelper @Inject constructor(
                         if (files != null && files.length() > 0) {
                             val folderId = files.getJSONObject(0).getString("id")
                             Log.d(TAG, "Found existing folder BDS_Collector_Media: $folderId")
-                            com.example.ui.common.AppLogger.log(TAG, "Tìm thấy thư mục 'BDS_Collector_Media' cũ với ID: $folderId")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log(TAG, "Tìm thấy thư mục 'BDS_Collector_Media' cũ với ID: $folderId")
+                            }
                             return folderId
                         }
                     }
                 } else {
                     Log.e(TAG, "Search folder failed with code: ${response.code}, body: $responseBody")
-                    com.example.ui.common.AppLogger.log(TAG, "Tìm thư mục thất bại. HTTP code: ${response.code}, response: $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Tìm thư mục thất bại. HTTP code: ${response.code}, response: $responseBody")
+                    }
                 }
             }
 
             // 2. Create if not found
-            com.example.ui.common.AppLogger.log(TAG, "Không tìm thấy thư mục 'BDS_Collector_Media'. Tiến hành tạo mới...")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Không tìm thấy thư mục 'BDS_Collector_Media'. Tiến hành tạo mới...")
+            }
             val metadata = JSONObject().apply {
                 put("name", "BDS_Collector_Media")
                 put("mimeType", "application/vnd.google-apps.folder")
@@ -142,17 +157,23 @@ class DriveHelper @Inject constructor(
                         val json = JSONObject(responseBody)
                         val folderId = json.getString("id")
                         Log.d(TAG, "Created folder BDS_Collector_Media: $folderId")
-                        com.example.ui.common.AppLogger.log(TAG, "Đã tạo mới thư mục 'BDS_Collector_Media' thành công. ID: $folderId")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Đã tạo mới thư mục 'BDS_Collector_Media' thành công. ID: $folderId")
+                        }
                         return folderId
                     }
                 } else {
                     Log.e(TAG, "Create folder failed with code: ${response.code}, body: $responseBody")
-                    com.example.ui.common.AppLogger.log(TAG, "Tạo thư mục thất bại. HTTP code: ${response.code}, response: $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Tạo thư mục thất bại. HTTP code: ${response.code}, response: $responseBody")
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in getOrCreateFolder", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi xảy ra khi tìm/tạo thư mục: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi xảy ra khi tìm/tạo thư mục: ${e.message}")
+            }
         }
         return null
     }
@@ -178,7 +199,9 @@ class DriveHelper @Inject constructor(
                         if (files != null && files.length() > 0) {
                             val fileId = files.getJSONObject(0).getString("id")
                             Log.d(TAG, "Found existing file $fileName in folder: $fileId")
-                            com.example.ui.common.AppLogger.log(TAG, "Tìm thấy file cũ '$fileName' trùng tên trên Drive (ID: $fileId). Sẽ thực hiện ghi đè.")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log(TAG, "Tìm thấy file cũ '$fileName' trùng tên trên Drive (ID: $fileId). Sẽ thực hiện ghi đè.")
+                            }
                             return fileId
                         }
                     }
@@ -219,7 +242,9 @@ class DriveHelper @Inject constructor(
                 return@withLock null
             }
 
-            com.example.ui.common.AppLogger.log(TAG, "Đang yêu cầu cấp mã xác thực Google Drive mới...")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Đang yêu cầu cấp mã xác thực Google Drive mới...")
+            }
             val result = driveAuthorizationProvider.requestAuthorization()
             when (result) {
                 is DriveAuthorizationResult.Authorized -> {
@@ -227,20 +252,28 @@ class DriveHelper @Inject constructor(
                         if (startEpoch == cacheEpoch) {
                             cachedToken = result.accessToken
                             tokenExpiresAt = System.currentTimeMillis() + 50 * 60 * 1000L // 50 minutes cache
-                            com.example.ui.common.AppLogger.log(TAG, "Mã xác thực Google Drive đã được cấp mới thành công.")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log(TAG, "Mã xác thực Google Drive đã được cấp mới thành công.")
+                            }
                             result.accessToken
                         } else {
-                            com.example.ui.common.AppLogger.log(TAG, "Tài khoản Google đã thay đổi trong khi cấp quyền. Bỏ qua token cũ.")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log(TAG, "Tài khoản Google đã thay đổi trong khi cấp quyền. Bỏ qua token cũ.")
+                            }
                             null
                         }
                     }
                 }
                 is DriveAuthorizationResult.NeedsUserInteraction -> {
-                    com.example.ui.common.AppLogger.log(TAG, "Cần tương tác người dùng để cấp quyền Google Drive.")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Cần tương tác người dùng để cấp quyền Google Drive.")
+                    }
                     null
                 }
                 is DriveAuthorizationResult.Failed -> {
-                    com.example.ui.common.AppLogger.log(TAG, "Không thể lấy mã xác thực Google Drive: ${result.message}")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Không thể lấy mã xác thực Google Drive: ${result.message}")
+                    }
                     null
                 }
             }
@@ -264,21 +297,29 @@ class DriveHelper @Inject constructor(
             writeLocalFile("bds_unverified_backup.json", unverifiedJson)
             writeLocalFile("bds_customers_backup.json", customersJson)
             Log.d(TAG, "Local text backups written successfully.")
-            com.example.ui.common.AppLogger.log(TAG, "Đã lưu bản sao lưu dữ liệu văn bản cục bộ vào bộ nhớ thiết bị.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Đã lưu bản sao lưu dữ liệu văn bản cục bộ vào bộ nhớ thiết bị.")
+            }
 
             // 2. Check token
             val token = getValidToken(accessToken)
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "Drive token is empty/null.")
-                com.example.ui.common.AppLogger.log(TAG, "Thất bại: Token Google Drive trống hoặc chưa đăng nhập. Vui lòng vào Cài đặt để kết nối.")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Thất bại: Token Google Drive trống hoặc chưa đăng nhập. Vui lòng vào Cài đặt để kết nối.")
+                }
                 return@withContext false
             }
 
-            com.example.ui.common.AppLogger.log(TAG, "Bắt đầu tải dữ liệu văn bản lên Drive...")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Bắt đầu tải dữ liệu văn bản lên Drive...")
+            }
 
             val folderId = getOrCreateFolder(token)
             if (folderId == null) {
-                com.example.ui.common.AppLogger.log(TAG, "Thất bại: Không thể lấy hoặc tạo thư mục BDS_Collector_Media trên Drive.")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Thất bại: Không thể lấy hoặc tạo thư mục BDS_Collector_Media trên Drive.")
+                }
                 return@withContext false
             }
 
@@ -290,15 +331,21 @@ class DriveHelper @Inject constructor(
             onProgress(3, 3)
 
             if (success1 && success2 && success3) {
-                com.example.ui.common.AppLogger.log(TAG, "Đồng bộ thành công cả 3 tệp dữ liệu lên thư mục Drive ID: $folderId.")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Đồng bộ thành công cả 3 tệp dữ liệu lên thư mục Drive ID: $folderId.")
+                }
                 return@withContext true
             } else {
-                com.example.ui.common.AppLogger.log(TAG, "Đồng bộ thất bại một hoặc nhiều tệp dữ liệu lên Drive.")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Đồng bộ thất bại một hoặc nhiều tệp dữ liệu lên Drive.")
+                }
                 return@withContext false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error during text backup", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi xảy ra trong quá trình đồng bộ: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi xảy ra trong quá trình đồng bộ: ${e.message}")
+            }
             return@withContext false
         }
     }
@@ -342,7 +389,9 @@ class DriveHelper @Inject constructor(
                     if (r.isSuccessful) {
                         val json = JSONObject(responseBody)
                         val uploadedId = json.optString("id")
-                        com.example.ui.common.AppLogger.log(TAG, "Cập nhật $fileName qua cache ID $cachedFileId thành công.")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Cập nhật $fileName qua cache ID $cachedFileId thành công.")
+                        }
                         return@withContext if (uploadedId.isNullOrBlank()) cachedFileId else uploadedId
                     } else if (r.code == 404) {
                         Log.d(TAG, "Cached file ID $cachedFileId not found (404). Falling back to search and create...")
@@ -411,7 +460,9 @@ class DriveHelper @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error in findJsonFiles", e)
         }
-        com.example.ui.common.AppLogger.log(TAG, "Tìm thấy ${list.size} file JSON trên Drive: ${list.map { it.first }}")
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log(TAG, "Tìm thấy ${list.size} file JSON trên Drive: ${list.map { it.first }}")
+        }
         return@withContext list
     }
 
@@ -552,7 +603,9 @@ class DriveHelper @Inject constructor(
     ): Boolean = withContext(Dispatchers.IO) {
         val token = getValidToken(accessToken) ?: return@withContext false
         try {
-            com.example.ui.common.AppLogger.log(TAG, "Cập nhật metadata folder $folderId: name=$newName, addParent=$addParentId, removeParent=$removeParentId")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Cập nhật metadata folder $folderId: name=$newName, addParent=$addParentId, removeParent=$removeParentId")
+            }
             var urlString = "https://www.googleapis.com/drive/v3/files/$folderId"
             val queryParams = mutableListOf<String>()
             if (!addParentId.isNullOrBlank()) {
@@ -580,15 +633,21 @@ class DriveHelper @Inject constructor(
             client.newCall(patchRequest).execute().use { response ->
                 val responseBody = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    com.example.ui.common.AppLogger.log(TAG, "Cập nhật folder $folderId thành công!")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Cập nhật folder $folderId thành công!")
+                    }
                     return@withContext true
                 } else {
-                    com.example.ui.common.AppLogger.log(TAG, "Lỗi cập nhật folder $folderId: ${response.code} $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Lỗi cập nhật folder $folderId: ${response.code} $responseBody")
+                    }
                     return@withContext false
                 }
             }
         } catch (e: Exception) {
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi cập nhật folder $folderId: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi cập nhật folder $folderId: ${e.localizedMessage}")
+            }
             e.printStackTrace()
             return@withContext false
         }
@@ -601,7 +660,9 @@ class DriveHelper @Inject constructor(
     ): String? = withContext(Dispatchers.IO) {
         val token = getValidToken(accessToken) ?: return@withContext null
         try {
-            com.example.ui.common.AppLogger.log(TAG, "Tạo thư mục con '$folderName' trong thư mục cha ID '$parentFolderId'...")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Tạo thư mục con '$folderName' trong thư mục cha ID '$parentFolderId'...")
+            }
             val metadata = JSONObject().apply {
                 put("name", folderName)
                 put("mimeType", "application/vnd.google-apps.folder")
@@ -621,17 +682,23 @@ class DriveHelper @Inject constructor(
                         val json = JSONObject(responseBody)
                         val folderId = json.getString("id")
                         Log.d(TAG, "Created folder $folderName: $folderId")
-                        com.example.ui.common.AppLogger.log(TAG, "Đã tạo mới thư mục '$folderName' thành công. ID: $folderId")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Đã tạo mới thư mục '$folderName' thành công. ID: $folderId")
+                        }
                         return@withContext folderId
                     }
                 } else {
                     Log.e(TAG, "Create folder $folderName failed with code: ${response.code}, body: $responseBody")
-                    com.example.ui.common.AppLogger.log(TAG, "Tạo thư mục '$folderName' thất bại. HTTP code: ${response.code}, response: $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Tạo thư mục '$folderName' thất bại. HTTP code: ${response.code}, response: $responseBody")
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in createFolderInParent", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi xảy ra khi tạo thư mục con '$folderName': ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi xảy ra khi tạo thư mục con '$folderName': ${e.message}")
+            }
         }
         return@withContext null
     }
@@ -695,21 +762,29 @@ class DriveHelper @Inject constructor(
         val fileName = customFileName ?: file.name
         if (!file.exists()) {
             Log.e(TAG, "Local media file does not exist: $localPath")
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi: Không tìm thấy tệp ảnh cục bộ tại đường dẫn: $localPath")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi: Không tìm thấy tệp ảnh cục bộ tại đường dẫn: $localPath")
+            }
             return@withContext null
         }
 
         try {
             if (token.isNullOrBlank()) {
                 Log.e(TAG, "Drive token is empty/null.")
-                com.example.ui.common.AppLogger.log(TAG, "Không thể tải lên ảnh lên Drive (Token trống hoặc chưa đăng nhập).")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Không thể tải lên ảnh lên Drive (Token trống hoặc chưa đăng nhập).")
+                }
                 return@withContext null
             }
 
-            com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh: $fileName")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh: $fileName")
+            }
             val targetFolderId = folderId ?: getOrCreateFolder(token)
             if (targetFolderId == null) {
-                com.example.ui.common.AppLogger.log(TAG, "Lỗi: Không thể lấy thư mục đích trên Drive cho ảnh: $fileName")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Lỗi: Không thể lấy thư mục đích trên Drive cho ảnh: $fileName")
+                }
                 return@withContext null
             }
 
@@ -755,19 +830,25 @@ class DriveHelper @Inject constructor(
                         val json = JSONObject(responseBody)
                         val fileId = json.optString("id")
                         Log.d(TAG, "Uploaded media file ID: $fileId")
-                        com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh $fileName THÀNH CÔNG. ID file trên Drive: $fileId")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh $fileName THÀNH CÔNG. ID file trên Drive: $fileId")
+                        }
                         return@withContext fileId
                     }
                 } else {
                     Log.e(TAG, "Upload media file failed with code: ${response.code}, body: $responseBody")
-                    com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh $fileName THẤT BẠI. HTTP code: ${response.code}, response: $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Tải lên ảnh $fileName THẤT BẠI. HTTP code: ${response.code}, response: $responseBody")
+                    }
                 }
             }
 
             return@withContext null
         } catch (e: Exception) {
             Log.e(TAG, "Error uploading media file", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi khi tải ảnh $fileName: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi khi tải ảnh $fileName: ${e.message}")
+            }
             return@withContext null
         }
     }
@@ -911,17 +992,23 @@ class DriveHelper @Inject constructor(
                 if (r.isSuccessful) {
                     val json = JSONObject(responseBody)
                     val uploadedId = json.optString("id")
-                    com.example.ui.common.AppLogger.log(TAG, "Tải lên $fileName thành công. ID file: $uploadedId")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Tải lên $fileName thành công. ID file: $uploadedId")
+                    }
                     return true
                 } else {
                     Log.e(TAG, "Drive upload of $fileName failed with code: ${r.code}, body: $responseBody")
-                    com.example.ui.common.AppLogger.log(TAG, "Lỗi tải lên $fileName. Code: ${r.code}, body: $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Lỗi tải lên $fileName. Code: ${r.code}, body: $responseBody")
+                    }
                     return false
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed uploading $fileName to Drive", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi khi tải lên $fileName: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi khi tải lên $fileName: ${e.message}")
+            }
             return false
         }
     }
@@ -972,17 +1059,23 @@ class DriveHelper @Inject constructor(
                 if (r.isSuccessful) {
                     val json = JSONObject(responseBody)
                     val uploadedId = json.optString("id")
-                    com.example.ui.common.AppLogger.log(TAG, "Tải lên $fileName thành công. ID file: $uploadedId")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Tải lên $fileName thành công. ID file: $uploadedId")
+                    }
                     return if (uploadedId.isNullOrBlank()) existingFileId else uploadedId
                 } else {
                     Log.e(TAG, "Drive upload of $fileName failed with code: ${r.code}, body: $responseBody")
-                    com.example.ui.common.AppLogger.log(TAG, "Lỗi tải lên $fileName. Code: ${r.code}, body: $responseBody")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Lỗi tải lên $fileName. Code: ${r.code}, body: $responseBody")
+                    }
                     return null
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed uploading $fileName to Drive", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi khi tải lên $fileName: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi khi tải lên $fileName: ${e.message}")
+            }
             return null
         }
     }
@@ -1005,18 +1098,24 @@ class DriveHelper @Inject constructor(
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful || response.code == 404) {
                     Log.d(TAG, "Deleted file $fileId from Drive (code: ${response.code})")
-                    com.example.ui.common.AppLogger.log(TAG, "Đã xóa file $fileId trên Google Drive.")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Đã xóa file $fileId trên Google Drive.")
+                    }
                     true
                 } else {
                     val body = response.body?.string() ?: ""
                     Log.e(TAG, "Delete file failed: code=${response.code}, body=$body")
-                    com.example.ui.common.AppLogger.log(TAG, "Xóa file $fileId trên Drive thất bại. HTTP code: ${response.code}")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Xóa file $fileId trên Drive thất bại. HTTP code: ${response.code}")
+                    }
                     false
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting file $fileId", e)
-            com.example.ui.common.AppLogger.log(TAG, "Lỗi khi xóa file $fileId: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Lỗi khi xóa file $fileId: ${e.message}")
+            }
             false
         }
     }

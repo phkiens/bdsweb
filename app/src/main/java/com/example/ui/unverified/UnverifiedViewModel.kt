@@ -1,4 +1,5 @@
 package com.example.ui.unverified
+import com.example.BuildConfig
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -278,7 +279,9 @@ class UnverifiedViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
-                AppLogger.log(TAG, "Parsing raw text with Gemini/Regex...")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Parsing raw text with Gemini/Regex...")
+                }
                 var unverifiedProperty = extractPropertyUseCase(
                     rawText = text,
                     apiKey = settingsManager.geminiApiKey,
@@ -293,12 +296,16 @@ class UnverifiedViewModel @Inject constructor(
                 
                 propertyRepository.insertUnverified(unverifiedProperty.toProperty())
                 _pastedText.value = ""
-                AppLogger.log(TAG, "Successfully extracted & saved unverified property: ${unverifiedProperty.title ?: "Thô"}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Successfully extracted & saved unverified property: ${unverifiedProperty.title ?: "Thô"}")
+                }
                 initializeFieldStates(unverifiedProperty)
                 onResult(unverifiedProperty.extractedBy)
             } catch (e: Exception) {
                 _extractionError.value = "Bóc tách thất bại: ${e.localizedMessage}"
-                AppLogger.log(TAG, "Error parsing text: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error parsing text: ${e.localizedMessage}")
+                }
                 onResult(ExtractionType.MANUAL)
             } finally {
                 _isExtracting.value = false
@@ -372,7 +379,9 @@ class UnverifiedViewModel @Inject constructor(
      */
     fun resolveMapLinkCoordinates(unverifiedId: String, mapLink: String, onCompleted: (Double?, Double?) -> Unit) {
         viewModelScope.launch {
-            AppLogger.log(TAG, "Resolving map link: $mapLink")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Resolving map link: $mapLink")
+            }
             val coords = GeminiApi.resolveAndExtractLocation(mapLink)
             if (coords != null) {
                 val current = propertyRepository.getUnverifiedById(unverifiedId)?.toUnverified()
@@ -383,11 +392,15 @@ class UnverifiedViewModel @Inject constructor(
                         updatedAt = System.currentTimeMillis()
                     )
                     propertyRepository.updateUnverified(updated.toProperty())
-                    AppLogger.log(TAG, "Successfully resolved coords to: ${coords.first}, ${coords.second}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Successfully resolved coords to: ${coords.first}, ${coords.second}")
+                    }
                 }
                 onCompleted(coords.first, coords.second)
             } else {
-                AppLogger.log(TAG, "Failed to resolve coordinates from map link.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Failed to resolve coordinates from map link.")
+                }
                 onCompleted(null, null)
             }
         }
@@ -407,23 +420,33 @@ class UnverifiedViewModel @Inject constructor(
      */
     fun compressAndAddImages(unverifiedId: String, uris: List<Uri>, context: Context, item: UnverifiedProperty, onCompleted: () -> Unit = {}) {
         viewModelScope.launch(Dispatchers.IO) {
-            AppLogger.log(TAG, "compressAndAddImages called. id=$unverifiedId, uris=${uris.size}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "compressAndAddImages called. id=$unverifiedId, uris=${uris.size}")
+            }
 
             var currentItem = propertyRepository.getUnverifiedById(unverifiedId)?.toUnverified()
-            AppLogger.log(TAG, "getUnverifiedById result: ${if (currentItem == null) "NULL - chưa có trong DB" else "OK, mediaPaths=${currentItem.mediaPaths.size}"}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "getUnverifiedById result: ${if (currentItem == null) "NULL - chưa có trong DB" else "OK, mediaPaths=${currentItem.mediaPaths.size}"}")
+            }
 
             if (currentItem == null) {
                 propertyRepository.insertUnverified(item.toProperty())
                 currentItem = item.copy(mediaPaths = emptyList(), driveMediaIds = emptyList())
-                AppLogger.log(TAG, "Inserted non-existent unverified item into database.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Inserted non-existent unverified item into database.")
+                }
             }
             val updatedPaths = currentItem.mediaPaths.toMutableList()
             val targetDir = File(context.filesDir, "bds_images").apply { mkdirs() }
 
             for (uri in uris) {
-                AppLogger.log(TAG, "Processing uri: $uri")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Processing uri: $uri")
+                }
                 if (updatedPaths.size >= 10) {
-                    AppLogger.log(TAG, "Reached maximum 10 images limit.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Reached maximum 10 images limit.")
+                    }
                     break
                 }
                 try {
@@ -431,15 +454,23 @@ class UnverifiedViewModel @Inject constructor(
                     val result = prepareImageUseCase.execute(uri, outputFile, 2048, 80)
                     if (result is com.example.domain.usecase.media.PrepareImageUseCase.Result.Success) {
                         updatedPaths.add(result.filePath)
-                        AppLogger.log(TAG, "Saved image to: ${result.filePath}")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Saved image to: ${result.filePath}")
+                        }
                     } else if (result is com.example.domain.usecase.media.PrepareImageUseCase.Result.Failure) {
-                        AppLogger.log(TAG, "FAILED to process uri $uri: ${result.reason}")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "FAILED to process uri $uri: ${result.reason}")
+                        }
                     }
                 } catch (e: Exception) {
-                    AppLogger.log(TAG, "FAILED to process uri $uri: ${e.localizedMessage}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "FAILED to process uri $uri: ${e.localizedMessage}")
+                    }
                 }
             }
-            AppLogger.log(TAG, "Done. Total paths: ${updatedPaths.size}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Done. Total paths: ${updatedPaths.size}")
+            }
 
             val updatedDriveMediaIds = currentItem.driveMediaIds.toMutableList()
             while (updatedDriveMediaIds.size < updatedPaths.size) {
@@ -532,7 +563,9 @@ class UnverifiedViewModel @Inject constructor(
                         val file = File(path)
                         if (file.exists()) {
                             file.delete()
-                            AppLogger.log(TAG, "Deleted local file: $path")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log(TAG, "Deleted local file: $path")
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to delete local file: $path", e)

@@ -25,22 +25,59 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
-  signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+  val keystorePath = System.getenv("KEYSTORE_PATH")
+  val storePassword = System.getenv("STORE_PASSWORD")
+  val keyAlias = System.getenv("KEY_ALIAS")
+  val keyPassword = System.getenv("KEY_PASSWORD")
+
+  val signingEnvVars = mapOf(
+    "KEYSTORE_PATH" to keystorePath,
+    "STORE_PASSWORD" to storePassword,
+    "KEY_ALIAS" to keyAlias,
+    "KEY_PASSWORD" to keyPassword
+  )
+
+  val presentSigningVars = signingEnvVars.filterValues { !it.isNullOrBlank() }
+  val missingSigningVars = signingEnvVars.filterValues { it.isNullOrBlank() }.keys
+
+  val isSigningFullyConfigured = presentSigningVars.size == 4
+  val isSigningPartiallyConfigured = presentSigningVars.isNotEmpty() && !isSigningFullyConfigured
+
+  if (isSigningPartiallyConfigured) {
+    throw GradleException("Release signing configuration is incomplete. Missing environment variables: ${missingSigningVars.joinToString(", ")}")
+  }
+
+  if (isSigningFullyConfigured) {
+    val ksFile = file(keystorePath!!)
+    if (!ksFile.exists()) {
+      throw GradleException("Keystore file specified by KEYSTORE_PATH does not exist.")
+    }
+    signingConfigs {
+      create("release") {
+        storeFile = ksFile
+        this.storePassword = storePassword
+        this.keyAlias = keyAlias
+        this.keyPassword = keyPassword
+      }
     }
   }
 
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      if (isSigningFullyConfigured) {
+        signingConfig = signingConfigs.getByName("release")
+      }
+    }
+    create("r8Test") {
+      initWith(getByName("release"))
+      signingConfig = signingConfigs.getByName("debug")
+      isDebuggable = false
+      versionNameSuffix = "-r8-test"
+      matchingFallbacks += listOf("release")
     }
     debug {
     }

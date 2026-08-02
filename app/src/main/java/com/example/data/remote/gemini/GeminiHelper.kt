@@ -1,4 +1,5 @@
 package com.example.data.remote.gemini
+import com.example.BuildConfig
 
 import android.util.Log
 import com.example.domain.model.UnverifiedProperty
@@ -59,7 +60,9 @@ class GeminiHelper @Inject constructor(
 
     private fun mapJsonToUnverifiedProperty(jsonString: String, rawText: String): UnverifiedProperty {
         val cleanedJson = cleanJsonString(jsonString)
-        com.example.ui.common.AppLogger.log("GeminiHelper", "Đang phân tích JSON phản hồi: $cleanedJson")
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log("GeminiHelper", "Đang phân tích JSON phản hồi: $cleanedJson")
+        }
         val jsonObject = JSONObject(cleanedJson)
         
         val title     = jsonObject.getStringOrNull("title")
@@ -68,7 +71,9 @@ class GeminiHelper @Inject constructor(
         var price     = jsonObject.getDoubleOrNull("price")
         if (price != null && price > 1000.0) {
             Log.w(TAG, "Giá trích xuất bất thường (> 1000 tỷ): $price -> set về null")
-            com.example.ui.common.AppLogger.log("GeminiHelper", "Phát hiện giá trị bất thường (> 1000 tỷ): $price tỷ VND. Đã tự động bỏ qua để tránh lỗi ghép số điện thoại.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("GeminiHelper", "Phát hiện giá trị bất thường (> 1000 tỷ): $price tỷ VND. Đã tự động bỏ qua để tránh lỗi ghép số điện thoại.")
+            }
             price = null
         }
         val direction = jsonObject.getStringOrNull("direction")
@@ -86,7 +91,9 @@ class GeminiHelper @Inject constructor(
         val description = jsonObject.getStringOrNull("description") ?: ""
 
         Log.d(TAG, "Successfully extracted property with Gemini AI.")
-        com.example.ui.common.AppLogger.log("GeminiHelper", "Bóc tách AI JSON thành công: Khu vực='$address', Giá=$price, SĐT=$ownerPhone")
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log("GeminiHelper", "Bóc tách AI JSON thành công: Khu vực='$address', Giá=$price, SĐT=$ownerPhone")
+        }
         return UnverifiedProperty(
             rawText = rawText,
             title = null,
@@ -135,7 +142,9 @@ class GeminiHelper @Inject constructor(
                 mapJsonToUnverifiedProperty(aiResponse, rawText)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to parse AI JSON response: $aiResponse", e)
-                com.example.ui.common.AppLogger.log("GeminiHelper", "Lỗi phân tích cú pháp JSON: ${e.localizedMessage}. Phản hồi thô: $aiResponse")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("GeminiHelper", "Lỗi phân tích cú pháp JSON: ${e.localizedMessage}. Phản hồi thô: $aiResponse")
+                }
                 null
             }
         } else null
@@ -163,7 +172,9 @@ class GeminiHelper @Inject constructor(
             val matchedArea = PropertyTextExtractor.matchAddress(rawText, knownAreas)
             if (matchedArea != null) {
                 resultProperty = resultProperty.copy(address = matchedArea)
-                com.example.ui.common.AppLogger.log("GeminiHelper", "Tự động điền khu vực chuẩn từ DB: $matchedArea")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("GeminiHelper", "Tự động điền khu vực chuẩn từ DB: $matchedArea")
+                }
             }
         }
 

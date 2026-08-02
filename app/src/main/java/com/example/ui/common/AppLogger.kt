@@ -1,5 +1,6 @@
 package com.example.ui.common
 
+import com.example.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +63,20 @@ object AppLogger {
         }
     }
 
+    private fun appendToMemory(tag: String, message: String) {
+        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val formattedLog = "[$time] [$tag] $message"
+
+        val currentList = _logs.value.toMutableList()
+        currentList.add(0, formattedLog)
+
+        // Keep last 100 logs
+        if (currentList.size > 100) {
+            currentList.removeAt(currentList.lastIndex)
+        }
+        _logs.value = currentList
+    }
+
     fun record(
         type: com.example.data.local.entity.SyncType,
         status: com.example.data.local.entity.SyncStatus,
@@ -70,7 +85,7 @@ object AppLogger {
         itemCount: Int? = null,
         totalCount: Int? = null
     ) {
-        log(tag, message)
+        appendToMemory(tag, message)
         try {
             logChannel.trySend(
                 com.example.data.local.entity.SyncLogEntity(
@@ -89,25 +104,21 @@ object AppLogger {
     }
 
     fun log(tag: String, message: String) {
-        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        val formattedLog = "[$time] [$tag] $message"
-        
-        val currentList = _logs.value.toMutableList()
-        currentList.add(0, formattedLog)
-        
-        // Keep last 100 logs
-        if (currentList.size > 100) {
-            currentList.removeAt(currentList.lastIndex)
+        if (BuildConfig.DEBUG) {
+            appendToMemory(tag, message)
         }
-        _logs.value = currentList
     }
 
     fun d(tag: String, message: String) {
-        log(tag, "[DEBUG] $message")
+        if (BuildConfig.DEBUG) {
+            appendToMemory(tag, "[DEBUG] $message")
+        }
     }
 
     fun e(tag: String, message: String, throwable: Throwable? = null) {
-        log(tag, "[ERROR] $message" + (throwable?.let { " : ${it.localizedMessage}" } ?: ""))
+        if (BuildConfig.DEBUG) {
+            appendToMemory(tag, "[ERROR] $message" + (throwable?.let { " : ${it.localizedMessage}" } ?: ""))
+        }
     }
 
     fun clear() {

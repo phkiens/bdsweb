@@ -1,4 +1,5 @@
 package com.example.domain.usecase.sync
+import com.example.BuildConfig
 
 import com.example.data.remote.supabase.SupabaseClientProvider
 import com.example.data.remote.supabase.model.SupabaseCustomerPropertyLink
@@ -14,14 +15,20 @@ class CustomerPropertyLinkSupabaseSyncUseCase @Inject constructor(
 ) {
     suspend fun pushToSupabase(link: CustomerPropertyLink): Boolean {
         return try {
-            AppLogger.log("LinkSupabaseSync", "Đang push link customer=${link.customerId} property=${link.propertyId} lên Supabase...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("LinkSupabaseSync", "Đang push link customer=${link.customerId} property=${link.propertyId} lên Supabase...")
+            }
             val client = supabaseClientProvider.getClient()
             val supabaseLink = SupabaseCustomerPropertyLink.fromEntity(link)
             client.postgrest.from("customer_property_links").upsert(supabaseLink)
-            AppLogger.log("LinkSupabaseSync", "✓ Đã push link customer=${link.customerId} property=${link.propertyId} thành công!")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("LinkSupabaseSync", "✓ Đã push link customer=${link.customerId} property=${link.propertyId} thành công!")
+            }
             true
         } catch (e: Exception) {
-            AppLogger.log("LinkSupabaseSync", "❌ Lỗi khi push link customer=${link.customerId} property=${link.propertyId}: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("LinkSupabaseSync", "❌ Lỗi khi push link customer=${link.customerId} property=${link.propertyId}: ${e.localizedMessage}")
+            }
             e.printStackTrace()
             false
         }

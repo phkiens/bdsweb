@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.example.BuildConfig
 import com.example.ui.common.AppLogger
 import com.example.ui.common.SettingsManager
 import com.example.ui.common.SyncScheduler
@@ -21,7 +22,9 @@ class BootReceiver : BroadcastReceiver() {
             val syncScheduler = entryPoint.syncScheduler()
 
             if (settingsManager.autoSyncEnabled) {
-                AppLogger.log("AutoSync", "Hệ thống vừa khởi động lại, khôi phục lịch tự động đồng bộ...")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("AutoSync", "Hệ thống vừa khởi động lại, khôi phục lịch tự động đồng bộ...")
+                }
                 syncScheduler.scheduleAll()
             }
         }

@@ -1,4 +1,5 @@
 package com.example.ui.common
+import com.example.BuildConfig
 
 import android.content.Context
 import android.util.Log
@@ -84,11 +85,15 @@ object ZipHelper {
                     }
                 }
             }
-            AppLogger.log(TAG, "Successfully exported data and media to ${destZipFile.absolutePath}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Successfully exported data and media to ${destZipFile.absolutePath}")
+            }
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to export ZIP", e)
-            AppLogger.log(TAG, "Export ZIP failed: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Export ZIP failed: ${e.localizedMessage}")
+            }
             return false
         }
     }
@@ -150,11 +155,15 @@ object ZipHelper {
                     entry = zis.nextEntry
                 }
             }
-            AppLogger.log(TAG, "Successfully imported zip backup containing ${restoredImages.size} images.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Successfully imported zip backup containing ${restoredImages.size} images.")
+            }
             return ImportResult(propertiesJson, unverifiedJson, customersJson, customerLinksJson, restoredImages, settingsJson)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to import ZIP", e)
-            AppLogger.log(TAG, "Import ZIP failed: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Import ZIP failed: ${e.localizedMessage}")
+            }
             return null
         }
     }

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.example.BuildConfig
 import com.example.domain.repository.PropertyRepository
 import com.example.domain.usecase.sync.SyncMediaUseCase
 import com.example.domain.model.SyncSinglePropertyResult
@@ -109,7 +110,9 @@ class SyncForegroundService : Service() {
                         type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                         status = com.example.data.local.entity.SyncStatus.STARTED,
                         tag = TAG,
-                        message = "Bắt đầu đồng bộ đơn lẻ BĐS: $propertyArea"
+                        message = "Bắt đầu đồng bộ 1 BĐS",
+                        itemCount = 0,
+                        totalCount = 1
                     )
 
                     val result = syncSinglePropertyUseCase(
@@ -137,7 +140,9 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                                 status = com.example.data.local.entity.SyncStatus.SUCCESS,
                                 tag = TAG,
-                                message = "Đồng bộ đơn lẻ BĐS hoàn tất: $propertyArea"
+                                message = "Đồng bộ 1 BĐS hoàn tất",
+                                itemCount = 1,
+                                totalCount = 1
                             )
                             NotificationHelper.showSystemNotification(
                                 applicationContext,
@@ -150,7 +155,9 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                                 status = com.example.data.local.entity.SyncStatus.PARTIAL,
                                 tag = TAG,
-                                message = "Đồng bộ đơn lẻ BĐS hoàn tất một phần: $propertyArea (Lỗi văn bản: ${result.errorMessage})"
+                                message = "Đồng bộ 1 BĐS hoàn tất một phần",
+                                itemCount = 1,
+                                totalCount = 1
                             )
                             NotificationHelper.showSystemNotification(
                                 applicationContext,
@@ -165,7 +172,9 @@ class SyncForegroundService : Service() {
                             type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = TAG,
-                            message = "Đồng bộ đơn lẻ BĐS thất bại: $propertyArea - $errorMsg"
+                            message = "Đồng bộ 1 BĐS thất bại",
+                            itemCount = 0,
+                            totalCount = 1
                         )
                         NotificationHelper.showSystemNotification(
                             applicationContext,
@@ -181,7 +190,9 @@ class SyncForegroundService : Service() {
                         type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Lỗi đồng bộ đơn lẻ BĐS $propertyArea: $errorMsg"
+                        message = "Đồng bộ 1 BĐS thất bại",
+                        itemCount = 0,
+                        totalCount = 1
                     )
                     NotificationHelper.showSystemNotification(
                         applicationContext,
@@ -212,7 +223,9 @@ class SyncForegroundService : Service() {
                         type = com.example.data.local.entity.SyncType.UPLOAD_UNVERIFIED,
                         status = com.example.data.local.entity.SyncStatus.STARTED,
                         tag = TAG,
-                        message = "Bắt đầu đồng bộ đơn lẻ Tin khảo sát: $unverifiedArea"
+                        message = "Bắt đầu đồng bộ 1 tin thô",
+                        itemCount = 0,
+                        totalCount = 1
                     )
 
                     val result = syncSinglePropertyUseCase(
@@ -240,7 +253,9 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.UPLOAD_UNVERIFIED,
                                 status = com.example.data.local.entity.SyncStatus.SUCCESS,
                                 tag = TAG,
-                                message = "Đồng bộ đơn lẻ Tin khảo sát hoàn tất: $unverifiedArea"
+                                message = "Đồng bộ 1 tin thô hoàn tất",
+                                itemCount = 1,
+                                totalCount = 1
                             )
                             NotificationHelper.showSystemNotification(
                                 applicationContext,
@@ -253,7 +268,9 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.UPLOAD_UNVERIFIED,
                                 status = com.example.data.local.entity.SyncStatus.PARTIAL,
                                 tag = TAG,
-                                message = "Đồng bộ đơn lẻ Tin khảo sát hoàn tất một phần: $unverifiedArea (Lỗi văn bản: ${result.errorMessage})"
+                                message = "Đồng bộ 1 tin thô hoàn tất một phần",
+                                itemCount = 1,
+                                totalCount = 1
                             )
                             NotificationHelper.showSystemNotification(
                                 applicationContext,
@@ -268,7 +285,9 @@ class SyncForegroundService : Service() {
                             type = com.example.data.local.entity.SyncType.UPLOAD_UNVERIFIED,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = TAG,
-                            message = "Đồng bộ đơn lẻ Tin khảo sát thất bại: $unverifiedArea - $errorMsg"
+                            message = "Đồng bộ 1 tin thô thất bại",
+                            itemCount = 0,
+                            totalCount = 1
                         )
                         NotificationHelper.showSystemNotification(
                             applicationContext,
@@ -284,7 +303,9 @@ class SyncForegroundService : Service() {
                         type = com.example.data.local.entity.SyncType.UPLOAD_UNVERIFIED,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Lỗi đồng bộ đơn lẻ Tin khảo sát $unverifiedArea: $errorMsg"
+                        message = "Đồng bộ 1 tin thô thất bại",
+                        itemCount = 0,
+                        totalCount = 1
                     )
                     NotificationHelper.showSystemNotification(
                         applicationContext,
@@ -313,7 +334,9 @@ class SyncForegroundService : Service() {
                         type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                         status = com.example.data.local.entity.SyncStatus.STARTED,
                         tag = TAG,
-                        message = "Bắt đầu tải ảnh đơn lẻ: $propertyArea"
+                        message = "Bắt đầu tải ảnh 1 BĐS",
+                        itemCount = 0,
+                        totalCount = 1
                     )
 
                     when (val result = restoreMissingMediaUseCase.downloadSinglePropertyImages(downloadPropertyId)) {
@@ -323,7 +346,8 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                                 status = com.example.data.local.entity.SyncStatus.SUCCESS,
                                 tag = TAG,
-                                message = "$msg ($propertyArea)"
+                                message = "Tải ảnh BĐS hoàn tất",
+                                itemCount = result.downloadedCount
                             )
                             Log.d(TAG, "DOWNLOAD_PROPERTY_ID: Calling showSystemNotification [Success branch] - count: ${result.downloadedCount}, message: $msg")
                             NotificationHelper.showSystemNotification(
@@ -336,7 +360,7 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                                 status = com.example.data.local.entity.SyncStatus.FAILED,
                                 tag = TAG,
-                                message = "Chưa liên kết Drive ($propertyArea)"
+                                message = "Chưa liên kết Google Drive"
                             )
                             Log.d(TAG, "DOWNLOAD_PROPERTY_ID: Calling showSystemNotification [NoDriveAuth branch]")
                             NotificationHelper.showSystemNotification(
@@ -349,7 +373,7 @@ class SyncForegroundService : Service() {
                                 type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                                 status = com.example.data.local.entity.SyncStatus.FAILED,
                                 tag = TAG,
-                                message = "Tải ảnh thất bại: ${result.message} ($propertyArea)"
+                                message = "Tải ảnh BĐS thất bại"
                             )
                             Log.d(TAG, "DOWNLOAD_PROPERTY_ID: Calling showSystemNotification [Failed branch] - error: ${result.message}")
                             NotificationHelper.showSystemNotification(
@@ -364,7 +388,7 @@ class SyncForegroundService : Service() {
                         type = com.example.data.local.entity.SyncType.DOWNLOAD_MEDIA,
                         status = com.example.data.local.entity.SyncStatus.FAILED,
                         tag = TAG,
-                        message = "Lỗi tải ảnh $propertyArea: ${e.localizedMessage}"
+                        message = "Tải ảnh BĐS thất bại"
                     )
                     Log.d(TAG, "DOWNLOAD_PROPERTY_ID: Calling showSystemNotification [Exception branch] - error: ${e.localizedMessage}")
                     NotificationHelper.showSystemNotification(
@@ -413,7 +437,9 @@ class SyncForegroundService : Service() {
                     hasLocalImages && notSynced
                 }
                 
-                AppLogger.log("MediaSync", "[MediaSync] Bắt đầu đồng bộ media cho ${propertiesWithImages.size} property (unverified cần sync: ${unverifiedToSync.size})")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("MediaSync", "[MediaSync] Bắt đầu đồng bộ media cho ${propertiesWithImages.size} property (unverified cần sync: ${unverifiedToSync.size})")
+                }
                 
                 val propertyImagesCount = propertiesWithImages.sumOf { p ->
                     p.imagePath?.split("|||")?.filter { it.isNotBlank() }?.size ?: 0
@@ -432,7 +458,9 @@ class SyncForegroundService : Service() {
                 val totalMedia = totalImages + totalAvatars
 
                 if (totalMedia == 0) {
-                    AppLogger.log(TAG, "Không có hình ảnh cục bộ nào cần đồng bộ.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Không có hình ảnh cục bộ nào cần đồng bộ.")
+                    }
                 } else {
                     val folderId = driveHelper.getOrCreateFolderPublic(null)
                     successCount = 0
@@ -441,7 +469,9 @@ class SyncForegroundService : Service() {
                     // Sync Property Images
                     for ((index, property) in propertiesWithImages.withIndex()) {
                         val localImages = property.imagePath?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
-                        AppLogger.log(TAG, "Đang đồng bộ ảnh cho BĐS: ${property.area} (${index + 1}/$totalBds)")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Đang đồng bộ ảnh cho BĐS: ${property.area} (${index + 1}/$totalBds)")
+                        }
                         SyncStatusBus.update(SyncProgress("Đang đồng bộ BĐS", index + 1, totalBds))
                         NotificationHelper.showSyncProgress(
                             applicationContext,
@@ -464,19 +494,27 @@ class SyncForegroundService : Service() {
                         )
                         if (mediaResult.isFullSuccess) {
                             successCount++
-                            AppLogger.log(TAG, "Đồng bộ ảnh BĐS '${property.area}' thành công. Đã upload ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh.")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log(TAG, "Đồng bộ ảnh BĐS '${property.area}' thành công. Đã upload ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh.")
+                            }
                             propertyRepository.updateMediaSyncStatus(property.id, true, property.imagePath)
                         } else {
-                            AppLogger.log(TAG, "Không thể đồng bộ ảnh BĐS '${property.area}' (Thành công ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh, lỗi ${mediaResult.failedPaths.size} ảnh).")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log(TAG, "Không thể đồng bộ ảnh BĐS '${property.area}' (Thành công ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh, lỗi ${mediaResult.failedPaths.size} ảnh).")
+                            }
                         }
                     }
 
                     // Sync Unverified Property Images
                     unvSuccessCount = 0
                     if (unverifiedToSync.isNotEmpty()) {
-                        AppLogger.log(TAG, "Bắt đầu đồng bộ ảnh cho ${unverifiedToSync.size} sản phẩm chờ...")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Bắt đầu đồng bộ ảnh cho ${unverifiedToSync.size} sản phẩm chờ...")
+                        }
                         for ((uIndex, unv) in unverifiedToSync.withIndex()) {
-                            AppLogger.log(TAG, "Đang đồng bộ ảnh cho sản phẩm chờ: ${unv.title ?: unv.id} (${uIndex + 1}/${unverifiedToSync.size})")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log(TAG, "Đang đồng bộ ảnh cho sản phẩm chờ: ${unv.title ?: unv.id} (${uIndex + 1}/${unverifiedToSync.size})")
+                            }
                             val progressText = "Đang upload ảnh tin thô ($globalImageIndex/$totalMedia ảnh - ${uIndex + 1}/${unverifiedToSync.size} tin)"
                             updateNotification(progressText)
                             
@@ -492,27 +530,39 @@ class SyncForegroundService : Service() {
                             )
                             if (mediaResult.isFullSuccess) {
                                 unvSuccessCount++
-                                AppLogger.log(TAG, "Đồng bộ ảnh sản phẩm chờ '${unv.title ?: unv.id}' thành công.")
+                                if (BuildConfig.DEBUG) {
+                                    AppLogger.log(TAG, "Đồng bộ ảnh sản phẩm chờ '${unv.title ?: unv.id}' thành công.")
+                                }
                                 propertyRepository.updateMediaSyncStatus(unv.id, true, unv.imagePath)
                             } else {
-                                AppLogger.log(TAG, "Đồng bộ ảnh sản phẩm chờ '${unv.title ?: unv.id}' thất bại.")
+                                if (BuildConfig.DEBUG) {
+                                    AppLogger.log(TAG, "Đồng bộ ảnh sản phẩm chờ '${unv.title ?: unv.id}' thất bại.")
+                                }
                             }
                         }
                     }
 
                     // Sync Customer Avatars
                     if (customersWithAvatars.isNotEmpty()) {
-                        AppLogger.log(TAG, "Bắt đầu tải lên $totalAvatars ảnh đại diện khách hàng...")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Bắt đầu tải lên $totalAvatars ảnh đại diện khách hàng...")
+                        }
                         for ((cIndex, customer) in customersWithAvatars.withIndex()) {
                             val avatarPath = customer.avatarPath!!
-                            AppLogger.log(TAG, "Đang tải lên avatar cho khách hàng: ${customer.name} (${cIndex + 1}/$totalAvatars)")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log(TAG, "Đang tải lên avatar cho khách hàng: ${customer.name} (${cIndex + 1}/$totalAvatars)")
+                            }
                             
                             val fileId = driveHelper.uploadMediaFile(avatarPath, null, folderId)
                             if (!fileId.isNullOrBlank()) {
                                 customerRepository.updateAvatarDriveUrl(customer.id, fileId)
-                                AppLogger.log(TAG, "Cập nhật avatarDriveUrl thành công cho ${customer.name}: $fileId")
+                                if (BuildConfig.DEBUG) {
+                                    AppLogger.log(TAG, "Cập nhật avatarDriveUrl thành công cho ${customer.name}: $fileId")
+                                }
                             } else {
-                                AppLogger.log(TAG, "Tải lên avatar cho khách hàng ${customer.name} thất bại.")
+                                if (BuildConfig.DEBUG) {
+                                    AppLogger.log(TAG, "Tải lên avatar cho khách hàng ${customer.name} thất bại.")
+                                }
                             }
                             globalImageIndex++
                             val progressText = "Đang upload ảnh đại diện ($globalImageIndex/$totalMedia ảnh - ${cIndex + 1}/$totalAvatars khách)"
@@ -520,12 +570,16 @@ class SyncForegroundService : Service() {
                         }
                     }
 
-                    AppLogger.log(TAG, "Đồng bộ ảnh hoàn tất! Thành công: $successCount/$totalBds BĐS, $unvSuccessCount/${unverifiedToSync.size} tin thô, $totalAvatars ảnh đại diện.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đồng bộ ảnh hoàn tất! Thành công: $successCount/$totalBds BĐS, $unvSuccessCount/${unverifiedToSync.size} tin thô, $totalAvatars ảnh đại diện.")
+                    }
                 }
 
                 // 2. Sync Text SECOND (with driveMediaIds now fully written to local DB)
                 updateNotification("Đang sao lưu dữ liệu... (0/4 file)")
-                AppLogger.log(TAG, "Bắt đầu sao lưu toàn bộ dữ liệu văn bản...")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Bắt đầu sao lưu toàn bộ dữ liệu văn bản...")
+                }
                 val textSuccess = syncTextUseCase(
                     onProgress = { current, total ->
                         updateNotification("Đang sao lưu dữ liệu... ($current/$total tệp)")
@@ -533,9 +587,13 @@ class SyncForegroundService : Service() {
                 )
                 
                 if (textSuccess) {
-                    AppLogger.log(TAG, "Sao lưu dữ liệu văn bản lên Google Drive THÀNH CÔNG.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Sao lưu dữ liệu văn bản lên Google Drive THÀNH CÔNG.")
+                    }
                 } else {
-                    AppLogger.log(TAG, "Sao lưu dữ liệu văn bản thất bại (Vui lòng kiểm tra liên kết Drive).")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Sao lưu dữ liệu văn bản thất bại (Vui lòng kiểm tra liên kết Drive).")
+                    }
                 }
 
                 val unvToSyncCount = unverifiedToSync.size
@@ -551,7 +609,7 @@ class SyncForegroundService : Service() {
                     type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                     status = if (isFullySuccessful) com.example.data.local.entity.SyncStatus.SUCCESS else com.example.data.local.entity.SyncStatus.PARTIAL,
                     tag = TAG,
-                    message = finalNotificationText,
+                    message = if (isFullySuccessful) "Đồng bộ toàn bộ hoàn tất" else "Đồng bộ một phần",
                     itemCount = successCount + unvSuccessCount,
                     totalCount = totalBds + unvToSyncCount
                 )
@@ -585,7 +643,7 @@ class SyncForegroundService : Service() {
                     type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                     status = com.example.data.local.entity.SyncStatus.FAILED,
                     tag = TAG,
-                    message = "Đồng bộ dữ liệu gặp lỗi: $errorMsg"
+                    message = "Đồng bộ dữ liệu thất bại"
                 )
                 updateNotification("Lỗi đồng bộ: $errorMsg")
                 

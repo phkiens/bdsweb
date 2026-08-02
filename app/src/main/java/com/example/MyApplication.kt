@@ -12,6 +12,7 @@ import com.example.ui.common.NotificationHelper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.example.BuildConfig
 
 @HiltAndroidApp
 class MyApplication : Application() {
@@ -22,7 +23,7 @@ class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        
+
         // Initialize AppLogger with SyncLogDao
         try {
             val entryPoint = dagger.hilt.EntryPoints.get(applicationContext, com.example.di.WorkerEntryPoint::class.java)
@@ -41,11 +42,13 @@ class MyApplication : Application() {
                 ExistingWorkPolicy.KEEP,
                 OneTimeWorkRequestBuilder<TitleCaseMigrationWorker>().build()
             )
-            com.example.ui.common.AppLogger.log("DatabaseMigration", "Đã lên lịch đồng bộ Title Case qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("DatabaseMigration", "Đã lên lịch đồng bộ Title Case qua WorkManager.")
+            }
         } catch (e: Exception) {
-            // Dòng log thành công ở trên nằm TRONG try nên khi lỗi sẽ không chạy tới —
-            // phải ghi ở đây, nếu không lỗi biến mất hoàn toàn khỏi sync_log.
-            com.example.ui.common.AppLogger.e("DatabaseMigration", "Không lên lịch được TitleCaseMigrationWorker", e)
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.e("DatabaseMigration", "Không lên lịch được TitleCaseMigrationWorker", e)
+            }
             e.printStackTrace()
         }
 
@@ -63,9 +66,13 @@ class MyApplication : Application() {
                 androidx.work.ExistingPeriodicWorkPolicy.KEEP,
                 purgeRequest
             )
-            com.example.ui.common.AppLogger.log("System", "Đã lên lịch dọn dẹp định kỳ 30 ngày (PurgeWorker) qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("System", "Đã lên lịch dọn dẹp định kỳ 30 ngày (PurgeWorker) qua WorkManager.")
+            }
         } catch (e: Exception) {
-            com.example.ui.common.AppLogger.e("System", "Không lên lịch được PurgeWorker (dọn record xoá mềm >30 ngày)", e)
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.e("System", "Không lên lịch được PurgeWorker (dọn record xoá mềm >30 ngày)", e)
+            }
             e.printStackTrace()
         }
 
@@ -94,17 +101,22 @@ class MyApplication : Application() {
                 OneTimeWorkRequestBuilder<com.example.data.worker.CustomerPropertyLinkSyncRetryWorker>()
                     .setConstraints(netConstraints).build()
             )
-            com.example.ui.common.AppLogger.log("SyncRetry", "Đã lên lịch quét bản ghi chưa đồng bộ lúc khởi động.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("SyncRetry", "Đã lên lịch quét bản ghi chưa đồng bộ lúc khởi động.")
+            }
         } catch (e: Exception) {
-            // Lỗi ở đây = các bản ghi dirty (P1) không ai nhặt, nằm chết mà không có dấu vết.
-            com.example.ui.common.AppLogger.e("SyncRetry", "Không lên lịch được worker quét bản ghi chưa đồng bộ", e)
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.e("SyncRetry", "Không lên lịch được worker quét bản ghi chưa đồng bộ", e)
+            }
             e.printStackTrace()
         }
 
         // Log startup events
-        com.example.ui.common.AppLogger.log("System", "Hệ thống BDS Collector đã khởi động thành công.")
-        com.example.ui.common.AppLogger.log("Database", "Kết nối Cơ sở dữ liệu SQLite (Room) thành công.")
-        com.example.ui.common.AppLogger.log("Network", "Sẵn sàng kết nối Google Drive & Gemini API.")
+        if (BuildConfig.DEBUG) {
+            com.example.ui.common.AppLogger.log("System", "Hệ thống BDS Collector đã khởi động thành công.")
+            com.example.ui.common.AppLogger.log("Database", "Kết nối Cơ sở dữ liệu SQLite (Room) thành công.")
+            com.example.ui.common.AppLogger.log("Network", "Sẵn sàng kết nối Google Drive & Gemini API.")
+        }
 
         // Register Lifecycle Observer
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -115,10 +127,9 @@ class MyApplication : Application() {
                         val entryPoint = dagger.hilt.EntryPoints.get(applicationContext, com.example.di.WorkerEntryPoint::class.java)
                         entryPoint.realtimeSyncManager().start()
                     } catch (e: java.lang.Exception) {
-                        // Realtime chết ở đây = không đồng bộ được sang máy kia, mà trước đây
-                        // không có một dòng nào trong sync_log để lần ra nguyên nhân.
-                        com.example.ui.common.AppLogger.e("Realtime", "Không khởi động được RealtimeSyncManager khi app lên foreground", e)
-                        e.printStackTrace()
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.e("Realtime", "Không khởi động được RealtimeSyncManager khi app lên foreground", e)
+                        }
                     }
                 }
             }
@@ -130,8 +141,9 @@ class MyApplication : Application() {
                         val entryPoint = dagger.hilt.EntryPoints.get(applicationContext, com.example.di.WorkerEntryPoint::class.java)
                         entryPoint.realtimeSyncManager().stop()
                     } catch (e: java.lang.Exception) {
-                        com.example.ui.common.AppLogger.e("Realtime", "Không dừng được RealtimeSyncManager khi app xuống nền", e)
-                        e.printStackTrace()
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.e("Realtime", "Không dừng được RealtimeSyncManager khi app xuống background", e)
+                        }
                     }
                 }
             }

@@ -1,4 +1,5 @@
 package com.example.domain.usecase.sync
+import com.example.BuildConfig
 
 import android.util.Log
 import com.example.data.remote.drive.DriveHelper
@@ -31,13 +32,17 @@ class SyncMediaUseCase @Inject constructor(
         var allStepsSuccess = true
         val property = propertyRepository.getPropertyById(propertyId)
         if (property == null) {
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP property $propertyId - lý do: không tìm thấy trong DB")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP property $propertyId - lý do: không tìm thấy trong DB")
+            }
             return SyncMediaResult(0, 0, emptyList(), false)
         }
 
         val parentFolderId = folderId ?: driveHelper.getOrCreateFolderPublic(accessToken)
         if (parentFolderId == null) {
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP property $propertyId - lý do: parentFolderId (BDS_Collector_Media) là null")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP property $propertyId - lý do: parentFolderId (BDS_Collector_Media) là null")
+            }
             return SyncMediaResult(0, 0, emptyList(), false)
         }
 
@@ -45,12 +50,16 @@ class SyncMediaUseCase @Inject constructor(
         val targetFolderId = try {
             getOrCreatePropertyFolder(property, accessToken, parentFolderId)
         } catch (e: Exception) {
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] LỖI tạo folder cho property $propertyId: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] LỖI tạo folder cho property $propertyId: ${e.localizedMessage}")
+            }
             null
         }
 
         if (targetFolderId == null) {
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP property $propertyId - lý do: không lấy hoặc tạo được folder con")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP property $propertyId - lý do: không lấy hoặc tạo được folder con")
+            }
             return SyncMediaResult(0, 0, emptyList(), false)
         }
 
@@ -59,7 +68,9 @@ class SyncMediaUseCase @Inject constructor(
         
         imagePaths.forEach { path ->
             if (!File(path).exists()) {
-                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP ảnh $path - lý do: file không tồn tại")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP ảnh $path - lý do: file không tồn tại")
+                }
                 onImageProcessed(path, false, false)
             }
         }
@@ -75,7 +86,9 @@ class SyncMediaUseCase @Inject constructor(
                 JSONObject()
             }
 
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Property $propertyId: driveMediaIds=${property.driveMediaIds ?: "null/empty"}, localMediaPaths=${imagePaths.size}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Property $propertyId: driveMediaIds=${property.driveMediaIds ?: "null/empty"}, localMediaPaths=${imagePaths.size}")
+            }
 
             val remoteFilesMap = driveHelper.listAllFilesInFolder(targetFolderId, accessToken)
 
@@ -96,27 +109,37 @@ class SyncMediaUseCase @Inject constructor(
                 
 
                 if (existingFileId != null) {
-                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP ảnh $path - lý do: đã có driveMediaId ($existingFileId)")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] SKIP ảnh $path - lý do: đã có driveMediaId ($existingFileId)")
+                    }
                     currentMediaIds.put(path, existingFileId)
                     uploadedCount++
                     onProgress(uploadedCount, totalToUpload)
                     onImageProcessed(path, true, true)
                 } else {
-                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - bắt đầu")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - bắt đầu")
+                    }
                     val driveId = try {
                         driveHelper.uploadMediaFile(path, accessToken, targetFolderId, skipCheckExists = true)
                     } catch (e: Exception) {
-                        com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - thất bại (lỗi ngoại lệ: ${e.localizedMessage})")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - thất bại (lỗi ngoại lệ: ${e.localizedMessage})")
+                        }
                         null
                     }
                     if (driveId != null) {
-                        com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - thành công (driveMediaId: $driveId)")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - thành công (driveMediaId: $driveId)")
+                        }
                         currentMediaIds.put(path, driveId)
                         uploadedCount++
                         onProgress(uploadedCount, totalToUpload)
                         onImageProcessed(path, true, false)
                     } else {
-                        com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - thất bại (không nhận được driveId từ Drive)")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] UPLOAD ảnh $path - thất bại (không nhận được driveId từ Drive)")
+                        }
                         failedPaths.add(path)
                         onImageProcessed(path, false, false)
                     }
@@ -129,24 +152,32 @@ class SyncMediaUseCase @Inject constructor(
 
             if (failedPaths.isNotEmpty()) {
                 for (attempt in 1..2) {
-                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Retry lần $attempt cho ${failedPaths.size} ảnh thất bại")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Retry lần $attempt cho ${failedPaths.size} ảnh thất bại")
+                    }
                     val currentFailures = failedPaths.toList()
                     for (path in currentFailures) {
                         val driveId = try {
                             driveHelper.uploadMediaFile(path, accessToken, targetFolderId, skipCheckExists = true)
                         } catch (e: Exception) {
-                            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] RETRY $attempt ảnh $path - thất bại (lỗi ngoại lệ: ${e.localizedMessage})")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] RETRY $attempt ảnh $path - thất bại (lỗi ngoại lệ: ${e.localizedMessage})")
+                            }
                             null
                         }
                         if (driveId != null) {
-                            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] RETRY $attempt ảnh $path - thành công (driveMediaId: $driveId)")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] RETRY $attempt ảnh $path - thành công (driveMediaId: $driveId)")
+                            }
                             currentMediaIds.put(path, driveId)
                             uploadedCount++
                             onProgress(uploadedCount, totalToUpload)
                             onImageProcessed(path, true, false)
                             failedPaths.remove(path)
                         } else {
-                            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] RETRY $attempt ảnh $path - thất bại")
+                            if (BuildConfig.DEBUG) {
+                                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] RETRY $attempt ảnh $path - thất bại")
+                            }
                         }
                         kotlinx.coroutines.delay(500L)
                     }
@@ -195,13 +226,19 @@ class SyncMediaUseCase @Inject constructor(
 
             if (detailFileId == null || txtFileId == null) {
                 allStepsSuccess = false
-                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] CẢNH BÁO: Cập nhật files detail/txt thất bại cho property $propertyId")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] CẢNH BÁO: Cập nhật files detail/txt thất bại cho property $propertyId")
+                }
             } else {
-                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Đã cập nhật files detail và txt thành công cho property $propertyId")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Đã cập nhật files detail và txt thành công cho property $propertyId")
+                }
             }
         } catch (e: Exception) {
             allStepsSuccess = false
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] CẢNH BÁO: Cập nhật files detail/txt thất bại cho property $propertyId: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] CẢNH BÁO: Cập nhật files detail/txt thất bại cho property $propertyId: ${e.localizedMessage}")
+            }
         }
 
 
@@ -226,7 +263,9 @@ class SyncMediaUseCase @Inject constructor(
                 return preExistingFolderId
             } else {
                 oldFolderIdExisted = true
-                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Phát hiện driveFolderId cũ (${preExistingFolderId}) không còn tồn tại cho property ${property.id}, tiến hành tạo lại...")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Phát hiện driveFolderId cũ (${preExistingFolderId}) không còn tồn tại cho property ${property.id}, tiến hành tạo lại...")
+                }
             }
         }
 
@@ -239,10 +278,14 @@ class SyncMediaUseCase @Inject constructor(
             // Lưu ngay vào Room DB cả driveFolderId và priceAtFolderCreation (sử dụng query targeted để tránh ghi đè full-row từ snapshot cũ)
             propertyRepository.updateDriveFolderInfo(property.id, folderId, priceToFreeze)
             if (oldFolderIdExisted) {
-                com.example.ui.common.AppLogger.log("MediaSync", "Phát hiện driveFolderId cũ không còn tồn tại cho property ${property.id}, đã tạo lại folder mới: $folderId")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("MediaSync", "Phát hiện driveFolderId cũ không còn tồn tại cho property ${property.id}, đã tạo lại folder mới: $folderId")
+                }
             }
         } else {
-            com.example.ui.common.AppLogger.e("MediaSync", "Không tạo được folder Drive cho property ${property.id} — ảnh của SP này sẽ không upload được")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.e("MediaSync", "Không tạo được folder Drive cho property ${property.id} — ảnh của SP này sẽ không upload được")
+            }
         }
         return folderId
     }

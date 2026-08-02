@@ -10,6 +10,7 @@ import com.example.BuildConfig
 import com.example.domain.model.ApiConfig
 import com.example.domain.repository.ApiConfigRepository
 import com.example.data.remote.supabase.SupabaseApiKeyValidator
+import com.example.data.remote.supabase.SupabaseUrlValidator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -28,14 +29,14 @@ internal fun resolveSupabaseConfig(
     val sUrl = savedUrl?.trim() ?: ""
     val sKey = savedKey?.trim() ?: ""
 
-    if (sUrl.isNotBlank() && SupabaseApiKeyValidator.isAllowedForMobileClient(sKey)) {
+    if (SupabaseUrlValidator.isValid(sUrl) && SupabaseApiKeyValidator.isAllowedForMobileClient(sKey)) {
         return ApiConfig(supabaseUrl = sUrl, supabaseAnonKey = sKey)
     }
 
     val dUrl = defaultUrl.trim()
     val dKey = defaultKey.trim()
 
-    if (dUrl.isNotBlank() && SupabaseApiKeyValidator.isAllowedForMobileClient(dKey)) {
+    if (SupabaseUrlValidator.isValid(dUrl) && SupabaseApiKeyValidator.isAllowedForMobileClient(dKey)) {
         return ApiConfig(supabaseUrl = dUrl, supabaseAnonKey = dKey)
     }
 
@@ -62,13 +63,20 @@ class ApiConfigRepositoryImpl @Inject constructor(
     }
 
     override suspend fun saveConfig(supabaseUrl: String, supabaseAnonKey: String) {
+        val trimmedUrl = supabaseUrl.trim()
         val trimmedAnonKey = supabaseAnonKey.trim()
+
+        val urlError = SupabaseUrlValidator.validate(trimmedUrl)
+        if (urlError != null) {
+            throw IllegalArgumentException(urlError)
+        }
+
         if (!SupabaseApiKeyValidator.isAllowedForMobileClient(trimmedAnonKey)) {
             throw IllegalArgumentException("Supabase API key không hợp lệ hoặc không an toàn cho ứng dụng di động.")
         }
 
         context.dataStore.edit { preferences ->
-            preferences[supabaseUrlKey] = supabaseUrl.trim()
+            preferences[supabaseUrlKey] = trimmedUrl
             preferences[supabaseAnonKeyKey] = trimmedAnonKey
         }
     }

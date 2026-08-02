@@ -1,4 +1,5 @@
 package com.example.data.worker
+import com.example.BuildConfig
 
 import android.content.Context
 import android.util.Log
@@ -37,13 +38,17 @@ class TitleCaseMigrationWorker(
                 if (originalArea != normalizedArea) {
                     val updated = prop.copy(area = normalizedArea)
                     propertyDao.updateProperty(updated)
-                    AppLogger.log("DatabaseMigration", "Tự động chuẩn hóa khu vực: '$originalArea' -> '$normalizedArea'")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("DatabaseMigration", "Tự động chuẩn hóa khu vực: '$originalArea' -> '$normalizedArea'")
+                    }
                     migrationExecuted = true
                 }
             }
             settingsManager.isTitleCaseMigrationDone = true
             if (migrationExecuted) {
-                AppLogger.log("DatabaseMigration", "Hoàn tất chuẩn hóa dữ liệu khu vực cũ.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("DatabaseMigration", "Hoàn tất chuẩn hóa dữ liệu khu vực cũ.")
+                }
             }
             Result.success()
         } catch (e: IOException) {

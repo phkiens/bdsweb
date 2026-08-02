@@ -1,4 +1,5 @@
 package com.example.ui.customer
+import com.example.BuildConfig
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -161,7 +162,9 @@ class CustomerViewModel @Inject constructor(
             try {
                 _distinctAreas.value = propertyRepository.getAllDistinctAreas()
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Failed to load distinct areas: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Failed to load distinct areas: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -228,10 +231,14 @@ class CustomerViewModel @Inject constructor(
                     viewDate = dateStr,
                     viewNote = note.ifBlank { "Không có ghi chú" }
                 )
-                AppLogger.log(TAG, "Đã thêm liên kết xem nhà cho khách hàng $customerId, tài sản $propertyId")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã thêm liên kết xem nhà cho khách hàng $customerId, tài sản $propertyId")
+                }
                 selectOwner(_selectedOwner.value)
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error adding viewed property link: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error adding viewed property link: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -246,10 +253,14 @@ class CustomerViewModel @Inject constructor(
                     updatedAt = System.currentTimeMillis()
                 )
                 customerRepository.updateCustomer(updated, fromSync = false)
-                AppLogger.log(TAG, "Đã cập nhật ghi chú cho khách hàng ${customer.name}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã cập nhật ghi chú cho khách hàng ${customer.name}")
+                }
                 selectOwner(updated)
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Lỗi khi cập nhật ghi chú: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Lỗi khi cập nhật ghi chú: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -259,9 +270,13 @@ class CustomerViewModel @Inject constructor(
             try {
                 customerRepository.softDeleteCustomerPropertyLink(customerId, propertyId)
                 selectOwner(_selectedOwner.value)
-                AppLogger.log(TAG, "Đã xóa lượt xem nhà giữa khách hàng $customerId và tài sản $propertyId")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã xóa lượt xem nhà giữa khách hàng $customerId và tài sản $propertyId")
+                }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Lỗi khi xóa lượt xem nhà: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Lỗi khi xóa lượt xem nhà: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -272,14 +287,20 @@ class CustomerViewModel @Inject constructor(
                 for (propertyId in propertyIds) {
                     try {
                         transferPropertyOwnershipUseCase(propertyId, customerId)
-                        AppLogger.log(TAG, "Đã gán quyền sở hữu tài sản $propertyId cho khách hàng $customerId")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Đã gán quyền sở hữu tài sản $propertyId cho khách hàng $customerId")
+                        }
                     } catch (e: Exception) {
-                        AppLogger.log(TAG, "Lỗi khi gán quyền sở hữu tài sản $propertyId cho khách hàng $customerId: ${e.localizedMessage}")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Lỗi khi gán quyền sở hữu tài sản $propertyId cho khách hàng $customerId: ${e.localizedMessage}")
+                        }
                     }
                 }
                 selectOwner(_selectedOwner.value)
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error in bulk ownership assignment: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error in bulk ownership assignment: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -303,9 +324,13 @@ class CustomerViewModel @Inject constructor(
                     }
                     _viewedProperties.value = combined
                     _linkedProperties.value = properties
-                    AppLogger.log(TAG, "Đã tải ${combined.size} tài sản liên kết cho '${customer.name}'")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đã tải ${combined.size} tài sản liên kết cho '${customer.name}'")
+                    }
                 } catch (e: Exception) {
-                    AppLogger.log(TAG, "Error loading owner properties: ${e.localizedMessage}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Error loading owner properties: ${e.localizedMessage}")
+                    }
                 }
             }
         } else {
@@ -322,9 +347,13 @@ class CustomerViewModel @Inject constructor(
                 val results = matchEngineUseCase.findMatchingProperties(customer, allProperties)
                 val matches = results.filter { it.score >= MATCH_SCORE_THRESHOLD }
                 _matchingProperties.value = matches
-                AppLogger.log(TAG, "Tìm thấy ${matches.size} BĐS phù hợp với khách '${customer.name}'")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Tìm thấy ${matches.size} BĐS phù hợp với khách '${customer.name}'")
+                }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error matching properties: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error matching properties: ${e.localizedMessage}")
+                }
             } finally {
                 _isMatching.value = false
             }
@@ -344,7 +373,9 @@ class CustomerViewModel @Inject constructor(
                     MatchUiState.Success(results)
                 }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error scanning matching properties: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error scanning matching properties: ${e.localizedMessage}")
+                }
                 _matchResults.value = MatchUiState.Empty("Có lỗi xảy ra khi quét tìm BĐS")
             }
         }
@@ -364,7 +395,9 @@ class CustomerViewModel @Inject constructor(
                     CustomerMatchUiState.Success(results)
                 }
             } catch (e: Exception) {
-                AppLogger.log(TAG, "Error scanning matching customers for property: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Error scanning matching customers for property: ${e.localizedMessage}")
+                }
                 _customerMatchResults.value = CustomerMatchUiState.Empty("Có lỗi xảy ra khi quét tìm khách mua")
             }
         }
@@ -450,14 +483,20 @@ class CustomerViewModel @Inject constructor(
                         viewDate = formattedDate,
                         viewNote = viewNote
                     )
-                    AppLogger.log(TAG, "Đã thêm khách hàng mới liên kết với BĐS $prefilledPropertyId: ${customer.name}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đã thêm khách hàng mới liên kết với BĐS $prefilledPropertyId: ${customer.name}")
+                    }
                 } else {
                     addCustomerUseCase(customer)
-                    AppLogger.log(TAG, "Đã thêm khách hàng mới: ${customer.name} - SĐT: ${customer.phone}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đã thêm khách hàng mới: ${customer.name} - SĐT: ${customer.phone}")
+                    }
                 }
             } else {
                 updateCustomerUseCase(customer)
-                AppLogger.log(TAG, "Đã cập nhật khách hàng: ${customer.name}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Đã cập nhật khách hàng: ${customer.name}")
+                }
             }
             clearForm()
         }
@@ -493,7 +532,9 @@ class CustomerViewModel @Inject constructor(
                     if (currentCustomer != null) {
                         val updatedDrive = currentCustomer.copy(avatarPath = localPath, avatarDriveUrl = driveId)
                         customerRepository.updateCustomer(updatedDrive)
-                        AppLogger.log(TAG, "Đã upload avatar cho khách hàng ${currentCustomer.name} lên Drive ID: $driveId")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Đã upload avatar cho khách hàng ${currentCustomer.name} lên Drive ID: $driveId")
+                        }
                     }
                     snackbarManager.showSnackbar("Đã cập nhật ảnh đại diện thành công!")
                 } else {
@@ -514,7 +555,9 @@ class CustomerViewModel @Inject constructor(
             avatarDriveUrl.value = null
             val updated = currentCustomer.copy(avatarPath = null, avatarDriveUrl = null)
             customerRepository.updateCustomer(updated)
-            AppLogger.log(TAG, "Đã xóa ảnh đại diện của khách hàng ${currentCustomer.name}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã xóa ảnh đại diện của khách hàng ${currentCustomer.name}")
+            }
             snackbarManager.showSnackbar("Đã xóa ảnh đại diện")
         }
     }
@@ -523,7 +566,9 @@ class CustomerViewModel @Inject constructor(
         viewModelScope.launch {
             val customer = customers.value.find { it.id == id }
             deleteCustomerUseCase(id)
-            AppLogger.log(TAG, "Đã chuyển '${customer?.name ?: id}' vào thùng rác.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã chuyển '${customer?.name ?: id}' vào thùng rác.")
+            }
         }
     }
 }

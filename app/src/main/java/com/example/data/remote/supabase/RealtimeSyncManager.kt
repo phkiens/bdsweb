@@ -1,6 +1,7 @@
 package com.example.data.remote.supabase
 
 import android.content.Context
+import com.example.BuildConfig
 import com.example.data.remote.supabase.model.SupabaseProperty
 import com.example.data.remote.supabase.model.SupabaseCustomer
 import com.example.data.remote.supabase.model.SupabaseCustomerPropertyLink
@@ -47,10 +48,14 @@ class RealtimeSyncManager @Inject constructor(
 
     suspend fun start() = syncMutex.withLock {
         if (syncJob?.isActive == true) {
-            AppLogger.log("Realtime", "RealtimeSyncManager already running.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "RealtimeSyncManager already running.")
+            }
             return@withLock
         }
-        AppLogger.log("Realtime", "Starting RealtimeSyncManager...")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Realtime", "Starting RealtimeSyncManager...")
+        }
         syncJob = scope.launch {
             try {
                 // 1. catchUp() trước
@@ -91,16 +96,22 @@ class RealtimeSyncManager @Inject constructor(
                     }
                 }
 
-                AppLogger.log("Realtime", "RealtimeSyncManager is successfully subscribed and listening.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("Realtime", "RealtimeSyncManager is successfully subscribed and listening.")
+                }
             } catch (e: Exception) {
-                AppLogger.log("Realtime", "Error starting realtime sync: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("Realtime", "Error starting realtime sync: ${e.localizedMessage}")
+                }
                 e.printStackTrace()
             }
         }
     }
 
     suspend fun stop() = syncMutex.withLock {
-        AppLogger.log("Realtime", "Stopping RealtimeSyncManager...")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Realtime", "Stopping RealtimeSyncManager...")
+        }
         val jobToCancel = syncJob
         syncJob = null
         if (jobToCancel != null && jobToCancel.isActive) {
@@ -119,23 +130,31 @@ class RealtimeSyncManager @Inject constructor(
             when (action) {
                 is PostgresAction.Insert -> {
                     val remote = action.decodeRecord<SupabaseProperty>()
-                    AppLogger.log("Realtime", "Realtime INSERT property: ${remote.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime INSERT property: ${remote.id}")
+                    }
                     upsertProperty(remote)
                 }
                 is PostgresAction.Update -> {
                     val remote = action.decodeRecord<SupabaseProperty>()
-                    AppLogger.log("Realtime", "Realtime UPDATE property: ${remote.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime UPDATE property: ${remote.id}")
+                    }
                     upsertProperty(remote)
                 }
                 is PostgresAction.Delete -> {
                     val oldRecord = action.decodeOldRecord<SupabaseProperty>()
-                    AppLogger.log("Realtime", "Realtime DELETE property: ${oldRecord.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime DELETE property: ${oldRecord.id}")
+                    }
                     propertyRepository.softDeletePropertyLocalOnly(oldRecord.id, System.currentTimeMillis())
                 }
                 else -> {}
             }
         } catch (e: Exception) {
-            AppLogger.log("Realtime", "Error handling property action: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Error handling property action: ${e.localizedMessage}")
+            }
             e.printStackTrace()
         }
     }
@@ -148,7 +167,9 @@ class RealtimeSyncManager @Inject constructor(
                 if (existing != null) {
                     propertyRepository.markPropertyTextUnsynced(supabaseProp.id)
                     enqueuePropertySyncRetryWorker()
-                    AppLogger.log("Realtime", "Chặn tombstone cũ cho BĐS: ${supabaseProp.id} (Remote: ${supabaseProp.updatedAt}, Local: ${existing.updatedAt})")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Chặn tombstone cũ cho BĐS: ${supabaseProp.id} (Remote: ${supabaseProp.updatedAt}, Local: ${existing.updatedAt})")
+                    }
                 }
             }
             return
@@ -157,7 +178,9 @@ class RealtimeSyncManager @Inject constructor(
         if (existing == null) {
             val newProp = supabaseProp.toDomain(localImagePath = null, localIsTextSynced = true)
             propertyRepository.insertProperty(newProp, fromSync = true)
-            AppLogger.log("Realtime", "✓ Inserted new property from remote: ${supabaseProp.id}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "✓ Inserted new property from remote: ${supabaseProp.id}")
+            }
             scheduleMediaRestore()
         } else {
             if (supabaseProp.updatedAt > existing.updatedAt) {
@@ -183,7 +206,9 @@ class RealtimeSyncManager @Inject constructor(
                         val file = java.io.File(path)
                         if (file.exists()) {
                             file.delete()
-                            AppLogger.log("Realtime", "Đã xóa file cục bộ do bị xóa từ remote: $path")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log("Realtime", "Đã xóa file cục bộ do bị xóa từ remote: $path")
+                            }
                         }
                     } catch (e: Exception) {
                         android.util.Log.e("Realtime", "Lỗi khi xóa file cục bộ: $path", e)
@@ -194,7 +219,9 @@ class RealtimeSyncManager @Inject constructor(
                     .toDomain(localImagePath = reconciliationResult.newImagePath, localIsTextSynced = existing.isTextSynced)
                     .copy(isMediaSynced = existing.isMediaSynced)
                 propertyRepository.updateProperty(updatedProp, fromSync = true)
-                AppLogger.log("Realtime", "✓ Updated property from remote: ${supabaseProp.id}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("Realtime", "✓ Updated property from remote: ${supabaseProp.id}")
+                }
                 scheduleMediaRestore()
             }
         }
@@ -205,23 +232,31 @@ class RealtimeSyncManager @Inject constructor(
             when (action) {
                 is PostgresAction.Insert -> {
                     val remote = action.decodeRecord<SupabaseCustomer>()
-                    AppLogger.log("Realtime", "Realtime INSERT customer: ${remote.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime INSERT customer: ${remote.id}")
+                    }
                     upsertCustomer(remote)
                 }
                 is PostgresAction.Update -> {
                     val remote = action.decodeRecord<SupabaseCustomer>()
-                    AppLogger.log("Realtime", "Realtime UPDATE customer: ${remote.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime UPDATE customer: ${remote.id}")
+                    }
                     upsertCustomer(remote)
                 }
                 is PostgresAction.Delete -> {
                     val oldRecord = action.decodeOldRecord<SupabaseCustomer>()
-                    AppLogger.log("Realtime", "Realtime DELETE customer: ${oldRecord.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime DELETE customer: ${oldRecord.id}")
+                    }
                     customerRepository.softDeleteCustomerLocalOnly(oldRecord.id, System.currentTimeMillis())
                 }
                 else -> {}
             }
         } catch (e: Exception) {
-            AppLogger.log("Realtime", "Error handling customer action: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Error handling customer action: ${e.localizedMessage}")
+            }
             e.printStackTrace()
         }
     }
@@ -234,7 +269,9 @@ class RealtimeSyncManager @Inject constructor(
                 if (existing != null) {
                     customerRepository.markCustomerUnsynced(supabaseCust.id)
                     enqueueCustomerSyncRetryWorker()
-                    AppLogger.log("Realtime", "Chặn tombstone cũ cho Khách hàng: ${supabaseCust.id} (Remote: ${supabaseCust.updatedAt}, Local: ${existing.updatedAt})")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Chặn tombstone cũ cho Khách hàng: ${supabaseCust.id} (Remote: ${supabaseCust.updatedAt}, Local: ${existing.updatedAt})")
+                    }
                 }
             }
             return
@@ -243,7 +280,9 @@ class RealtimeSyncManager @Inject constructor(
         if (existing == null) {
             val newCust = supabaseCust.toDomain().copy(avatarPath = null, isSynced = true)
             customerRepository.insertCustomer(newCust, fromSync = true)
-            AppLogger.log("Realtime", "✓ Inserted new customer from remote: ${supabaseCust.id}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "✓ Inserted new customer from remote: ${supabaseCust.id}")
+            }
         } else {
             if (supabaseCust.updatedAt > existing.updatedAt) {
                 val updatedCust = supabaseCust.toDomain().copy(
@@ -251,7 +290,9 @@ class RealtimeSyncManager @Inject constructor(
                     isSynced = true
                 )
                 customerRepository.updateCustomer(updatedCust, fromSync = true)
-                AppLogger.log("Realtime", "✓ Updated customer from remote: ${supabaseCust.id}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("Realtime", "✓ Updated customer from remote: ${supabaseCust.id}")
+                }
             }
         }
     }
@@ -261,23 +302,31 @@ class RealtimeSyncManager @Inject constructor(
             when (action) {
                 is PostgresAction.Insert -> {
                     val remote = action.decodeRecord<SupabaseCustomerPropertyLink>()
-                    AppLogger.log("Realtime", "Realtime INSERT link: cust=${remote.customerId} prop=${remote.propertyId}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime INSERT link: cust=${remote.customerId} prop=${remote.propertyId}")
+                    }
                     upsertCustomerPropertyLink(remote)
                 }
                 is PostgresAction.Update -> {
                     val remote = action.decodeRecord<SupabaseCustomerPropertyLink>()
-                    AppLogger.log("Realtime", "Realtime UPDATE link: cust=${remote.customerId} prop=${remote.propertyId}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime UPDATE link: cust=${remote.customerId} prop=${remote.propertyId}")
+                    }
                     upsertCustomerPropertyLink(remote)
                 }
                 is PostgresAction.Delete -> {
                     val oldRecord = action.decodeOldRecord<SupabaseCustomerPropertyLink>()
-                    AppLogger.log("Realtime", "Realtime DELETE link: cust=${oldRecord.customerId} prop=${oldRecord.propertyId}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Realtime DELETE link: cust=${oldRecord.customerId} prop=${oldRecord.propertyId}")
+                    }
                     customerRepository.softDeleteCustomerPropertyLinkLocalOnly(oldRecord.customerId, oldRecord.propertyId, System.currentTimeMillis())
                 }
                 else -> {}
             }
         } catch (e: Exception) {
-            AppLogger.log("Realtime", "Error handling link action: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Error handling link action: ${e.localizedMessage}")
+            }
             e.printStackTrace()
         }
     }
@@ -290,7 +339,9 @@ class RealtimeSyncManager @Inject constructor(
                 if (existing != null) {
                     customerRepository.markCustomerPropertyLinkUnsynced(supabaseLink.customerId, supabaseLink.propertyId)
                     enqueueCustomerPropertyLinkSyncRetryWorker()
-                    AppLogger.log("Realtime", "Chặn tombstone cũ cho Link: ${supabaseLink.customerId}_${supabaseLink.propertyId} (Remote: ${supabaseLink.updatedAt}, Local: ${existing.updatedAt})")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("Realtime", "Chặn tombstone cũ cho Link: ${supabaseLink.customerId}_${supabaseLink.propertyId} (Remote: ${supabaseLink.updatedAt}, Local: ${existing.updatedAt})")
+                    }
                 }
             }
             return
@@ -306,7 +357,9 @@ class RealtimeSyncManager @Inject constructor(
                 fromSync = true,
                 updatedAt = supabaseLink.updatedAt
             )
-            AppLogger.log("Realtime", "✓ Inserted new link from remote: cust=${supabaseLink.customerId} prop=${supabaseLink.propertyId}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "✓ Inserted new link from remote: cust=${supabaseLink.customerId} prop=${supabaseLink.propertyId}")
+            }
         } else {
             if (supabaseLink.updatedAt > existing.updatedAt) {
                 customerRepository.insertCustomerPropertyLink(
@@ -318,17 +371,19 @@ class RealtimeSyncManager @Inject constructor(
                     fromSync = true,
                     updatedAt = supabaseLink.updatedAt
                 )
-                AppLogger.log("Realtime", "✓ Updated link from remote: cust=${supabaseLink.customerId} prop=${supabaseLink.propertyId}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("Realtime", "✓ Updated link from remote: cust=${supabaseLink.customerId} prop=${supabaseLink.propertyId}")
+                }
             }
         }
     }
 
     suspend fun catchUp() {
-        AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Bắt đầu catchUp...")
+        AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Bắt đầu tải dữ liệu hai chiều")
         val client = try {
             supabaseClientProvider.getClient()
         } catch (e: Exception) {
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Lỗi lấy Supabase client: ${e.localizedMessage}")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Không thể kết nối máy chủ")
             e.printStackTrace()
             return
         }
@@ -336,7 +391,7 @@ class RealtimeSyncManager @Inject constructor(
         // Pull Properties
         try {
             val lastPull = syncPullPrefs.getLastPullProperties()
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Pulling properties > $lastPull")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Bắt đầu tải dữ liệu BĐS")
             var cursor = lastPull
             var totalPulled = 0
             while (true) {
@@ -354,16 +409,16 @@ class RealtimeSyncManager @Inject constructor(
                 if (page.size < CATCH_UP_PAGE_SIZE) break
             }
             syncPullPrefs.setLastPullProperties(cursor)
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.SUCCESS, "Realtime", "Pull properties xong. Pulled=$totalPulled. Watermark mới: $cursor", itemCount = totalPulled)
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.SUCCESS, "Realtime", "Tải dữ liệu BĐS hoàn tất", itemCount = totalPulled)
         } catch (e: Exception) {
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Lỗi pull properties: ${e.localizedMessage}")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Tải dữ liệu BĐS thất bại")
             e.printStackTrace()
         }
 
         // Pull Customers
         try {
             val lastPull = syncPullPrefs.getLastPullCustomers()
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Pulling customers > $lastPull")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Bắt đầu tải dữ liệu khách hàng")
             var cursor = lastPull
             var totalPulled = 0
             while (true) {
@@ -379,16 +434,16 @@ class RealtimeSyncManager @Inject constructor(
                 if (page.size < CATCH_UP_PAGE_SIZE) break
             }
             syncPullPrefs.setLastPullCustomers(cursor)
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.SUCCESS, "Realtime", "Pull customers xong. Pulled=$totalPulled. Watermark mới: $cursor", itemCount = totalPulled)
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.SUCCESS, "Realtime", "Tải dữ liệu khách hàng hoàn tất", itemCount = totalPulled)
         } catch (e: Exception) {
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Lỗi pull customers: ${e.localizedMessage}")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Tải dữ liệu khách hàng thất bại")
             e.printStackTrace()
         }
 
         // Pull Customer Property Links
         try {
             val lastPull = syncPullPrefs.getLastPullLinks()
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Pulling links > $lastPull")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.STARTED, "Realtime", "Bắt đầu tải liên kết khách hàng")
             var cursor = lastPull
             var totalPulled = 0
             while (true) {
@@ -404,9 +459,9 @@ class RealtimeSyncManager @Inject constructor(
                 if (page.size < CATCH_UP_PAGE_SIZE) break
             }
             syncPullPrefs.setLastPullLinks(cursor)
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.SUCCESS, "Realtime", "Pull links xong. Pulled=$totalPulled. Watermark mới: $cursor", itemCount = totalPulled)
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.SUCCESS, "Realtime", "Tải liên kết khách hàng hoàn tất", itemCount = totalPulled)
         } catch (e: Exception) {
-            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Lỗi pull links: ${e.localizedMessage}")
+            AppLogger.record(SyncType.PULL_TEXT, SyncStatus.FAILED, "Realtime", "Tải liên kết khách hàng thất bại")
             e.printStackTrace()
         }
 
@@ -451,10 +506,14 @@ class RealtimeSyncManager @Inject constructor(
             val total = pendingProperty
             if (total > 0 && showNotification) {
                 com.example.ui.common.NotificationHelper.showPendingMediaNotification(context, total)
-                AppLogger.log("Realtime", "Có $total ảnh chờ tải. Chờ người dùng bấm tải.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("Realtime", "Có $total ảnh chờ tải. Chờ người dùng bấm tải.")
+                }
             }
         } catch (e: Exception) {
-            AppLogger.log("Realtime", "Lỗi đếm ảnh chờ tải: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Lỗi đếm ảnh chờ tải: ${e.localizedMessage}")
+            }
         }
     }
 
@@ -487,7 +546,9 @@ class RealtimeSyncManager @Inject constructor(
                 androidx.work.ExistingWorkPolicy.KEEP,
                 request
             )
-            AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Property qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Property qua WorkManager.")
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -512,7 +573,9 @@ class RealtimeSyncManager @Inject constructor(
                 androidx.work.ExistingWorkPolicy.KEEP,
                 request
             )
-            AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Customer qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Customer qua WorkManager.")
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -537,7 +600,9 @@ class RealtimeSyncManager @Inject constructor(
                 androidx.work.ExistingWorkPolicy.KEEP,
                 request
             )
-            AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Link qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "Đã lên lịch retry đồng bộ Link qua WorkManager.")
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

@@ -1,4 +1,5 @@
 package com.example.data.repository
+import com.example.BuildConfig
 
 import android.content.Context
 import com.example.data.local.dao.CustomerDao
@@ -94,7 +95,9 @@ class CustomerRepositoryImpl @Inject constructor(
                 request
             )
         } catch (e: Exception) {
-            AppLogger.log("SyncRetry", "Enqueue retry worker link_sync_retry_work thất bại: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SyncRetry", "Enqueue retry worker link_sync_retry_work thất bại: ${e.localizedMessage}")
+            }
         }
     }
 
@@ -117,7 +120,9 @@ class CustomerRepositoryImpl @Inject constructor(
                 androidx.work.ExistingWorkPolicy.KEEP,
                 request
             )
-            com.example.ui.common.AppLogger.log("CustomerSupabaseSync", "Đã lên lịch retry đồng bộ Customer qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("CustomerSupabaseSync", "Đã lên lịch retry đồng bộ Customer qua WorkManager.")
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -283,7 +288,9 @@ class CustomerRepositoryImpl @Inject constructor(
             }
             if (match != null) return match.toDomain()
         } catch (e: Exception) {
-            AppLogger.log("CustomerRepository", "Lỗi fallback tìm customer theo SĐT: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("CustomerRepository", "Lỗi fallback tìm customer theo SĐT: ${e.localizedMessage}")
+            }
         }
         
         return null

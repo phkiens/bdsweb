@@ -1,4 +1,5 @@
 package com.example.ui.settings
+import com.example.BuildConfig
 
 import android.content.Context
 import android.net.Uri
@@ -160,7 +161,9 @@ class SettingsViewModel @Inject constructor(
     fun setWifiOnlyForMediaRestore(enabled: Boolean) {
         settingsManager.wifiOnlyForMediaRestore = enabled
         _wifiOnlyForMediaRestore.value = enabled
-        AppLogger.log("MediaRestore", if (enabled) "Bật: chỉ tải ảnh qua Wi-Fi" else "Tắt: cho phép tải ảnh qua dữ liệu di động")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("MediaRestore", if (enabled) "Bật: chỉ tải ảnh qua Wi-Fi" else "Tắt: cho phép tải ảnh qua dữ liệu di động")
+        }
     }
 
     private val _mapMinZoomScope = MutableStateFlow(settingsManager.mapMinZoomScope)
@@ -169,7 +172,9 @@ class SettingsViewModel @Inject constructor(
     fun setMapMinZoomScope(scope: com.example.ui.common.MapZoomScope) {
         settingsManager.mapMinZoomScope = scope.key
         _mapMinZoomScope.value = scope.key
-        AppLogger.log("Map", "Đặt mức thu nhỏ tối đa bản đồ: ${scope.displayName} (minZoom=${scope.minZoom})")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Map", "Đặt mức thu nhỏ tối đa bản đồ: ${scope.displayName} (minZoom=${scope.minZoom})")
+        }
     }
 
     private val _mapDefaultRadius = MutableStateFlow(settingsManager.mapDefaultRadius)
@@ -178,7 +183,9 @@ class SettingsViewModel @Inject constructor(
     fun setMapDefaultRadius(radiusDefault: com.example.ui.common.MapRadiusDefault) {
         settingsManager.mapDefaultRadius = radiusDefault.key
         _mapDefaultRadius.value = radiusDefault.key
-        AppLogger.log("Map", "Đặt bán kính quét mặc định bản đồ: ${radiusDefault.displayName}")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Map", "Đặt bán kính quét mặc định bản đồ: ${radiusDefault.displayName}")
+        }
     }
 
     fun toggleRememberLastFilter(enabled: Boolean) {
@@ -187,14 +194,18 @@ class SettingsViewModel @Inject constructor(
         if (!enabled) {
             settingsManager.lastFilterJson = ""   // tắt → xóa filter đã lưu
         }
-        AppLogger.log("Filter", if (enabled) "Bật nhớ bộ lọc lần cuối" else "Tắt nhớ bộ lọc lần cuối")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Filter", if (enabled) "Bật nhớ bộ lọc lần cuối" else "Tắt nhớ bộ lọc lần cuối")
+        }
     }
 
     val fabOnLeft = settingsManager.fabOnLeftFlow
 
     fun setFabOnLeft(enabled: Boolean) {
         settingsManager.fabOnLeft = enabled
-        AppLogger.log("Settings", if (enabled) "Đặt nút nổi (FAB) bên Trái" else "Đặt nút nổi (FAB) bên Phải")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Settings", if (enabled) "Đặt nút nổi (FAB) bên Trái" else "Đặt nút nổi (FAB) bên Phải")
+        }
     }
 
     fun updateDefaultFilter(propertyType: String, status: String) {
@@ -202,7 +213,9 @@ class SettingsViewModel @Inject constructor(
         settingsManager.defaultStatus = status
         _defaultPropertyType.value = propertyType
         _defaultStatus.value = status
-        AppLogger.log("Settings", "Đã cập nhật bộ lọc mặc định: Loại = ${if (propertyType.isEmpty()) "Tất cả" else propertyType}, Trạng thái = ${if (status.isEmpty()) "Tất cả" else status}")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Settings", "Đã cập nhật bộ lọc mặc định: Loại = ${if (propertyType.isEmpty()) "Tất cả" else propertyType}, Trạng thái = ${if (status.isEmpty()) "Tất cả" else status}")
+        }
     }
 
     fun toggleAutoSync(enabled: Boolean) {
@@ -210,10 +223,14 @@ class SettingsViewModel @Inject constructor(
         _autoSyncEnabled.value = enabled
         if (enabled) {
             syncScheduler.scheduleAll()
-            AppLogger.log("AutoSync", "Đã bật tự động đồng bộ và lập lịch cho các mốc giờ.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Đã bật tự động đồng bộ và lập lịch cho các mốc giờ.")
+            }
         } else {
             syncScheduler.cancelAll()
-            AppLogger.log("AutoSync", "Đã tắt tự động đồng bộ.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Đã tắt tự động đồng bộ.")
+            }
         }
     }
 
@@ -221,7 +238,9 @@ class SettingsViewModel @Inject constructor(
         val currentList = _autoSyncTimes.value.toMutableList()
         if (currentList.contains(time)) return
         if (currentList.size >= 5) {
-            AppLogger.log("AutoSync", "Chỉ được cấu hình tối đa 5 mốc giờ tự động đồng bộ.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Chỉ được cấu hình tối đa 5 mốc giờ tự động đồng bộ.")
+            }
             return
         }
         currentList.add(time)
@@ -231,7 +250,9 @@ class SettingsViewModel @Inject constructor(
         if (settingsManager.autoSyncEnabled) {
             syncScheduler.scheduleOne(time)
         }
-        AppLogger.log("AutoSync", "Đã thêm mốc giờ đồng bộ tự động: $time")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("AutoSync", "Đã thêm mốc giờ đồng bộ tự động: $time")
+        }
     }
 
     fun deleteAutoSyncTime(time: String) {
@@ -240,7 +261,9 @@ class SettingsViewModel @Inject constructor(
             syncScheduler.saveTimesList(currentList)
             _autoSyncTimes.value = currentList
             syncScheduler.cancelOne(time)
-            AppLogger.log("AutoSync", "Đã xoá mốc giờ đồng bộ tự động: $time")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Đã xoá mốc giờ đồng bộ tự động: $time")
+            }
         }
     }
 
@@ -268,7 +291,9 @@ class SettingsViewModel @Inject constructor(
                     if (settingsManager.geminiApiKey.isBlank()) {
                         settingsManager.geminiApiKey = savedKey
                         _geminiApiKey.value = savedKey
-                        AppLogger.log(TAG, "Migrated Gemini API Key from DataStore to secure settings.")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log(TAG, "Migrated Gemini API Key from DataStore to secure settings.")
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -312,7 +337,9 @@ class SettingsViewModel @Inject constructor(
             } else {
                 context.startService(intent)
             }
-            AppLogger.log(TAG, "Đã khởi chạy SyncForegroundService để đẩy dữ liệu lên...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã khởi chạy SyncForegroundService để đẩy dữ liệu lên...")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start SyncForegroundService", e)
         }
@@ -338,7 +365,9 @@ class SettingsViewModel @Inject constructor(
                 .then(pullSupabaseRequest)
                 .then(workRequest)
                 .enqueue()
-            AppLogger.log(TAG, "Đã lên lịch chuỗi Worker khôi phục/tải xuống dữ liệu...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã lên lịch chuỗi Worker khôi phục/tải xuống dữ liệu...")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to enqueue pull workers", e)
         }
@@ -362,19 +391,25 @@ class SettingsViewModel @Inject constructor(
     fun saveGeminiApiKey(key: String) {
         settingsManager.geminiApiKey = key
         _geminiApiKey.value = key
-        AppLogger.log(TAG, "Gemini API Key updated.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Gemini API Key updated.")
+        }
     }
 
     fun saveGeminiModel(model: String) {
         settingsManager.geminiModel = model
         _geminiModel.value = model
-        AppLogger.log(TAG, "Gemini Model updated: $model")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Gemini Model updated: $model")
+        }
     }
 
     fun savePromptTemplate(prompt: String) {
         settingsManager.promptTemplate = prompt
         _promptTemplate.value = prompt
-        AppLogger.log(TAG, "Custom AI Prompt Template updated.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Custom AI Prompt Template updated.")
+        }
     }
 
     suspend fun requestDriveAuthorization(): DriveAuthorizationResult {
@@ -395,10 +430,14 @@ class SettingsViewModel @Inject constructor(
             _googleEmail.value = accountInfo.email
             _googleName.value = accountInfo.name
 
-            AppLogger.log(TAG, "Liên kết Google Drive thành công.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Liên kết Google Drive thành công.")
+            }
             return true
         } else {
-            AppLogger.log(TAG, "Không thể lấy thông tin tài khoản Google.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Không thể lấy thông tin tài khoản Google.")
+            }
             return false
         }
     }
@@ -409,7 +448,9 @@ class SettingsViewModel @Inject constructor(
         settingsManager.googleName = ""
         _googleEmail.value = ""
         _googleName.value = ""
-        AppLogger.log(TAG, "Đã đăng xuất tài khoản Google.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Đã đăng xuất tài khoản Google.")
+        }
         onComplete()
     }
 
@@ -423,19 +464,27 @@ class SettingsViewModel @Inject constructor(
             val properties = propertyRepository.getAllProperties()
             for (p in properties) {
                 if (p.latitude != null && (p.latitude.isNaN() || p.latitude.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=latitude value=${p.latitude}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=latitude value=${p.latitude}")
+                    }
                     foundAny = true
                 }
                 if (p.longitude != null && (p.longitude.isNaN() || p.longitude.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=longitude value=${p.longitude}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=longitude value=${p.longitude}")
+                    }
                     foundAny = true
                 }
                 if (p.areaSize != null && (p.areaSize.isNaN() || p.areaSize.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=areaSize value=${p.areaSize}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=areaSize value=${p.areaSize}")
+                    }
                     foundAny = true
                 }
                 if (p.price.isNaN() || p.price.isInfinite()) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=price value=${p.price}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Property id=${p.id} field=price value=${p.price}")
+                    }
                     foundAny = true
                 }
             }
@@ -444,22 +493,30 @@ class SettingsViewModel @Inject constructor(
             for (u in unverified) {
                 val uArea = u.area?.toDouble()
                 if (uArea != null && (uArea.isNaN() || uArea.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=area value=${u.area}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=area value=${u.area}")
+                    }
                     foundAny = true
                 }
                 val uPrice = u.price
                 if (uPrice != null && (uPrice.isNaN() || uPrice.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=price value=${u.price}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=price value=${u.price}")
+                    }
                     foundAny = true
                 }
                 val uLat = u.latitude
                 if (uLat != null && (uLat.isNaN() || uLat.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=latitude value=${u.latitude}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=latitude value=${u.latitude}")
+                    }
                     foundAny = true
                 }
                 val uLng = u.longitude
                 if (uLng != null && (uLng.isNaN() || uLng.isInfinite())) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=longitude value=${u.longitude}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=UnverifiedProperty id=${u.id} field=longitude value=${u.longitude}")
+                    }
                     foundAny = true
                 }
             }
@@ -467,20 +524,28 @@ class SettingsViewModel @Inject constructor(
             val customers = customerRepository.getAllCustomers()
             for (c in customers) {
                 if (c.priceMin.isNaN() || c.priceMin.isInfinite()) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Customer id=${c.id} field=priceMin value=${c.priceMin}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Customer id=${c.id} field=priceMin value=${c.priceMin}")
+                    }
                     foundAny = true
                 }
                 if (c.priceMax.isNaN() || c.priceMax.isInfinite()) {
-                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Customer id=${c.id} field=priceMax value=${c.priceMax}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("NAN_SCAN", "[NAN_SCAN] table=Customer id=${c.id} field=priceMax value=${c.priceMax}")
+                    }
                     foundAny = true
                 }
             }
 
             if (!foundAny) {
-                AppLogger.log("NAN_SCAN", "[NAN_SCAN] Không tìm thấy giá trị NaN/Infinity nào trong DB.")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("NAN_SCAN", "[NAN_SCAN] Không tìm thấy giá trị NaN/Infinity nào trong DB.")
+                }
             }
         } catch (e: Exception) {
-            AppLogger.log("NAN_SCAN", "Lỗi quét NaN: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("NAN_SCAN", "Lỗi quét NaN: ${e.message}")
+            }
         }
     }
 
@@ -664,17 +729,23 @@ class SettingsViewModel @Inject constructor(
                     context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                         .edit().putString("last_zip_export_time", timeStr).apply()
                     refreshSyncStatus()
-                    AppLogger.log(TAG, "Successfully exported ZIP backup file to external storage at $timeStr.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Successfully exported ZIP backup file to external storage at $timeStr.")
+                    }
                     _toastMessage.emit("Xuất sao lưu ZIP thành công ✓")
                 } else {
                     _zipProgressStatus.value = "Lỗi: Xuất sao lưu ZIP thất bại!"
-                    AppLogger.log(TAG, "ZIP export failed during archiving.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "ZIP export failed during archiving.")
+                    }
                     _toastMessage.emit("Lỗi: Xuất sao lưu ZIP thất bại!")
                 }
             } catch (e: Exception) {
                 _zipProgressStatus.value = "Lỗi: ${e.localizedMessage}"
                 Log.e(TAG, "Error during ZIP export", e)
-                AppLogger.log(TAG, "ZIP export failed: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "ZIP export failed: ${e.localizedMessage}")
+                }
                 _toastMessage.emit("Lỗi xuất sao lưu: ${e.localizedMessage}")
             } finally {
                 _isBackingUp.value = false
@@ -905,7 +976,9 @@ class SettingsViewModel @Inject constructor(
                                 }
                             }
                             editor.apply()
-                            AppLogger.log(TAG, "Restored action positions preferences from ZIP backup.")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log(TAG, "Restored action positions preferences from ZIP backup.")
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Lỗi phục hồi settings.json từ ZIP", e)
                         }
@@ -916,17 +989,23 @@ class SettingsViewModel @Inject constructor(
                     context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                         .edit().putString("last_zip_import_time", timeStr).apply()
                     refreshSyncStatus()
-                    AppLogger.log(TAG, "Restored all database records from ZIP backup successfully at $timeStr.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Restored all database records from ZIP backup successfully at $timeStr.")
+                    }
                     _toastMessage.emit("Nhập sao lưu ZIP thành công ✓")
                 } else {
                     _zipProgressStatus.value = "Lỗi: Giải nén ZIP thất bại hoặc file không hợp lệ!"
-                    AppLogger.log(TAG, "ZIP Restore failed - Unarchiving failed.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "ZIP Restore failed - Unarchiving failed.")
+                    }
                     _toastMessage.emit("Lỗi: Giải nén ZIP thất bại hoặc file không hợp lệ!")
                 }
             } catch (e: Exception) {
                 _zipProgressStatus.value = "Lỗi nhập sao lưu: ${e.localizedMessage}"
                 Log.e(TAG, "Error during ZIP import", e)
-                AppLogger.log(TAG, "ZIP Import failed: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "ZIP Import failed: ${e.localizedMessage}")
+                }
                 _toastMessage.emit("Lỗi nhập sao lưu: ${e.localizedMessage}")
             } finally {
                 _isRestoring.value = false
@@ -1000,12 +1079,16 @@ class SettingsViewModel @Inject constructor(
 
     fun saveCustomRegex(jsonStr: String) {
         settingsManager.customExtractionRegex = jsonStr
-        AppLogger.log("Settings", "Đã cập nhật bộ regex bóc tách tùy chỉnh.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Settings", "Đã cập nhật bộ regex bóc tách tùy chỉnh.")
+        }
     }
 
     fun restoreDefaultRegex() {
         settingsManager.customExtractionRegex = ""
-        AppLogger.log("Settings", "Đã khôi phục bộ regex bóc tách về mặc định.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("Settings", "Đã khôi phục bộ regex bóc tách về mặc định.")
+        }
     }
 
     private val _isScanningOrphanDriveFolders = MutableStateFlow(false)

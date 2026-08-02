@@ -1,4 +1,5 @@
 package com.example.data.repository
+import com.example.BuildConfig
 
 import android.content.Context
 import com.example.data.local.dao.PropertyDao
@@ -88,7 +89,9 @@ class PropertyRepositoryImpl @Inject constructor(
                 request
             )
         } catch (e: Exception) {
-            AppLogger.log("SyncRetry", "Enqueue retry worker link_sync_retry_work thất bại: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SyncRetry", "Enqueue retry worker link_sync_retry_work thất bại: ${e.localizedMessage}")
+            }
         }
     }
 
@@ -131,7 +134,9 @@ class PropertyRepositoryImpl @Inject constructor(
                 request
             )
         } catch (e: Exception) {
-            AppLogger.log("SyncRetry", "Enqueue retry worker customer_sync_retry_work thất bại: ${e.localizedMessage}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("SyncRetry", "Enqueue retry worker customer_sync_retry_work thất bại: ${e.localizedMessage}")
+            }
         }
     }
 
@@ -173,7 +178,9 @@ class PropertyRepositoryImpl @Inject constructor(
                 androidx.work.ExistingWorkPolicy.KEEP,
                 request
             )
-            com.example.ui.common.AppLogger.log("PropertySupabaseSync", "Đã lên lịch retry đồng bộ Property qua WorkManager.")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("PropertySupabaseSync", "Đã lên lịch retry đồng bộ Property qua WorkManager.")
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

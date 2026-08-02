@@ -1,4 +1,5 @@
 package com.example.ui.property
+import com.example.BuildConfig
 
 import android.util.Log
 import org.json.JSONObject
@@ -444,13 +445,17 @@ class PropertyListViewModel @Inject constructor(
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
         if (query.isNotBlank()) {
-            AppLogger.log("PropertyList", "Tìm kiếm tài sản với từ khóa: '$query'")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("PropertyList", "Tìm kiếm tài sản với từ khóa: '$query'")
+            }
         }
     }
 
     fun updateFilter(filter: FilterState) {
         _filterState.value = filter
-        AppLogger.log("PropertyList", "Áp dụng bộ lọc mới: Loại hình = ${if (filter.propertyTypes.isEmpty()) "Tất cả" else filter.propertyTypes.joinToString(", ")}, Trạng thái = ${if (filter.statuses.isEmpty()) "Tất cả" else filter.statuses.joinToString(", ")}")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("PropertyList", "Áp dụng bộ lọc mới: Loại hình = ${if (filter.propertyTypes.isEmpty()) "Tất cả" else filter.propertyTypes.joinToString(", ")}, Trạng thái = ${if (filter.statuses.isEmpty()) "Tất cả" else filter.statuses.joinToString(", ")}")
+        }
         if (settingsManager.rememberLastFilter) {
             settingsManager.lastFilterJson = serializeFilter(filter)
         }
@@ -470,18 +475,24 @@ class PropertyListViewModel @Inject constructor(
 
     fun resetFilter() {
         _filterState.value = baseDefaultFilter()
-        AppLogger.log("PropertyList", "Đã đặt lại toàn bộ bộ lọc tài sản về mặc định.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("PropertyList", "Đã đặt lại toàn bộ bộ lọc tài sản về mặc định.")
+        }
     }
 
     fun setFilterViewToday(todayOnly: Boolean) {
         _filterViewTodayOnly.value = todayOnly
-        AppLogger.log("PropertyList", if (todayOnly) "Đang lọc: Chỉ hiển thị tài sản cần xem hôm nay" else "Đang hiển thị tất cả tài sản")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log("PropertyList", if (todayOnly) "Đang lọc: Chỉ hiển thị tài sản cần xem hôm nay" else "Đang hiển thị tất cả tài sản")
+        }
     }
 
     fun selectProperty(property: Property?) {
         _selectedProperty.value = property
         if (property != null) {
-            AppLogger.log("PropertyList", "Đã chọn tài sản: ${property.area}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("PropertyList", "Đã chọn tài sản: ${property.area}")
+            }
         }
     }
 
@@ -489,14 +500,18 @@ class PropertyListViewModel @Inject constructor(
         viewModelScope.launch {
             val newState = !property.needToViewToday
             updatePropertyUseCase(property.copy(needToViewToday = newState, updatedAt = System.currentTimeMillis()))
-            AppLogger.log("PropertyList", "Cập nhật tài sản '${property.area}': Cần xem hôm nay = $newState")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("PropertyList", "Cập nhật tài sản '${property.area}': Cần xem hôm nay = $newState")
+            }
         }
     }
 
     fun updatePropertyStatus(property: Property, newStatus: String) {
         viewModelScope.launch {
             updatePropertyUseCase(property.copy(status = newStatus, updatedAt = System.currentTimeMillis()))
-            AppLogger.log("PropertyList", "Đã đổi trạng thái tài sản '${property.area}' sang: '$newStatus'")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("PropertyList", "Đã đổi trạng thái tài sản '${property.area}' sang: '$newStatus'")
+            }
         }
     }
 
@@ -513,7 +528,9 @@ class PropertyListViewModel @Inject constructor(
         viewModelScope.launch {
             val property = propertyRepository.getPropertyById(id)
             deletePropertyUseCase(id)
-            AppLogger.log("PropertyList", "Đã xóa tài sản: ${property?.area ?: id}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("PropertyList", "Đã xóa tài sản: ${property?.area ?: id}")
+            }
         }
     }
 

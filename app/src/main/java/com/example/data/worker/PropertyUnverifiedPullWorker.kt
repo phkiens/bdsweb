@@ -25,23 +25,22 @@ class PropertyUnverifiedPullWorker(
                 type = com.example.data.local.entity.SyncType.PULL_TEXT,
                 status = com.example.data.local.entity.SyncStatus.STARTED,
                 tag = TAG,
-                message = "Bắt đầu kiểm tra và đồng bộ định kỳ hai chiều..."
+                message = "Bắt đầu tải dữ liệu hai chiều"
             )
             realtimeSyncManager.catchUp()
             AppLogger.record(
                 type = com.example.data.local.entity.SyncType.PULL_TEXT,
                 status = com.example.data.local.entity.SyncStatus.SUCCESS,
                 tag = TAG,
-                message = "Đã hoàn tất đồng bộ hai chiều thành công."
+                message = "Tải dữ liệu hai chiều hoàn tất"
             )
             Result.success()
         } catch (e: Exception) {
-            val errorMsg = e.localizedMessage ?: "Lỗi không xác định"
             AppLogger.record(
                 type = com.example.data.local.entity.SyncType.PULL_TEXT,
                 status = com.example.data.local.entity.SyncStatus.FAILED,
                 tag = TAG,
-                message = "Lỗi đồng bộ định kỳ hai chiều: $errorMsg"
+                message = "Tải dữ liệu hai chiều thất bại"
             )
             e.printStackTrace()
             Result.retry()

@@ -1,4 +1,5 @@
 package com.example.data.remote.gemini
+import com.example.BuildConfig
 
 import android.util.Log
 import com.example.ui.common.AppLogger
@@ -32,7 +33,9 @@ object GeminiApi {
         // Safety check
         if (apiKey.isBlank()) {
             Log.w(TAG, "No valid Gemini API Key found.")
-            AppLogger.log("GeminiApi", "Không tìm thấy Gemini API Key hợp lệ.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("GeminiApi", "Không tìm thấy Gemini API Key hợp lệ.")
+            }
             return@withContext null
         }
 
@@ -109,7 +112,9 @@ object GeminiApi {
             .build()
 
         try {
-            AppLogger.log("GeminiApi", "Đang gửi yêu cầu bóc tách đến mô hình $modelName...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("GeminiApi", "Đang gửi yêu cầu bóc tách đến mô hình $modelName...")
+            }
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val responseBody = response.body?.string()
@@ -119,24 +124,34 @@ object GeminiApi {
                         val parts = content?.optJSONArray("parts")
                         val resultText = parts?.optJSONObject(0)?.optString("text")
                         if (!resultText.isNullOrBlank()) {
-                            AppLogger.log("GeminiApi", "Bóc tách AI phản hồi thành công.")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log("GeminiApi", "Bóc tách AI phản hồi thành công.")
+                            }
                             return@withContext resultText
                         } else {
-                            AppLogger.log("GeminiApi", "Phản hồi rỗng hoặc sai định dạng từ mô hình.")
+                            if (BuildConfig.DEBUG) {
+                                AppLogger.log("GeminiApi", "Phản hồi rỗng hoặc sai định dạng từ mô hình.")
+                            }
                         }
                     } else {
-                        AppLogger.log("GeminiApi", "Phản hồi rỗng từ API.")
+                        if (BuildConfig.DEBUG) {
+                            AppLogger.log("GeminiApi", "Phản hồi rỗng từ API.")
+                        }
                     }
                 } else {
                     val errorMsg = "Lỗi gọi Gemini API (Mã lỗi ${response.code}): ${response.message}"
                     Log.e(TAG, errorMsg)
-                    AppLogger.log("GeminiApi", "$errorMsg. Hãy kiểm tra lại API Key và cấu hình mô hình.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("GeminiApi", "$errorMsg. Hãy kiểm tra lại API Key và cấu hình mô hình.")
+                    }
                 }
             }
         } catch (e: Exception) {
             val errorMsg = "Lỗi kết nối khi gọi Gemini API: ${e.localizedMessage}"
             Log.e(TAG, errorMsg, e)
-            AppLogger.log("GeminiApi", errorMsg)
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("GeminiApi", errorMsg)
+            }
         }
         return@withContext null
     }

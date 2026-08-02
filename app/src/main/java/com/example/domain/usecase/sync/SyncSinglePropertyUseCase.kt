@@ -1,4 +1,5 @@
 package com.example.domain.usecase.sync
+import com.example.BuildConfig
 
 import android.util.Log
 import com.example.data.remote.drive.DriveHelper
@@ -134,7 +135,9 @@ class SyncSinglePropertyUseCase @Inject constructor(
                         errorMessage = "Tải tệp property_detail.json lên Google Drive thất bại"
                     )
                 }
-                com.example.ui.common.AppLogger.log("SyncSingleProperty", "Ghi tệp property_detail.json thành công vào thư mục Drive ID: $driveFolderId")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("SyncSingleProperty", "Ghi tệp property_detail.json thành công vào thư mục Drive ID: $driveFolderId")
+                }
 
                 var newTxtFileId: String? = updatedProperty.txtFileId
                 // Write readable txt file
@@ -150,16 +153,22 @@ class SyncSinglePropertyUseCase @Inject constructor(
                     )
                     if (txtFileIdResult != null) {
                         newTxtFileId = txtFileIdResult
-                        com.example.ui.common.AppLogger.log("SyncSingleProperty", "Ghi tệp $txtFileName thành công vào thư mục Drive ID: $driveFolderId")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log("SyncSingleProperty", "Ghi tệp $txtFileName thành công vào thư mục Drive ID: $driveFolderId")
+                        }
                     } else {
                         textFileSuccess = false
                         textErrorMessage = "Tải tệp $txtFileName lên Google Drive thất bại"
-                        com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Ghi tệp $txtFileName thất bại")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Ghi tệp $txtFileName thất bại")
+                        }
                     }
                 } catch (e: Exception) {
                     textFileSuccess = false
                     textErrorMessage = e.localizedMessage ?: "Lỗi ghi tệp .txt"
-                    com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Ghi tệp txt thất bại: ${e.localizedMessage}")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Ghi tệp txt thất bại: ${e.localizedMessage}")
+                    }
                 }
 
                 // Update both IDs in database
@@ -167,7 +176,9 @@ class SyncSinglePropertyUseCase @Inject constructor(
             } else {
                 textFileSuccess = false
                 textErrorMessage = "Không tìm thấy thư mục Google Drive của tài sản"
-                com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Không tìm thấy driveFolderId cho property $propertyId")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log("SyncSingleProperty", "CẢNH BÁO: Không tìm thấy driveFolderId cho property $propertyId")
+                }
             }
 
             // Update database sync status if textFileSuccess is true (Google Drive sync no longer updates local database sync status flags, but does update media sync status)

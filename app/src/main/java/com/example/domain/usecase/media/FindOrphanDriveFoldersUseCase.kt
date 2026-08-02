@@ -1,4 +1,5 @@
 package com.example.domain.usecase.media
+import com.example.BuildConfig
 
 import com.example.data.remote.drive.DriveHelper
 import com.example.domain.repository.PropertyRepository
@@ -38,7 +39,9 @@ class FindOrphanDriveFoldersUseCase @Inject constructor(
             val msg = "Dừng an toàn: định đổi tên ${candidates.size}/${allSubFolders.size} folder " +
                 "(local đang có ${liveFolderIds.size} folder sống). Con số bất thường — có thể dữ liệu " +
                 "chưa kéo về đủ. Hãy bấm 'Đồng bộ ngay', chờ xong rồi thử lại."
-            AppLogger.log("OrphanDriveCleanup", msg)
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("OrphanDriveCleanup", msg)
+            }
             return Result(0, 0, msg)
         }
 
@@ -52,7 +55,9 @@ class FindOrphanDriveFoldersUseCase @Inject constructor(
             val ok = driveHelper.updateFolderMetadata(id, newName = "ZZZ_MOCOI_$name", accessToken = accessToken)
             if (ok) {
                 renamed++
-                AppLogger.log("OrphanDriveCleanup", "Đã đổi tên: $name -> ZZZ_MOCOI_$name (id=$id)")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log("OrphanDriveCleanup", "Đã đổi tên: $name -> ZZZ_MOCOI_$name (id=$id)")
+                }
             } else {
                 skipped++
             }

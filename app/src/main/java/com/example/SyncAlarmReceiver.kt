@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import com.example.BuildConfig
 import com.example.data.remote.drive.DriveHelper
 import com.example.ui.common.AppLogger
 import com.example.ui.common.SettingsManager
@@ -48,20 +49,26 @@ class SyncAlarmReceiver : BroadcastReceiver() {
         }
 
         if (!driveHelper.isAuthorized()) {
-            AppLogger.log("AutoSync", "Chưa liên kết Google Drive, không thể tự động đồng bộ lúc $syncTime")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Chưa liên kết Google Drive, không thể tự động đồng bộ lúc $syncTime")
+            }
             Log.w(TAG, "Drive is not authorized. Skipping sync.")
             return
         }
 
         if (SyncForegroundService.isRunning.value) {
-            AppLogger.log("AutoSync", "Tiến trình đồng bộ khác đang chạy, bỏ qua lần tự động lúc $syncTime")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Tiến trình đồng bộ khác đang chạy, bỏ qua lần tự động lúc $syncTime")
+            }
             Log.i(TAG, "Sync is already running. Skipping this auto sync slot.")
             return
         }
 
         // Start the sync process
         try {
-            AppLogger.log("AutoSync", "Bắt đầu tự động đồng bộ lên Google Drive lúc $syncTime...")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Bắt đầu tự động đồng bộ lên Google Drive lúc $syncTime...")
+            }
             val serviceIntent = Intent(appContext, SyncForegroundService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 appContext.startForegroundService(serviceIntent)
@@ -70,7 +77,9 @@ class SyncAlarmReceiver : BroadcastReceiver() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start SyncForegroundService", e)
-            AppLogger.log("AutoSync", "Lỗi khởi chạy tự động đồng bộ lúc $syncTime: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("AutoSync", "Lỗi khởi chạy tự động đồng bộ lúc $syncTime: ${e.message}")
+            }
         }
     }
 }

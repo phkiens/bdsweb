@@ -1,4 +1,5 @@
 package com.example.ui.nearby
+import com.example.BuildConfig
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -136,7 +137,9 @@ class MapSurveyViewModel @Inject constructor(
                     CustomerMatchUiState.Success(results)
                 }
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Error scanning matching customers: ${e.localizedMessage}", e)
+                if (BuildConfig.DEBUG) {
+                    AppLogger.e(TAG, "Error scanning matching customers: ${e.localizedMessage}", e)
+                }
                 _matchResults.value = CustomerMatchUiState.Empty("Có lỗi xảy ra khi quét tìm khách hàng")
             }
         }
@@ -545,7 +548,9 @@ class MapSurveyViewModel @Inject constructor(
                 }
                 onSuccess()
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Error in quick update", e)
+                if (BuildConfig.DEBUG) {
+                    AppLogger.e(TAG, "Error in quick update", e)
+                }
             }
         }
     }

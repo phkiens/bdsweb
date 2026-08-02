@@ -8,6 +8,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.WorkManager
+import com.example.BuildConfig
 import com.example.MyApplication
 import com.example.di.WorkerEntryPoint
 import com.example.ui.common.NotificationHelper
@@ -28,7 +29,7 @@ class MediaRestoreWorker(
             type = com.example.data.local.entity.SyncType.RESTORE,
             status = com.example.data.local.entity.SyncStatus.STARTED,
             tag = TAG,
-            message = "Bắt đầu khôi phục hình ảnh và liên kết khách hàng từ Google Drive..."
+            message = "Bắt đầu khôi phục hình ảnh"
         )
 
         try {
@@ -62,7 +63,9 @@ class MediaRestoreWorker(
             val propertiesFile = driveFiles.find { it.first == "bds_collector_backup.json" }
             val unverifiedFile = driveFiles.find { it.first == "bds_unverified_backup.json" }
 
-            com.example.ui.common.AppLogger.log(TAG, "Kiểm tra tệp sao lưu: propertiesFile=${propertiesFile?.first ?: "null"}, unverifiedFile=${unverifiedFile?.first ?: "null"}")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log(TAG, "Kiểm tra tệp sao lưu: propertiesFile=${propertiesFile?.first ?: "null"}, unverifiedFile=${unverifiedFile?.first ?: "null"}")
+            }
 
             // Lưu ý: KHÔNG fail sớm khi thiếu tệp JSON backup.
             // Việc tải ảnh về đĩa dựa trên driveMediaIds đã có trong Room (do pull/Supabase ghi vào),
@@ -70,7 +73,9 @@ class MediaRestoreWorker(
             // Thiếu JSON chỉ ảnh hưởng phần khôi phục văn bản, không nên chặn khôi phục ảnh.
             if (propertiesFile == null && unverifiedFile == null) {
                 Log.w(TAG, "Không thấy tệp JSON backup trên Drive — vẫn tiếp tục tải ảnh theo dữ liệu Room.")
-                com.example.ui.common.AppLogger.log(TAG, "Không có tệp JSON backup trên Drive — bỏ qua khôi phục văn bản, vẫn tải ảnh theo driveMediaIds hiện có.")
+                if (BuildConfig.DEBUG) {
+                    com.example.ui.common.AppLogger.log(TAG, "Không có tệp JSON backup trên Drive — bỏ qua khôi phục văn bản, vẫn tải ảnh theo driveMediaIds hiện có.")
+                }
             }
 
             val originalDriveMediaIdsMap = mutableMapOf<String, String>()
@@ -136,11 +141,17 @@ class MediaRestoreWorker(
                 else -> com.example.data.local.entity.SyncStatus.FAILED
             }
 
+            val recordMessage = when {
+                successCount == totalMediaToRestore -> "Khôi phục hình ảnh hoàn tất"
+                successCount > 0 -> "Khôi phục hình ảnh một phần"
+                else -> "Khôi phục hình ảnh thất bại"
+            }
+
             com.example.ui.common.AppLogger.record(
                 type = com.example.data.local.entity.SyncType.RESTORE,
                 status = restoreStatus,
                 tag = TAG,
-                message = "Đã khôi phục thành công $successCount/$totalMediaToRestore ảnh từ Google Drive.",
+                message = recordMessage,
                 itemCount = successCount,
                 totalCount = totalMediaToRestore
             )
@@ -172,7 +183,7 @@ class MediaRestoreWorker(
                 type = com.example.data.local.entity.SyncType.RESTORE,
                 status = com.example.data.local.entity.SyncStatus.FAILED,
                 tag = TAG,
-                message = "Lỗi khôi phục: $errorMsg"
+                message = "Khôi phục hình ảnh thất bại"
             )
             prefs.edit()
                 .putString("last_restore_status", "Lần cuối: thất bại lúc $timeString — $errorMsg")

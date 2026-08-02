@@ -24,7 +24,7 @@ class TextSyncWorker(
             type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
             status = com.example.data.local.entity.SyncStatus.STARTED,
             tag = "TextSync",
-            message = "Bắt đầu sao lưu toàn bộ dữ liệu văn bản (Bất động sản, Chờ duyệt, Khách hàng)..."
+            message = "Bắt đầu sao lưu dữ liệu văn bản lên Google Drive"
         )
         
         // 1. Set foreground info safely
@@ -48,7 +48,7 @@ class TextSyncWorker(
                 type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                 status = com.example.data.local.entity.SyncStatus.SUCCESS,
                 tag = "TextSync",
-                message = "Sao lưu dữ liệu văn bản lên Google Drive THÀNH CÔNG."
+                message = "Sao lưu dữ liệu văn bản thành công"
             )
             NotificationHelper.showSystemNotification(
                 applicationContext,
@@ -63,7 +63,7 @@ class TextSyncWorker(
                 type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                 status = com.example.data.local.entity.SyncStatus.FAILED,
                 tag = "TextSync",
-                message = "Sao lưu dữ liệu thất bại (vui lòng kết nối tài khoản Google Drive trong mục Cài đặt)."
+                message = "Sao lưu dữ liệu văn bản thất bại"
             )
             NotificationHelper.showSystemNotification(
                 applicationContext,

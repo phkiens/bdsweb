@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.BuildConfig
 import com.example.di.WorkerEntryPoint
 import com.example.ui.common.AppLogger
 import com.example.ui.common.NotificationHelper
@@ -36,11 +37,15 @@ class PropertySyncRetryWorker(
                         allSuccess = false
                         remainingUnsyncedCount++
                     }
-                    AppLogger.log("PropertySupabaseSync", "Retry push thành công cho property ${property.id} (CAS: $syncSuccess)")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("PropertySupabaseSync", "Retry push thành công cho property ${property.id} (CAS: $syncSuccess)")
+                    }
                 } else {
                     allSuccess = false
                     remainingUnsyncedCount++
-                    AppLogger.log("PropertySupabaseSync", "Retry push thất bại cho property ${property.id}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("PropertySupabaseSync", "Retry push thất bại cho property ${property.id}")
+                    }
                 }
             }
 
@@ -52,7 +57,7 @@ class PropertySyncRetryWorker(
                         type = com.example.data.local.entity.SyncType.RETRY,
                         status = com.example.data.local.entity.SyncStatus.SUCCESS,
                         tag = "PropertySyncRetry",
-                        message = "Đồng bộ lại Bất động sản thành công: đã đẩy ${unsyncedProperties.size} mục.",
+                        message = "Thử lại đồng bộ BĐS thành công",
                         itemCount = unsyncedProperties.size
                     )
                 }
@@ -78,7 +83,8 @@ class PropertySyncRetryWorker(
                             type = com.example.data.local.entity.SyncType.RETRY,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = "PropertySyncRetry",
-                            message = "Cảnh báo đồng bộ Bất động sản: còn $remainingUnsyncedCount mục chưa đồng bộ lên máy chủ"
+                            message = "Cảnh báo đồng bộ BĐS chưa hoàn tất",
+                            itemCount = remainingUnsyncedCount
                         )
                         prefs.edit().putLong("property_retry_warned_at", currentTime).apply()
                     }

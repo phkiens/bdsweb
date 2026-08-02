@@ -1,4 +1,5 @@
 package com.example
+import com.example.BuildConfig
 
 import android.content.Context
 import android.content.Intent
@@ -393,7 +394,9 @@ class MainActivity : ComponentActivity() {
                                         try {
                                             navController.navigate("property_edit/$id") 
                                         } catch (e: Exception) {
-                                            com.example.ui.common.AppLogger.e("Navigation", "Không mở được màn sửa SP $id", e)
+                                            if (BuildConfig.DEBUG) {
+                                                com.example.ui.common.AppLogger.e("Navigation", "Không mở được màn sửa SP $id", e)
+                                            }
                                         }
                                     },
                                      onNavigateToNearby = { property ->
@@ -461,7 +464,9 @@ class MainActivity : ComponentActivity() {
                                         try {
                                             navController.navigate("property_edit/$id") 
                                         } catch (e: Exception) {
-                                            com.example.ui.common.AppLogger.e("Navigation", "Không mở được màn sửa SP $id", e)
+                                            if (BuildConfig.DEBUG) {
+                                                com.example.ui.common.AppLogger.e("Navigation", "Không mở được màn sửa SP $id", e)
+                                            }
                                         }
                                     },
                                     onNavigateToNearby = { property ->

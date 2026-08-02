@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.BuildConfig
 import com.example.di.WorkerEntryPoint
 import com.example.ui.common.AppLogger
 import com.example.ui.common.NotificationHelper
@@ -36,11 +37,15 @@ class CustomerPropertyLinkSyncRetryWorker(
                         allSuccess = false
                         remainingUnsyncedCount++
                     }
-                    AppLogger.log("LinkSupabaseSync", "Retry push thành công cho link customer=${link.customerId} property=${link.propertyId} (CAS: $syncSuccess)")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("LinkSupabaseSync", "Retry push thành công cho link customer=${link.customerId} property=${link.propertyId} (CAS: $syncSuccess)")
+                    }
                 } else {
                     allSuccess = false
                     remainingUnsyncedCount++
-                    AppLogger.log("LinkSupabaseSync", "Retry push thất bại cho link customer=${link.customerId} property=${link.propertyId}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log("LinkSupabaseSync", "Retry push thất bại cho link customer=${link.customerId} property=${link.propertyId}")
+                    }
                 }
             }
 
@@ -52,7 +57,7 @@ class CustomerPropertyLinkSyncRetryWorker(
                         type = com.example.data.local.entity.SyncType.RETRY,
                         status = com.example.data.local.entity.SyncStatus.SUCCESS,
                         tag = "LinkSyncRetry",
-                        message = "Đồng bộ lại liên kết Khách-Nhà thành công: đã đẩy ${unsyncedLinks.size} mục.",
+                        message = "Đồng bộ lại liên kết thành công",
                         itemCount = unsyncedLinks.size
                     )
                 }
@@ -78,7 +83,8 @@ class CustomerPropertyLinkSyncRetryWorker(
                             type = com.example.data.local.entity.SyncType.RETRY,
                             status = com.example.data.local.entity.SyncStatus.FAILED,
                             tag = "LinkSyncRetry",
-                            message = "Cảnh báo đồng bộ liên kết Khách-Nhà: còn $remainingUnsyncedCount mục chưa đồng bộ lên máy chủ"
+                            message = "Cảnh báo đồng bộ liên kết chưa hoàn tất",
+                            itemCount = remainingUnsyncedCount
                         )
                         prefs.edit().putLong("link_retry_warned_at", currentTime).apply()
                     }

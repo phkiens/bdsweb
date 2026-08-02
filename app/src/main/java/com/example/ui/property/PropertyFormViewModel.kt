@@ -1,4 +1,5 @@
 package com.example.ui.property
+import com.example.BuildConfig
 
 import android.content.Context
 import android.content.Intent
@@ -309,7 +310,9 @@ class PropertyFormViewModel @Inject constructor(
                     savedStateHandle["ownerName"] = customer.name
                     savedStateHandle["ownerPhone"] = customer.phone
                     _linkedCustomerName.value = customer.name
-                    AppLogger.log(TAG, "Đã liên kết biểu mẫu với chủ nhà: ${customer.name}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đã liên kết biểu mẫu với chủ nhà: ${customer.name}")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Lỗi tải thông tin chủ nhà liên kết: $customerId", e)
@@ -320,7 +323,9 @@ class PropertyFormViewModel @Inject constructor(
     fun unlinkOwner() {
         savedStateHandle["linkedCustomerId"] = null
         _linkedCustomerName.value = null
-        AppLogger.log(TAG, "Đã hủy liên kết chủ nhà trực tiếp. Bạn có thể tự điền/sửa thông tin.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Đã hủy liên kết chủ nhà trực tiếp. Bạn có thể tự điền/sửa thông tin.")
+        }
     }
 
     fun updatePropertyType(value: String) {
@@ -360,7 +365,9 @@ class PropertyFormViewModel @Inject constructor(
     // Perform AI or Regex extraction
     fun performExtraction(text: String) {
         _extractionState.value = ExtractionState.Loading
-        AppLogger.log(TAG, "Đang khởi chạy công cụ AI bóc tách thông tin BĐS tự động từ văn bản dán...")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Đang khởi chạy công cụ AI bóc tách thông tin BĐS tự động từ văn bản dán...")
+        }
         viewModelScope.launch {
             try {
                 val apiKey = settingsManager.geminiApiKey
@@ -394,11 +401,15 @@ class PropertyFormViewModel @Inject constructor(
                 
                 _extractedResult.value = result
                 _extractionState.value = ExtractionState.Success
-                AppLogger.log(TAG, "Bóc tách thông tin BĐS thành công: ${result.area ?: "Chưa rõ khu vực"}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Bóc tách thông tin BĐS thành công: ${result.area ?: "Chưa rõ khu vực"}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Extraction failed", e)
                 _extractionState.value = ExtractionState.Error
-                AppLogger.log(TAG, "Gặp lỗi khi phân tích nội dung BĐS: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Gặp lỗi khi phân tích nội dung BĐS: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -406,7 +417,9 @@ class PropertyFormViewModel @Inject constructor(
     // Perform offline Regex extraction
     fun performRegexExtraction(text: String) {
         _extractionState.value = ExtractionState.Loading
-        AppLogger.log(TAG, "Đang khởi chạy bộ lọc Regex offline bóc tách thông tin BĐS...")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Đang khởi chạy bộ lọc Regex offline bóc tách thông tin BĐS...")
+        }
         viewModelScope.launch {
             try {
                 val knownAreas = propertyRepository.getAllDistinctAreas()
@@ -440,11 +453,15 @@ class PropertyFormViewModel @Inject constructor(
                 
                 _extractedResult.value = result
                 _extractionState.value = ExtractionState.Success
-                AppLogger.log(TAG, "Bóc tách bằng Regex thành công: ${result.area ?: "Chưa rõ khu vực"}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Bóc tách bằng Regex thành công: ${result.area ?: "Chưa rõ khu vực"}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Regex extraction failed", e)
                 _extractionState.value = ExtractionState.Error
-                AppLogger.log(TAG, "Gặp lỗi khi phân tích nội dung BĐS bằng Regex: ${e.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Gặp lỗi khi phân tích nội dung BĐS bằng Regex: ${e.localizedMessage}")
+                }
             }
         }
     }
@@ -467,7 +484,9 @@ class PropertyFormViewModel @Inject constructor(
         
         _pasteInfoSheetVisible.value = false
         clearExtraction()
-        AppLogger.log(TAG, "Đã điền các thông tin bóc tách được từ AI vào biểu mẫu.")
+        if (BuildConfig.DEBUG) {
+            AppLogger.log(TAG, "Đã điền các thông tin bóc tách được từ AI vào biểu mẫu.")
+        }
     }
 
     fun resetForm(defaultIsVerified: Boolean = true) {
@@ -598,7 +617,9 @@ class PropertyFormViewModel @Inject constructor(
                     addedThisSession.add(compressedPath)
                     savedStateHandle["addedThisSession"] = addedThisSession
                     
-                    AppLogger.log(TAG, "Added compressed image: $compressedPath")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Added compressed image: $compressedPath")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error adding image", e)
@@ -620,7 +641,9 @@ class PropertyFormViewModel @Inject constructor(
                 File(removedPath).delete()
             }
             
-            AppLogger.log(TAG, "Đã gỡ bỏ 1 ảnh khỏi danh sách tải lên.")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã gỡ bỏ 1 ảnh khỏi danh sách tải lên.")
+            }
         }
     }
 
@@ -630,7 +653,9 @@ class PropertyFormViewModel @Inject constructor(
             val item = newList.removeAt(index)
             newList.add(0, item)
             savedStateHandle["images"] = newList
-            AppLogger.log(TAG, "Đã chuyển ảnh index $index thành ảnh đại diện (đầu danh sách).")
+            if (BuildConfig.DEBUG) {
+                AppLogger.log(TAG, "Đã chuyển ảnh index $index thành ảnh đại diện (đầu danh sách).")
+            }
         }
     }
 
@@ -641,12 +666,18 @@ class PropertyFormViewModel @Inject constructor(
                 if (loc != null) {
                     savedStateHandle["latitude"] = loc.latitude.toString()
                     savedStateHandle["longitude"] = loc.longitude.toString()
-                    AppLogger.log(TAG, "GPS updated: Lat=${loc.latitude}, Lng=${loc.longitude}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "GPS updated: Lat=${loc.latitude}, Lng=${loc.longitude}")
+                    }
                 } else {
-                    AppLogger.log(TAG, "Could not fetch GPS: Location is null.")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Could not fetch GPS: Location is null.")
+                    }
                 }
             }.addOnFailureListener {
-                AppLogger.log(TAG, "Failed to fetch GPS: ${it.localizedMessage}")
+                if (BuildConfig.DEBUG) {
+                    AppLogger.log(TAG, "Failed to fetch GPS: ${it.localizedMessage}")
+                }
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "Permission missing for GPS fetch", e)
@@ -807,7 +838,9 @@ class PropertyFormViewModel @Inject constructor(
                             }
                             val removedCount = jsonObject.length() - updatedJsonObject.length()
                             if (removedCount > 0) {
-                                AppLogger.log(TAG, "Đã loại bỏ $removedCount ảnh khỏi driveMediaIds của BĐS '${area.value.trim()}' (tiến hành xóa trên Drive)")
+                                if (BuildConfig.DEBUG) {
+                                    AppLogger.log(TAG, "Đã loại bỏ $removedCount ảnh khỏi driveMediaIds của BĐS '${area.value.trim()}' (tiến hành xóa trên Drive)")
+                                }
                             }
                             updatedJsonObject.toString()
                         } catch (e: Exception) {
@@ -821,12 +854,18 @@ class PropertyFormViewModel @Inject constructor(
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         for (driveId in deletedDriveIds) {
                             try {
-                                AppLogger.log(TAG, "Bắt đầu xóa file trên Drive: $driveId")
+                                if (BuildConfig.DEBUG) {
+                                    AppLogger.log(TAG, "Bắt đầu xóa file trên Drive: $driveId")
+                                }
                                 val success = driveHelper.deleteFile(driveId)
                                 if (success) {
-                                    AppLogger.log(TAG, "Đã xóa file $driveId trên Google Drive thành công.")
+                                    if (BuildConfig.DEBUG) {
+                                        AppLogger.log(TAG, "Đã xóa file $driveId trên Google Drive thành công.")
+                                    }
                                 } else {
-                                    AppLogger.log(TAG, "Xóa file $driveId trên Google Drive thất bại.")
+                                    if (BuildConfig.DEBUG) {
+                                        AppLogger.log(TAG, "Xóa file $driveId trên Google Drive thất bại.")
+                                    }
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Lỗi khi xóa file trên Drive: $driveId", e)
@@ -914,9 +953,13 @@ class PropertyFormViewModel @Inject constructor(
                     savedStateHandle["addedThisSession"] = emptyList<String>()
                 }
                 if (isNew) {
-                    AppLogger.log(TAG, "Đã thêm mới BĐS: ${property.area}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đã thêm mới BĐS: ${property.area}")
+                    }
                 } else {
-                    AppLogger.log(TAG, "Đã cập nhật BĐS: ${property.area}")
+                    if (BuildConfig.DEBUG) {
+                        AppLogger.log(TAG, "Đã cập nhật BĐS: ${property.area}")
+                    }
                 }
                 _navigateBack.send(Unit)
             } catch (e: Exception) {

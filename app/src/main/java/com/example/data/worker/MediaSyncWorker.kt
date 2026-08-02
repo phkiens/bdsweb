@@ -8,6 +8,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.WorkManager
+import com.example.BuildConfig
 import com.example.MyApplication
 import com.example.di.WorkerEntryPoint
 import com.example.domain.model.toUnverified
@@ -30,7 +31,7 @@ class MediaSyncWorker(
             type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
             status = com.example.data.local.entity.SyncStatus.STARTED,
             tag = "MediaSync",
-            message = "Bắt đầu tiến trình đồng bộ hình ảnh lên Google Drive..."
+            message = "Bắt đầu tải lên hình ảnh lên Google Drive"
         )
 
         try {
@@ -61,7 +62,9 @@ class MediaSyncWorker(
             val propertiesWithImages = properties.filter { !it.imagePath.isNullOrBlank() && !it.isMediaSynced }
             val allUnverified = propertyRepository.getAllUnverified().map { it.toUnverified() }
 
-            com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Bắt đầu đồng bộ media cho ${propertiesWithImages.size} property (unverified: ${allUnverified.size})")
+            if (BuildConfig.DEBUG) {
+                com.example.ui.common.AppLogger.log("MediaSync", "[MediaSync] Bắt đầu đồng bộ media cho ${propertiesWithImages.size} property (unverified: ${allUnverified.size})")
+            }
 
             val unverifiedToSync = allUnverified.filter { unv ->
                 val hasLocalImages = unv.mediaPaths.any { it.isNotBlank() }
@@ -88,7 +91,9 @@ class MediaSyncWorker(
                 for ((index, property) in propertiesWithImages.withIndex()) {
                     if (isStopped) {
                         Log.d(TAG, "MediaSyncWorker cancelled/stopped.")
-                        com.example.ui.common.AppLogger.log(TAG, "Tiến trình đồng bộ ảnh bị dừng.")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Tiến trình đồng bộ ảnh bị dừng.")
+                        }
                         return Result.failure()
                     }
 
@@ -110,7 +115,9 @@ class MediaSyncWorker(
                         }
                     }
 
-                    com.example.ui.common.AppLogger.log(TAG, "Đang đồng bộ ảnh của BĐS: ${property.area} (${index + 1}/$totalProperties)")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Đang đồng bộ ảnh của BĐS: ${property.area} (${index + 1}/$totalProperties)")
+                    }
                     val mediaResult = syncMediaUseCase(
                         propertyId = property.id,
                         accessToken = null,
@@ -118,11 +125,17 @@ class MediaSyncWorker(
                     )
                     if (mediaResult.isFullSuccess) {
                         successCount++
-                        com.example.ui.common.AppLogger.log(TAG, "Đồng bộ ảnh BĐS '${property.area}' thành công. Đã upload ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh.")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Đồng bộ ảnh BĐS '${property.area}' thành công. Đã upload ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh.")
+                        }
                         propertyRepository.updateMediaSyncStatus(property.id, true, property.imagePath)
-                        com.example.ui.common.AppLogger.log(TAG, "Cập nhật database: propertyRepository.updateMediaSyncStatus(id='${property.id}', isSynced=true, expectedImagePath='${property.imagePath}')")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Cập nhật database: propertyRepository.updateMediaSyncStatus(id='${property.id}', isSynced=true, expectedImagePath='${property.imagePath}')")
+                        }
                     } else {
-                        com.example.ui.common.AppLogger.log(TAG, "Không thể đồng bộ ảnh BĐS '${property.area}' (Thành công ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh, lỗi ${mediaResult.failedPaths.size} ảnh).")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Không thể đồng bộ ảnh BĐS '${property.area}' (Thành công ${mediaResult.uploadedCount}/${mediaResult.totalToUpload} ảnh, lỗi ${mediaResult.failedPaths.size} ảnh).")
+                        }
                     }
                 }
             }
@@ -134,7 +147,9 @@ class MediaSyncWorker(
                 for ((index, unv) in unverifiedToSync.withIndex()) {
                     if (isStopped) {
                         Log.d(TAG, "MediaSyncWorker cancelled/stopped.")
-                        com.example.ui.common.AppLogger.log(TAG, "Tiến trình đồng bộ ảnh bị dừng.")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Tiến trình đồng bộ ảnh bị dừng.")
+                        }
                         return Result.failure()
                     }
 
@@ -156,7 +171,9 @@ class MediaSyncWorker(
                         }
                     }
 
-                    com.example.ui.common.AppLogger.log(TAG, "Đang đồng bộ ảnh của tin khảo sát: ${unv.title ?: unv.id} (${index + 1}/$totalUnverified)")
+                    if (BuildConfig.DEBUG) {
+                        com.example.ui.common.AppLogger.log(TAG, "Đang đồng bộ ảnh của tin khảo sát: ${unv.title ?: unv.id} (${index + 1}/$totalUnverified)")
+                    }
                     val mediaResult = syncMediaUseCase(
                         propertyId = unv.id,
                         accessToken = null,
@@ -164,21 +181,24 @@ class MediaSyncWorker(
                     )
                     if (mediaResult.isFullSuccess) {
                         unvSuccessCount++
-                        com.example.ui.common.AppLogger.log(TAG, "Đồng bộ ảnh tin khảo sát '${unv.title ?: unv.id}' thành công.")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Đồng bộ ảnh tin khảo sát '${unv.title ?: unv.id}' thành công.")
+                        }
                         propertyRepository.updateMediaSyncStatus(unv.id, true, if (unv.mediaPaths.isEmpty()) null else unv.mediaPaths.joinToString("|||"))
                     } else {
-                        com.example.ui.common.AppLogger.log(TAG, "Đồng bộ ảnh tin khảo sát '${unv.title ?: unv.id}' thất bại.")
+                        if (BuildConfig.DEBUG) {
+                            com.example.ui.common.AppLogger.log(TAG, "Đồng bộ ảnh tin khảo sát '${unv.title ?: unv.id}' thất bại.")
+                        }
                     }
                 }
             }
 
             val isFullySuccess = (successCount == totalProperties) && (unvSuccessCount == totalUnverified)
-            val finalMsg = "Đồng bộ hoàn tất! Thành công: $successCount/$totalProperties BĐS chính, $unvSuccessCount/$totalUnverified tin khảo sát."
             com.example.ui.common.AppLogger.record(
                 type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                 status = if (isFullySuccess) com.example.data.local.entity.SyncStatus.SUCCESS else com.example.data.local.entity.SyncStatus.PARTIAL,
                 tag = "MediaSync",
-                message = finalMsg,
+                message = if (isFullySuccess) "Đồng bộ hình ảnh hoàn tất" else "Đồng bộ hình ảnh hoàn tất một phần",
                 itemCount = successCount + unvSuccessCount,
                 totalCount = totalProperties + totalUnverified
             )
@@ -191,12 +211,11 @@ class MediaSyncWorker(
 
             return Result.success()
         } catch (e: Exception) {
-            val errorMsg = e.localizedMessage ?: "Lỗi không xác định"
             com.example.ui.common.AppLogger.record(
                 type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,
                 status = com.example.data.local.entity.SyncStatus.FAILED,
                 tag = "MediaSync",
-                message = "Lỗi đồng bộ hình ảnh: $errorMsg"
+                message = "Tải lên hình ảnh thất bại"
             )
             return Result.failure()
         } finally {

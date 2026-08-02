@@ -742,7 +742,6 @@ fun MapSurveyScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.surface)
-                .navigationBarsPadding()
         ) {
 
 
