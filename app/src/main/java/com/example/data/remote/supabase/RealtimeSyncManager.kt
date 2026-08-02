@@ -35,6 +35,7 @@ class RealtimeSyncManager @Inject constructor(
     private val customerRepository: CustomerRepository,
     private val syncPullPrefs: com.example.data.local.prefs.SyncPullPrefs,
     private val settingsManager: SettingsManager,
+    private val accessGate: com.example.data.remote.activation.ActivationBackgroundAccessGate,
     @ApplicationContext private val context: Context
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -47,6 +48,14 @@ class RealtimeSyncManager @Inject constructor(
     private var mediaRestoreDebounceJob: Job? = null
 
     suspend fun start() = syncMutex.withLock {
+        val decision = accessGate.checkAccess(com.example.data.remote.activation.BackgroundAccessMode.NETWORK)
+        if (decision !is com.example.data.remote.activation.BackgroundAccessDecision.Allowed) {
+            if (BuildConfig.DEBUG) {
+                AppLogger.log("Realtime", "RealtimeSyncManager blocked by activation gate: $decision")
+            }
+            return@withLock
+        }
+
         if (syncJob?.isActive == true) {
             if (BuildConfig.DEBUG) {
                 AppLogger.log("Realtime", "RealtimeSyncManager already running.")

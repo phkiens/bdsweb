@@ -10,14 +10,16 @@ import com.example.ui.common.AppLogger
 import com.example.ui.common.NotificationHelper
 import dagger.hilt.EntryPoints
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class PropertySyncRetryWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "PropertySyncRetryWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "PropertySyncRetryWorker started...")
         val entryPoint = EntryPoints.get(applicationContext, WorkerEntryPoint::class.java)
         val propertyRepository = entryPoint.propertyRepository()

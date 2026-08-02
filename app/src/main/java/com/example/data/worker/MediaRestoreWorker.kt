@@ -16,14 +16,16 @@ import com.example.ui.common.SyncStatusBus
 import com.example.ui.common.SyncProgress
 import dagger.hilt.EntryPoints
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class MediaRestoreWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "MediaRestoreWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "MediaRestoreWorker started...")
         com.example.ui.common.AppLogger.record(
             type = com.example.data.local.entity.SyncType.RESTORE,

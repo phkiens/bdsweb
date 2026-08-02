@@ -8,14 +8,16 @@ import com.example.di.WorkerEntryPoint
 import com.example.ui.common.NotificationHelper
 import dagger.hilt.EntryPoints
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class ReminderWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.LOCAL) {
 
     private val TAG = "ReminderWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "ReminderWorker checking for survey tasks today...")
 
         val entryPoint = EntryPoints.get(applicationContext, WorkerEntryPoint::class.java)

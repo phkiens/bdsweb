@@ -18,14 +18,16 @@ import com.example.ui.common.SyncProgress
 import dagger.hilt.EntryPoints
 import java.io.File
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class MediaSyncWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "MediaSyncWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "MediaSyncWorker started...")
         com.example.ui.common.AppLogger.record(
             type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,

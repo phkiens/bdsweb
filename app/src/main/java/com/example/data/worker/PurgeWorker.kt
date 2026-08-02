@@ -9,14 +9,16 @@ import com.example.di.WorkerEntryPoint
 import dagger.hilt.EntryPoints
 import org.json.JSONArray
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class PurgeWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "PurgeWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "PurgeWorker started...")
 
         // Tránh xung đột tài nguyên nếu luồng đồng bộ đang hoạt động

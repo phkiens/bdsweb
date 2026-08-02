@@ -11,14 +11,16 @@ import com.example.ui.common.AppLogger
 import dagger.hilt.EntryPoints
 import io.github.jan.supabase.postgrest.postgrest
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class CustomerRestoreFromSupabaseWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "CustomerRestoreWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "CustomerRestoreFromSupabaseWorker started...")
         val entryPoint = EntryPoints.get(applicationContext, WorkerEntryPoint::class.java)
         val customerRepository = entryPoint.customerRepository()

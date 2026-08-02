@@ -2,9 +2,9 @@ package com.example.data.worker
 
 import android.content.Context
 import android.util.Log
-import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.BuildConfig
+import com.example.data.remote.activation.BackgroundAccessMode
 import com.example.di.WorkerEntryPoint
 import com.example.ui.common.AppLogger
 import com.example.ui.common.NotificationHelper
@@ -13,11 +13,11 @@ import dagger.hilt.EntryPoints
 class CustomerPropertyLinkSyncRetryWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "LinkSyncRetryWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "CustomerPropertyLinkSyncRetryWorker started...")
         val entryPoint = EntryPoints.get(applicationContext, WorkerEntryPoint::class.java)
         val customerRepository = entryPoint.customerRepository()

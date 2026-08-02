@@ -82,6 +82,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var snackbarManager: com.example.ui.common.SnackbarManager
 
+    @Inject
+    lateinit var backgroundCoordinator: com.example.data.remote.activation.ActivatedBackgroundCoordinator
+
     // ViewModels shared or instantiated at Activity level
     private val propertyListViewModel: PropertyListViewModel by viewModels()
     private val propertyDetailViewModel: PropertyDetailViewModel by viewModels()
@@ -128,6 +131,9 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
+            val activationViewModel: com.example.ui.activation.ActivationViewModel = hiltViewModel()
+            val activationState by activationViewModel.uiState.collectAsStateWithLifecycle()
+
             val snackbarHostState = remember { SnackbarHostState() }
 
             LaunchedEffect(snackbarManager) {
@@ -138,7 +144,20 @@ class MainActivity : ComponentActivity() {
 
             CompositionLocalProvider(com.example.ui.common.LocalSnackbarHostState provides snackbarHostState) {
                 MyApplicationTheme {
-                    val navController = rememberNavController()
+                    val state = activationState
+                    if (state !is com.example.ui.activation.ActivationUiState.Active &&
+                        state !is com.example.ui.activation.ActivationUiState.ActiveOffline) {
+                        com.example.ui.activation.ActivationScreen(
+                            state = state,
+                            onActivate = { code -> activationViewModel.activate(code) },
+                            onRetry = { activationViewModel.retry() },
+                            onExitApp = { finish() }
+                        )
+                    } else {
+                        LaunchedEffect(state) {
+                            backgroundCoordinator.onActivated()
+                        }
+                        val navController = rememberNavController()
 
                     val context = LocalContext.current
                     val prefs = remember(context) {
@@ -545,6 +564,7 @@ class MainActivity : ComponentActivity() {
                             .padding(bottom = if (currentRoute in listOf("property_list", "unverified_list", "customer_list", "settings") || currentRoute.startsWith("map_survey")) 80.dp else 16.dp)
                     )
                 }
+            }
             }
             }
             }

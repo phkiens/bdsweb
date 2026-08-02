@@ -11,14 +11,16 @@ import com.example.ui.common.StringUtils
 import dagger.hilt.EntryPoints
 import java.io.IOException
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class TitleCaseMigrationWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.LOCAL) {
 
-    private val TAG = "TitleCaseMigrationWorker"
+    private val TAG = "TitleCaseWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "TitleCaseMigrationWorker started...")
         val entryPoint = EntryPoints.get(applicationContext, WorkerEntryPoint::class.java)
         val settingsManager = entryPoint.settingsManager()

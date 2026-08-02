@@ -2,20 +2,20 @@ package com.example.data.worker
 
 import android.content.Context
 import android.util.Log
-import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.di.WorkerEntryPoint
 import com.example.ui.common.AppLogger
 import dagger.hilt.EntryPoints
+import com.example.data.remote.activation.BackgroundAccessMode
 
 class PropertyUnverifiedPullWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
-    private val TAG = "PropUnvPullWorker"
+    private val TAG = "UnverifiedPullWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "PropertyUnverifiedPullWorker started...")
         val entryPoint = EntryPoints.get(applicationContext, WorkerEntryPoint::class.java)
         val realtimeSyncManager = entryPoint.realtimeSyncManager()

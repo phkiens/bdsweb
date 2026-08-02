@@ -1,5 +1,6 @@
 package com.example.di
 
+import com.example.data.remote.activation.ActivationBackgroundAccessGate
 import com.example.data.remote.drive.DriveHelper
 import com.example.domain.repository.PropertyRepository
 import com.example.domain.repository.CustomerRepository
@@ -30,4 +31,5 @@ interface WorkerEntryPoint {
     fun syncPullPrefs(): com.example.data.local.prefs.SyncPullPrefs
     fun syncLogDao(): com.example.data.local.dao.SyncLogDao
     fun customerPropertyLinkSupabaseSyncUseCase(): com.example.domain.usecase.sync.CustomerPropertyLinkSupabaseSyncUseCase
+    fun activationBackgroundAccessGate(): ActivationBackgroundAccessGate
 }

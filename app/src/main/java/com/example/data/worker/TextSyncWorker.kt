@@ -11,14 +11,16 @@ import com.example.di.WorkerEntryPoint
 import com.example.ui.common.NotificationHelper
 import dagger.hilt.EntryPoints
 
+import com.example.data.remote.activation.BackgroundAccessMode
+
 class TextSyncWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : ActivationGatedCoroutineWorker(context, params, BackgroundAccessMode.NETWORK) {
 
     private val TAG = "TextSyncWorker"
 
-    override suspend fun doWork(): Result {
+    override suspend fun doActivatedWork(): Result {
         Log.d(TAG, "TextSyncWorker started...")
         com.example.ui.common.AppLogger.record(
             type = com.example.data.local.entity.SyncType.UPLOAD_PROPERTY,

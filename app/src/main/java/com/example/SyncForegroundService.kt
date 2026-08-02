@@ -59,6 +59,9 @@ class SyncForegroundService : Service() {
     @Inject
     lateinit var restoreMissingMediaUseCase: RestoreMissingMediaUseCase
 
+    @Inject
+    lateinit var accessGate: com.example.data.remote.activation.ActivationBackgroundAccessGate
+
     private val notificationManager by lazy {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
@@ -94,9 +97,24 @@ class SyncForegroundService : Service() {
             )
         }
 
-        val propertyId = intent?.getStringExtra("PROPERTY_ID")
-        if (!propertyId.isNullOrBlank()) {
-            serviceScope.launch {
+        serviceScope.launch {
+            val decision = accessGate.checkAccess(com.example.data.remote.activation.BackgroundAccessMode.NETWORK)
+            if (decision !is com.example.data.remote.activation.BackgroundAccessDecision.Allowed) {
+                Log.w(TAG, "SyncForegroundService blocked by activation gate: $decision")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                } else {
+                    @Suppress("DEPRECATION") stopForeground(true)
+                }
+                stopSelfResult(currentStartId)
+                return@launch
+            }
+
+            val propertyId = intent?.getStringExtra("PROPERTY_ID")
+            val unverifiedId = intent?.getStringExtra("UNVERIFIED_ID")
+            val downloadPropertyId = intent?.getStringExtra("DOWNLOAD_PROPERTY_ID")
+
+            if (!propertyId.isNullOrBlank()) {
                 var propertyArea = "BĐS"
                 try {
                     val property = propertyRepository.getPropertyById(propertyId)
@@ -204,13 +222,7 @@ class SyncForegroundService : Service() {
                     SyncStatusBus.clear()
                     stopSelf(currentStartId)
                 }
-            }
-            return START_NOT_STICKY
-        }
-
-        val unverifiedId = intent?.getStringExtra("UNVERIFIED_ID")
-        if (!unverifiedId.isNullOrBlank()) {
-            serviceScope.launch {
+            } else if (!unverifiedId.isNullOrBlank()) {
                 var unverifiedArea = "Sản phẩm chờ"
                 try {
                     val unverified = propertyRepository.getUnverifiedById(unverifiedId)
@@ -317,13 +329,7 @@ class SyncForegroundService : Service() {
                     SyncStatusBus.clear()
                     stopSelf(currentStartId)
                 }
-            }
-            return START_NOT_STICKY
-        }
-
-        val downloadPropertyId = intent?.getStringExtra("DOWNLOAD_PROPERTY_ID")
-        if (!downloadPropertyId.isNullOrBlank()) {
-            serviceScope.launch {
+            } else if (!downloadPropertyId.isNullOrBlank()) {
                 var propertyArea = "BĐS"
                 try {
                     val property = propertyRepository.getPropertyById(downloadPropertyId)
@@ -399,13 +405,8 @@ class SyncForegroundService : Service() {
                     SyncStatusBus.clear()
                     stopSelf(currentStartId)
                 }
-            }
-            return START_NOT_STICKY
-        }
-
-        // Run sync job
-        serviceScope.launch {
-            var totalBds = 0
+            } else {
+                var totalBds = 0
             var totalImages = 0
             var totalAvatars = 0
             var successCount = 0
@@ -664,6 +665,7 @@ class SyncForegroundService : Service() {
                 SyncStatusBus.clear()
                 stopSelf(currentStartId)
             }
+        }
         }
 
         return START_NOT_STICKY
