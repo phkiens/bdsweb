@@ -10,16 +10,19 @@ import {
   Trash2,
   CheckCircle2,
   Database,
-  ChevronRight
+  ChevronRight,
+  FileArchive
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { syncManager } from "../../data/sync/sync-manager";
+import { exportDatabaseToZip, importDatabaseFromZip } from "../../core/utils/zip-backup";
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [purging, setPurging] = useState(false);
+  const [backupProgress, setBackupProgress] = useState<string | null>(null);
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -35,6 +38,24 @@ export const SettingsPage: React.FC = () => {
       setSyncResult(`Lỗi: ${e.message}`);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleBackupZip = async () => {
+    try {
+      setBackupProgress("Đang khởi tạo tệp ZIP...");
+      const blob = await exportDatabaseToZip(db, (msg) => setBackupProgress(msg));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bds_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupProgress(null);
+    } catch (e: any) {
+      console.error("Backup ZIP error", e);
+      setBackupProgress(null);
+      alert(`Lỗi khi tạo tệp ZIP: ${e.message}`);
     }
   };
 
@@ -66,7 +87,7 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleRestoreJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleRestoreFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -75,22 +96,33 @@ export const SettingsPage: React.FC = () => {
     }
 
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
+      if (file.name.toLowerCase().endsWith(".zip")) {
+        setBackupProgress("Đang giải nén và đọc tệp ZIP...");
+        const res = await importDatabaseFromZip(file, db, (msg) => setBackupProgress(msg));
+        setBackupProgress(null);
+        alert(
+          `Khôi phục tệp ZIP thành công!\n- Bất động sản: ${res.propertiesCount}\n- Khách hàng: ${res.customersCount}\n- Liên kết: ${res.linksCount}\n- Hình ảnh: ${res.imagesCount}`
+        );
+        window.location.reload();
+      } else {
+        const text = await file.text();
+        const data = JSON.parse(text);
 
-      if (data.properties && Array.isArray(data.properties)) {
-        await db.properties.bulkPut(data.properties);
-      }
-      if (data.customers && Array.isArray(data.customers)) {
-        await db.customers.bulkPut(data.customers);
-      }
-      if (data.links && Array.isArray(data.links)) {
-        await db.customer_property_links.bulkPut(data.links);
-      }
+        if (data.properties && Array.isArray(data.properties)) {
+          await db.properties.bulkPut(data.properties);
+        }
+        if (data.customers && Array.isArray(data.customers)) {
+          await db.customers.bulkPut(data.customers);
+        }
+        if (data.links && Array.isArray(data.links)) {
+          await db.customer_property_links.bulkPut(data.links);
+        }
 
-      alert("Khôi phục cơ sở dữ liệu thành công!");
-      window.location.reload();
+        alert("Khôi phục cơ sở dữ liệu từ file JSON thành công!");
+        window.location.reload();
+      }
     } catch (err: any) {
+      setBackupProgress(null);
       console.error("Restore error", err);
       alert(`Khôi phục thất bại: ${err.message}`);
     }
@@ -198,26 +230,43 @@ export const SettingsPage: React.FC = () => {
           <span>Sao lưu & Phục hồi cơ sở dữ liệu</span>
         </h3>
 
-        <div className="grid grid-cols-2 gap-3">
+        {backupProgress && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-center gap-2 animate-pulse">
+            <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+            <span className="font-medium">{backupProgress}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
-            onClick={handleBackupJson}
-            className="flex items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-xl border border-slate-200 text-xs font-semibold transition-colors"
+            onClick={handleBackupZip}
+            className="flex items-center justify-center gap-2 p-3 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-xl border border-blue-200 text-xs font-bold transition-colors cursor-pointer"
+            title="Đóng gói tệp nén ZIP bao gồm cả JSON và hình ảnh tương thích với Android ZipHelper"
           >
-            <Download className="w-4 h-4 text-blue-600" />
-            <span>Sao lưu file JSON</span>
+            <FileArchive className="w-4 h-4 text-blue-600" />
+            <span>Sao lưu tệp ZIP (Chuẩn Android)</span>
           </button>
 
-          <label className="cursor-pointer flex items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-xl border border-slate-200 text-xs font-semibold transition-colors">
-            <Upload className="w-4 h-4 text-blue-600" />
-            <span>Khôi phục JSON</span>
+          <label className="cursor-pointer flex items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-xl border border-slate-200 hover:border-emerald-200 text-xs font-bold transition-colors">
+            <Upload className="w-4 h-4 text-emerald-600" />
+            <span>Khôi phục (.zip / .json)</span>
             <input
               type="file"
-              accept=".json"
-              onChange={handleRestoreJson}
+              accept=".zip,.json"
+              onChange={handleRestoreFile}
               className="hidden"
             />
           </label>
         </div>
+
+        <button
+          onClick={handleBackupJson}
+          className="w-full flex items-center justify-center gap-2 p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+          title="Sao lưu nhanh thành một tệp JSON văn bản"
+        >
+          <Download className="w-4 h-4 text-slate-500" />
+          <span>Sao lưu tệp JSON đơn lẻ</span>
+        </button>
 
         <button
           onClick={handlePurgeDeleted}
