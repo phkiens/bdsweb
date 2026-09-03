@@ -11,7 +11,7 @@
 | Feature ID | Tên tính năng | Phân loại | Mức độ | Trạng thái |
 | :--- | :--- | :--- | :---: | :---: |
 | **`PROP-AUTO-CUSTOMER-LINK-001`** | Tự động tạo/cập nhật hồ sơ Chủ nhà (OWNER) khi lưu BĐS | `DATA_WRITE`, `STATE_TRANSITION` | **P1** | **MATCH (RESOLVED)** |
-| **`CRM-OWNER-FILTER-001`** | Lọc và sắp xếp chủ nhà theo kho hàng (`OwnerStockFilter`, `OwnerPropertySort`) | `CALCULATION`, `DATA_READ` | **P1** | **CONFIRMED** |
+| **`CRM-OWNER-FILTER-001`** | Lọc và sắp xếp chủ nhà theo kho hàng (`OwnerStockFilter`, `OwnerPropertySort`) | `CALCULATION`, `DATA_READ` | **P1** | **MATCH (RESOLVED)** |
 | **`CRM-LINK-CREATION-002`** | Tạo BĐS từ Khách hàng không sinh liên kết `customer_property_links` | `DATA_WRITE` | **P1** | **CONFIRMED** |
 | **`CRM-OWNER-DETAIL-003`** | Chi tiết khách hàng OWNER hiển thị nhầm tính năng ghép cặp mua nhà | `VISIBILITY`, `DATA_READ` | **P1** | **CONFIRMED** |
 | **`CRM-PHONE-DUPLICATE-VALIDATION-001`** | Chặn trùng lặp SĐT chuẩn hóa khi thêm/sửa Khách hàng CRM | `VALIDATION` | **P1** | **CONFIRMED** |

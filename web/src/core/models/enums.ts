@@ -68,3 +68,22 @@ export enum MapZoomScope {
   DISTRICT = "DISTRICT",
   PROVINCE = "PROVINCE"
 }
+
+export enum CustomerFilter {
+  ALL = "ALL",
+  BUYER_ACTIVE = "BUYER_ACTIVE",
+  OWNER_ACTIVE = "OWNER_ACTIVE",
+  CLOSED = "CLOSED"
+}
+
+export enum OwnerStockFilter {
+  ALL = "Tất cả",
+  HAS_STOCK = "Còn hàng",
+  SOLD_OUT = "Đã bán hết"
+}
+
+export enum OwnerPropertySort {
+  DEFAULT = "Mặc định",
+  DESCENDING = "Giảm dần số nhà",
+  ASCENDING = "Tăng dần số nhà"
+}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import {
@@ -7,20 +7,34 @@ import {
   Phone,
   ChevronRight,
   UserPlus,
-  Trash2
+  Trash2,
+  Building2,
+  ArrowUpDown
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { Customer } from "../../core/models/customer";
-import { CustomerRole, CustomerStatus } from "../../core/models/enums";
+import {
+  CustomerRole,
+  CustomerStatus,
+  CustomerFilter,
+  OwnerStockFilter,
+  OwnerPropertySort
+} from "../../core/models/enums";
 import { canonicalizeVietnamesePhone, normalizeVietnamese } from "../../core/utils/vietnamese";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
 import { nowTimestamp } from "../../core/utils/date";
+import {
+  calculateOwnerPropertyStats,
+  applyCustomerFilters
+} from "../../core/engine/customer-filter";
 
 export const CustomerListPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedDemand, setSelectedDemand] = useState<string>("ALL");
+  const [customerFilter, setCustomerFilter] = useState<CustomerFilter>(CustomerFilter.ALL);
+  const [ownerStockFilter, setOwnerStockFilter] = useState<OwnerStockFilter>(OwnerStockFilter.ALL);
+  const [ownerPropertySort, setOwnerPropertySort] = useState<OwnerPropertySort>(OwnerPropertySort.DEFAULT);
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
@@ -45,17 +59,33 @@ export const CustomerListPage: React.FC = () => {
       .sortBy("updatedAt");
   }, []);
 
-  const filteredCustomers = (customers || []).filter((c) => {
-    if (selectedDemand !== "ALL" && c.demandType !== selectedDemand) return false;
-    if (searchQuery.trim()) {
-      const q = normalizeVietnamese(searchQuery);
-      const inName = normalizeVietnamese(c.name).includes(q);
-      const inPhone = c.phone.includes(searchQuery.trim());
-      const inArea = normalizeVietnamese(c.demandAreas).includes(q);
-      if (!inName && !inPhone && !inArea) return false;
-    }
-    return true;
-  });
+  const links = useLiveQuery(async () => {
+    return await db.customer_property_links
+      .filter((l) => !l.isDeleted)
+      .toArray();
+  }, []);
+
+  const properties = useLiveQuery(async () => {
+    return await db.properties
+      .filter((p) => !p.isDeleted)
+      .toArray();
+  }, []);
+
+  const ownerPropertyStats = useMemo(() => {
+    if (!links || !properties) return {};
+    return calculateOwnerPropertyStats(links, properties);
+  }, [links, properties]);
+
+  const filteredCustomers = useMemo(() => {
+    return applyCustomerFilters(
+      customers || [],
+      customerFilter,
+      ownerPropertyStats,
+      searchQuery,
+      ownerStockFilter,
+      ownerPropertySort
+    );
+  }, [customers, customerFilter, ownerPropertyStats, searchQuery, ownerStockFilter, ownerPropertySort]);
 
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,9 +167,9 @@ export const CustomerListPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Filter & Search */}
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <div className="relative flex-1">
+      {/* Filter Tabs & Search */}
+      <div className="space-y-2.5 mb-4">
+        <div className="relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -150,21 +180,66 @@ export const CustomerListPage: React.FC = () => {
           />
         </div>
 
+        {/* Primary Role Filter Tabs */}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {["ALL", "Cần mua", "Cần thuê", "Cần bán"].map((dm) => (
+          {[
+            { id: CustomerFilter.ALL, label: "Tất cả" },
+            { id: CustomerFilter.BUYER_ACTIVE, label: "Khách mua" },
+            { id: CustomerFilter.OWNER_ACTIVE, label: "Chủ nhà" },
+            { id: CustomerFilter.CLOSED, label: "Đã đóng" }
+          ].map((tab) => (
             <button
-              key={dm}
-              onClick={() => setSelectedDemand(dm)}
-              className={`text-xs px-3 py-2 rounded-xl font-semibold whitespace-nowrap transition-colors ${
-                selectedDemand === dm
-                  ? "bg-blue-600 text-white"
+              key={tab.id}
+              onClick={() => setCustomerFilter(tab.id)}
+              className={`text-xs px-3 py-2 rounded-xl font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                customerFilter === tab.id
+                  ? "bg-blue-600 text-white shadow-xs"
                   : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
               }`}
             >
-              {dm === "ALL" ? "Tất cả nhu cầu" : dm}
+              {tab.label}
             </button>
           ))}
         </div>
+
+        {/* Sub-filter bar exclusively for OWNER context (OwnerStockFilter & OwnerPropertySort) */}
+        {customerFilter === CustomerFilter.OWNER_ACTIVE && (
+          <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-wrap items-center justify-between gap-2 animate-in fade-in duration-150">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-semibold text-slate-500 mr-1">Kho hàng:</span>
+              {[
+                { id: OwnerStockFilter.ALL, label: "Tất cả" },
+                { id: OwnerStockFilter.HAS_STOCK, label: "Còn hàng" },
+                { id: OwnerStockFilter.SOLD_OUT, label: "Đã bán hết" }
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  onClick={() => setOwnerStockFilter(st.id)}
+                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
+                    ownerStockFilter === st.id
+                      ? "bg-amber-600 text-white font-semibold"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={ownerPropertySort}
+                onChange={(e) => setOwnerPropertySort(e.target.value as OwnerPropertySort)}
+                className="text-xs py-1 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 font-medium outline-hidden"
+              >
+                <option value={OwnerPropertySort.DEFAULT}>Sắp xếp: Mặc định</option>
+                <option value={OwnerPropertySort.DESCENDING}>Giảm dần số nhà</option>
+                <option value={OwnerPropertySort.ASCENDING}>Tăng dần số nhà</option>
+              </select>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Customer List */}
@@ -188,8 +263,14 @@ export const CustomerListPage: React.FC = () => {
             >
               <div className="space-y-1.5 flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-800">
-                    {c.demandType}
+                  <span
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                      c.role === CustomerRole.OWNER
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-blue-100 text-blue-800"
+                    }`}
+                  >
+                    {c.role === CustomerRole.OWNER ? "Chủ nhà" : c.demandType || "Khách mua"}
                   </span>
                   <h3 className="font-semibold text-slate-800 text-sm md:text-base truncate">
                     {c.name}
@@ -199,16 +280,40 @@ export const CustomerListPage: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="text-xs text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
-                  <span>
-                    Ngân sách:{" "}
-                    <strong className="text-blue-700">
-                      {c.priceMin} - {c.priceMax} tỷ
-                    </strong>
-                  </span>
-                  <span>• Loại: {c.propertyType || "Bất kỳ"}</span>
-                  {c.demandAreas && <span>• KV: {c.demandAreas}</span>}
-                </div>
+                {c.role === CustomerRole.OWNER ? (
+                  <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <span className="flex items-center gap-1 font-semibold text-slate-800">
+                      <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                      <span>{ownerPropertyStats[c.id]?.totalCount ?? 0} BĐS gửi bán</span>
+                    </span>
+                    {ownerPropertyStats[c.id] && (
+                      <>
+                        {ownerPropertyStats[c.id].forSaleCount > 0 && (
+                          <span className="text-emerald-700 font-medium">
+                            ({ownerPropertyStats[c.id].forSaleCount} đang bán)
+                          </span>
+                        )}
+                        {ownerPropertyStats[c.id].soldCount > 0 && (
+                          <span className="text-slate-500">
+                            ({ownerPropertyStats[c.id].soldCount} đã bán)
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {c.demandAreas && <span>• KV: {c.demandAreas}</span>}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
+                    <span>
+                      Ngân sách:{" "}
+                      <strong className="text-blue-700">
+                        {c.priceMin} - {c.priceMax} tỷ
+                      </strong>
+                    </span>
+                    <span>• Loại: {c.propertyType || "Bất kỳ"}</span>
+                    {c.demandAreas && <span>• KV: {c.demandAreas}</span>}
+                  </div>
+                )}
 
                 {c.note && (
                   <p className="text-xs text-slate-500 line-clamp-1 italic">
