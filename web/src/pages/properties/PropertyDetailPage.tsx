@@ -12,7 +12,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Sparkles,
-  Plus
+  Plus,
+  Download
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { PropertyStatus } from "../../core/models/enums";
@@ -111,6 +112,17 @@ export const PropertyDetailPage: React.FC = () => {
       await navigator.clipboard.writeText(text);
       alert("Đã sao chép nội dung tin đăng vào bộ nhớ đệm!");
     }
+  };
+
+  const handleDownloadAllImages = () => {
+    images.forEach((src, idx) => {
+      const link = document.createElement("a");
+      link.href = src;
+      link.download = `bds_${property.id}_img_${idx + 1}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
   };
 
   return (
@@ -256,21 +268,34 @@ export const PropertyDetailPage: React.FC = () => {
       {/* Media Photo Carousel / Grid */}
       {images.length > 0 && (
         <div className="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-          <h3 className="font-semibold text-slate-800 text-xs uppercase tracking-wider mb-2">
-            Hình ảnh thực tế ({images.length})
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-slate-800 text-xs uppercase tracking-wider">
+              Hình ảnh thực tế ({images.length})
+            </h3>
+            <button
+              onClick={handleDownloadAllImages}
+              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
+              title="Tải toàn bộ ảnh BĐS về máy"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Tải tất cả ảnh</span>
+            </button>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {images.map((src, idx) => (
-              <div
+              <a
                 key={idx}
-                className="aspect-4/3 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 cursor-pointer"
+                href={src}
+                download={`bds_${property.id}_img_${idx + 1}.jpg`}
+                className="aspect-4/3 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 cursor-pointer block group relative"
+                title="Click để tải ảnh"
               >
                 <img
                   src={src}
                   alt={`BĐS ${idx}`}
-                  className="w-full h-full object-cover hover:scale-105 transition-transform"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                 />
-              </div>
+              </a>
             ))}
           </div>
         </div>
