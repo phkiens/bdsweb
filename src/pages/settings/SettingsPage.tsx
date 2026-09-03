@@ -9,13 +9,11 @@ import {
   Upload,
   Trash2,
   CheckCircle2,
-  AlertCircle,
   Database,
   ChevronRight
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { syncManager } from "../../data/sync/sync-manager";
-import { settingsManager } from "../../data/local/settings-manager";
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
