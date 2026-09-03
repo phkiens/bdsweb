@@ -10,7 +10,8 @@ import {
   Trash2,
   Building,
   User,
-  AlertCircle
+  AlertCircle,
+  Compass
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { createDefaultProperty, Property } from "../../core/models/property";
@@ -124,6 +125,43 @@ export const PropertyFormPage: React.FC = () => {
     }));
 
     setQuickText("");
+  };
+
+  const handleOpenCompass = () => {
+    if (typeof window !== "undefined" && "DeviceOrientationEvent" in window) {
+      const handleOrientation = (e: DeviceOrientationEvent) => {
+        if (e.alpha !== null) {
+          const heading = (360 - e.alpha) % 360;
+          let dir = Direction.NORTH;
+          if (heading >= 22.5 && heading < 67.5) dir = Direction.NORTH_EAST;
+          else if (heading >= 67.5 && heading < 112.5) dir = Direction.EAST;
+          else if (heading >= 112.5 && heading < 157.5) dir = Direction.SOUTH_EAST;
+          else if (heading >= 157.5 && heading < 202.5) dir = Direction.SOUTH;
+          else if (heading >= 202.5 && heading < 247.5) dir = Direction.SOUTH_WEST;
+          else if (heading >= 247.5 && heading < 292.5) dir = Direction.WEST;
+          else if (heading >= 292.5 && heading < 337.5) dir = Direction.NORTH_WEST;
+
+          setFormData((prev) => ({ ...prev, direction: dir }));
+          window.removeEventListener("deviceorientation", handleOrientation);
+          alert(`La bàn xác định góc ${Math.round(heading)}° - Hướng nhà: ${dir}`);
+        }
+      };
+
+      if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+        (DeviceOrientationEvent as any)
+          .requestPermission()
+          .then((permission: string) => {
+            if (permission === "granted") {
+              window.addEventListener("deviceorientation", handleOrientation, { once: true });
+            }
+          })
+          .catch(() => alert("Không thể truy cập cảm biến la bàn thiết bị. Vui lòng chọn hướng từ danh sách."));
+      } else {
+        window.addEventListener("deviceorientation", handleOrientation, { once: true });
+      }
+    } else {
+      alert("Thiết bị không hỗ trợ cảm biến la bàn điện tử. Vui lòng chọn hướng từ danh sách.");
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -301,7 +339,18 @@ export const PropertyFormPage: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Hướng nhà</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-slate-600">Hướng nhà</label>
+                <button
+                  type="button"
+                  onClick={handleOpenCompass}
+                  className="flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 font-semibold cursor-pointer"
+                  title="Đo hướng bằng la bàn cảm biến thiết bị"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>La bàn</span>
+                </button>
+              </div>
               <select
                 value={formData.direction}
                 onChange={(e) => setFormData({ ...formData, direction: e.target.value })}

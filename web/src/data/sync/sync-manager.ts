@@ -40,8 +40,7 @@ export class SyncManager {
     try {
       // 1. Push Properties
       const unsyncedProps = await db.properties
-        .where("isTextSynced")
-        .equals(0 as any)
+        .filter((p) => !p.isTextSynced)
         .toArray();
 
       for (const prop of unsyncedProps) {
@@ -81,8 +80,7 @@ export class SyncManager {
 
       // 2. Push Customers
       const unsyncedCustomers = await db.customers
-        .where("isSynced")
-        .equals(0 as any)
+        .filter((c) => !c.isSynced)
         .toArray();
 
       for (const cust of unsyncedCustomers) {
@@ -115,8 +113,7 @@ export class SyncManager {
 
       // 3. Push Links
       const unsyncedLinks = await db.customer_property_links
-        .where("isSynced")
-        .equals(0 as any)
+        .filter((l) => !l.isSynced)
         .toArray();
 
       for (const link of unsyncedLinks) {
@@ -291,6 +288,27 @@ export class SyncManager {
 
     return () => {
       client.removeChannel(channel);
+    };
+  }
+
+  /**
+   * Thiết lập tự động đồng bộ khi chuyển tab/focus hoặc khi có mạng trở lại (BEH-SYNC-002)
+   */
+  public setupAutoSync(): () => void {
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        this.syncNow().catch((err: unknown) => console.error("Auto sync on tab focus error:", err));
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    window.addEventListener("online", handleVisibilityOrFocus);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      window.removeEventListener("online", handleVisibilityOrFocus);
     };
   }
 }

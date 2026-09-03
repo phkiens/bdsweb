@@ -31,6 +31,26 @@ export const PropertyListPage: React.FC = () => {
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  // FAB position state (BEH-PROP-008: Chuyển đổi vị trí FAB trái/phải hỗ trợ thao tác một tay)
+  const [fabPosition, setFabPosition] = useState<"left" | "right">(() => {
+    try {
+      return (localStorage.getItem("bds_fab_position") as "left" | "right") || "right";
+    } catch {
+      return "right";
+    }
+  });
+
+  const toggleFabPosition = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = fabPosition === "right" ? "left" : "right";
+    setFabPosition(next);
+    try {
+      localStorage.setItem("bds_fab_position", next);
+    } catch {
+      // ignore
+    }
+  };
+
   // Reactive query from Dexie IndexedDB
   const properties = useLiveQuery(async () => {
     return await db.properties
@@ -403,14 +423,40 @@ export const PropertyListPage: React.FC = () => {
         </div>
       )}
 
-      {/* Floating Action Button (Mobile & Desktop) */}
-      <button
-        onClick={() => navigate("/properties/new")}
-        className="fixed bottom-20 md:bottom-8 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 z-40"
-        title="Thêm BĐS mới"
+      {/* Floating Action Button with Left/Right repositioning for one-handed operation (BEH-PROP-008) */}
+      <div
+        className={`fixed bottom-20 md:bottom-8 ${
+          fabPosition === "left" ? "left-6" : "right-6"
+        } z-40 flex items-center gap-1.5 transition-all duration-200`}
       >
-        <Plus className="w-7 h-7" />
-      </button>
+        {fabPosition === "right" && (
+          <button
+            onClick={toggleFabPosition}
+            className="w-6 h-6 rounded-full bg-white/90 hover:bg-white text-slate-500 hover:text-slate-800 shadow-md border border-slate-200 flex items-center justify-center text-[11px] font-bold cursor-pointer"
+            title="Chuyển nút sang mép trái (thao tác 1 tay)"
+          >
+            ←
+          </button>
+        )}
+
+        <button
+          onClick={() => navigate("/properties/new")}
+          className="w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl flex items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+          title="Thêm BĐS mới"
+        >
+          <Plus className="w-7 h-7" />
+        </button>
+
+        {fabPosition === "left" && (
+          <button
+            onClick={toggleFabPosition}
+            className="w-6 h-6 rounded-full bg-white/90 hover:bg-white text-slate-500 hover:text-slate-800 shadow-md border border-slate-200 flex items-center justify-center text-[11px] font-bold cursor-pointer"
+            title="Chuyển nút sang mép phải"
+          >
+            →
+          </button>
+        )}
+      </div>
     </div>
   );
 };
