@@ -25,9 +25,7 @@ export const UnverifiedListPage: React.FC = () => {
 
   const unverifiedList = useLiveQuery(async () => {
     return await db.properties
-      .where("isDeleted")
-      .equals(0 as any)
-      .and((p) => !p.isVerified)
+      .filter((p) => !p.isDeleted && !p.isVerified)
       .reverse()
       .sortBy("updatedAt");
   }, []);

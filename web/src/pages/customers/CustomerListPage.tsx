@@ -40,8 +40,7 @@ export const CustomerListPage: React.FC = () => {
 
   const customers = useLiveQuery(async () => {
     return await db.customers
-      .where("isDeleted")
-      .equals(0 as any)
+      .filter((c) => !c.isDeleted)
       .reverse()
       .sortBy("updatedAt");
   }, []);

@@ -32,8 +32,7 @@ export const PropertyDetailPage: React.FC = () => {
   const property = useLiveQuery(() => (id ? db.properties.get(id) : undefined), [id]);
   const activeCustomers = useLiveQuery(() =>
     db.customers
-      .where("isDeleted")
-      .equals(0 as any)
+      .filter((c) => !c.isDeleted)
       .toArray()
   );
 
