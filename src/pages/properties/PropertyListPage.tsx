@@ -245,17 +245,40 @@ export const PropertyListPage: React.FC = () => {
           </div>
           <h4 className="text-base font-semibold text-slate-700">Không tìm thấy bất động sản nào</h4>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            {searchQuery || viewTodayOnly || selectedStatus !== "ALL"
+            {searchQuery || viewTodayOnly || selectedStatus !== "ALL" || selectedType !== "ALL"
               ? "Hãy thử nới lỏng bộ lọc hoặc từ khóa tìm kiếm."
               : "Bấm nút bên dưới để thêm BĐS đầu tiên vào kho."}
           </p>
-          <button
-            onClick={() => navigate("/properties/new")}
-            className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Thêm BĐS mới</span>
-          </button>
+          {(searchQuery || viewTodayOnly || selectedStatus !== "ALL" || selectedType !== "ALL") && properties.length > 0 ? (
+            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-4">
+              <button
+                onClick={() => {
+                  setSearchQuery("");
+                  setViewTodayOnly(false);
+                  setSelectedStatus("ALL");
+                  setSelectedType("ALL");
+                }}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors"
+              >
+                <span>Xem tất cả {properties.length} BĐS (Bỏ bộ lọc)</span>
+              </button>
+              <button
+                onClick={() => navigate("/properties/new")}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Thêm BĐS mới</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => navigate("/properties/new")}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Thêm BĐS mới</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
