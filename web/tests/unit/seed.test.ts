@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { describe, expect, it } from "vitest";
 import { AppDatabase } from "../../src/data/local/db";
-import { seedInitialData, SEED_PROPERTIES, SEED_CUSTOMERS, SEED_LINKS } from "../../src/data/local/seed";
+import { seedInitialData } from "../../src/data/local/seed";
 
 describe("Database Seed Data (Deterministic Fixtures)", () => {
   it("seeds deterministic properties, customers, and links into IndexedDB", async () => {

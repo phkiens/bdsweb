@@ -66,26 +66,36 @@ Tài liệu này ghi nhận và phân loại toàn bộ các blocker, thiếu s�
 
 ---
 
-### BLOCKER-004: Cảnh báo Lint (Unused Imports & React Purity Warning)
+### BLOCKER-004: Cảnh báo Lint (Unused Imports & React Purity Warning) [RESOLVED]
 - **blocker_id**: `BLOCKER-004`
 - **nhóm_phân_loại**: `A. TOOLCHAIN`
+- **trạng_thái**: `RESOLVED`
 - **command**: `npm run lint`
-- **exit_code**: `0 (Nhưng tồn tại 32 warnings)`
-- **error_summary**: Oxlint phát hiện 31 biến/import không sử dụng (unused imports) và 1 cảnh báo gọi hàm không thuần khiết `Date.now()` trong render của `CustomerListPage.tsx:115`.
-- **exact_evidence**:
-  - `CustomerDetailPage.tsx`: `Edit`, `ChevronRight`, `MapPin`, `CheckCircle2` imported but never used.
-  - `MapSurveyPage.tsx`: `MapPin`, `Compass`, `Layers`, `ChevronRight` imported but never used.
-  - `CustomerListPage.tsx`: `updatedAt: Date.now()` kích hoạt cảnh báo `react(purity)`.
-- **probable_root_cause**: Code UI được scaffold nhanh với nhiều icon dự phòng chưa dùng hết.
-- **confidence**: `HIGH`
+- **exit_code**: `0 (Found 0 warnings and 0 errors)`
+- **error_summary**: Đã dọn sạch toàn bộ 35 warnings về unused imports, chuẩn hóa `nowTimestamp()` trong `core/utils/date.ts` tránh impure render warnings, và hoãn `setDuplicateModalOpen` trong effect của `App.tsx`. Toàn bộ 42 files đạt chuẩn lint tuyệt đối.
+- **exact_evidence**: Chạy `npm run lint` trả về:
+  ```text
+  > web@0.0.0 lint
+  > oxlint
+
+  Found 0 warnings and 0 errors.
+  Finished in 40ms on 42 files with 116 rules using 24 threads.
+  ```
 - **affected_files**:
+  - `web/src/core/utils/date.ts`
+  - `web/src/App.tsx`
+  - `web/src/components/common/DuplicateCheckModal.tsx`
+  - `web/src/data/sync/sync-manager.ts`
   - `web/src/pages/customers/CustomerDetailPage.tsx`
   - `web/src/pages/customers/CustomerListPage.tsx`
   - `web/src/pages/map/MapSurveyPage.tsx`
-  - `web/src/pages/settings/SettingsPage.tsx`
-  - `web/src/pages/properties/PropertyListPage.tsx`
+  - `web/src/pages/onboarding/PermissionOnboardingPage.tsx`
+  - `web/src/pages/properties/PropertyDetailPage.tsx`
   - `web/src/pages/properties/PropertyFormPage.tsx`
-  - `web/src/components/common/DuplicateCheckModal.tsx`
-- **dependency_on_other_blocker**: Không.
-- **proposed_fix**: Xóa sạch các import dư thừa và chuyển `Date.now()` trong handler để đạt chuẩn 0 warnings trên toàn bộ dự án.
-- **verification_command**: `npm run lint` (đạt `Found 0 warnings and 0 errors`).
+  - `web/src/pages/properties/PropertyListPage.tsx`
+  - `web/src/pages/settings/SettingsPage.tsx`
+  - `web/src/pages/settings/SyncHistoryPage.tsx`
+  - `web/src/pages/unverified/UnverifiedListPage.tsx`
+  - `web/tests/unit/seed.test.ts`
+- **verification_command**: `npm run lint` (Exit code: 0, 0 warnings, 0 errors)
+
