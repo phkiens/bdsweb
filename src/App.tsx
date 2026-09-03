@@ -34,11 +34,13 @@ const AppContent: React.FC = () => {
     }
   }, [location.search]);
 
-  // Connect Supabase Realtime when app is mounted
+  // Connect Supabase Realtime & Auto-Sync when app is mounted
   useEffect(() => {
     const cleanupRealtime = syncManager.startRealtime();
+    const cleanupAutoSync = syncManager.setupAutoSync();
     return () => {
       cleanupRealtime();
+      cleanupAutoSync();
     };
   }, []);
 
