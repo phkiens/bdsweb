@@ -44,19 +44,25 @@ Tài liệu này ghi nhận và phân loại toàn bộ các blocker, thiếu s�
 
 ---
 
-### BLOCKER-003: Thiếu Script & Dữ liệu Seed Cố Định (Deterministic Fixtures)
+### BLOCKER-003: Thiếu Script & Dữ liệu Seed Cố Định (Deterministic Fixtures) [RESOLVED]
 - **blocker_id**: `BLOCKER-003`
 - **nhóm_phân_loại**: `D. DATABASE`
+- **trạng_thái**: `RESOLVED`
 - **command**: `npm run db:seed`
-- **exit_code**: `1 (MISSING_SCRIPT)`
-- **error_summary**: Ứng dụng khi chạy trên môi trường trắng (Clean Environment / Incognito) không có dữ liệu mẫu ban đầu để các kịch bản Smoke Test và Integration Test kiểm tra tính toán và hiển thị.
-- **exact_evidence**: Không có script `seed` trong `web/package.json`.
-- **probable_root_cause**: Chưa xây dựng module fixture nạp dữ liệu mẫu vào IndexedDB.
-- **confidence**: `HIGH`
-- **affected_files**: `web/package.json`, `web/src/data/local/seed.ts`
-- **dependency_on_other_blocker**: `BLOCKER-001` (Smoke test cần seed data để assert).
-- **proposed_fix**: Tạo hàm `seedDatabase(db)` nạp 5 BĐS và 3 khách hàng mẫu vào IndexedDB, cung cấp nút "Nạp dữ liệu mẫu" trong trang Cài đặt hoặc script CLI.
-- **verification_command**: `npm run test` (chạy qua bộ test có assert fixture seed).
+- **exit_code**: `0 (Seed thành công: 5 BĐS, 3 Khách hàng, 1 Liên kết)`
+- **error_summary**: Đã khắc phục hoàn toàn. Tạo module `src/data/local/seed.ts` với 5 BĐS, 3 khách hàng, 1 liên kết mẫu; script CLI `scripts/seed.ts`; script `"db:seed"` trong `package.json`; nút bấm "Nạp dữ liệu mẫu" trong `SettingsPage.tsx`; và unit test `tests/unit/seed.test.ts`.
+- **exact_evidence**: Chạy `npm run db:seed` trả về:
+  ```text
+  🌱 Khởi tạo IndexedDB ảo và nạp dữ liệu seed deterministic...
+  ✅ Seed thành công: 5 BĐS, 3 Khách hàng, 1 Liên kết.
+  ```
+- **affected_files**:
+  - `web/package.json`
+  - `web/src/data/local/seed.ts`
+  - `web/scripts/seed.ts`
+  - `web/src/pages/settings/SettingsPage.tsx`
+  - `web/tests/unit/seed.test.ts`
+- **verification_command**: `npm run db:seed` (Exit code: 0)
 
 ---
 
