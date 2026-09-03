@@ -28,19 +28,19 @@ Tài liệu này ghi nhận và phân loại toàn bộ các blocker, thiếu s�
 
 ---
 
-### BLOCKER-002: Thiếu tệp mẫu cấu hình môi trường `.env.example`
+### BLOCKER-002: Thiếu tệp mẫu cấu hình môi trường `.env.example` [RESOLVED]
 - **blocker_id**: `BLOCKER-002`
 - **nhóm_phân_loại**: `C. ENVIRONMENT`
+- **trạng_thái**: `RESOLVED`
 - **command**: `Test-Path web/.env.example`
-- **exit_code**: `False`
-- **error_summary**: Thư mục `web/` chưa có tệp `.env.example` hướng dẫn người dùng và CI/CD khai báo các biến môi trường kết nối Supabase và Gemini API.
-- **exact_evidence**: File cấu hình mẫu hiện nằm ở thư mục gốc [`bds-collector-config.env`](file:///c:/Users/k/Downloads/web/bds-collector-config.env) thay vì bên trong thư mục con `web/`.
-- **probable_root_cause**: Thư mục `web/` được khởi tạo độc lập nhưng chưa sao chép mẫu biến môi trường vào trong.
-- **confidence**: `HIGH`
-- **affected_files**: `web/.env.example`
-- **dependency_on_other_blocker**: Không.
-- **proposed_fix**: Tạo tệp `web/.env.example` định nghĩa `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`.
-- **verification_command**: `Test-Path web/.env.example`
+- **exit_code**: `True`
+- **error_summary**: Đã khắc phục hoàn toàn. Tạo tệp `web/.env.example` định nghĩa `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`. Cập nhật `settings-manager.ts` nhận fallback từ biến môi trường Vite. Thêm unit test `tests/unit/env.test.ts`.
+- **exact_evidence**: Chạy `Test-Path web/.env.example` trả về `True`, và test `tests/unit/env.test.ts` pass 100%.
+- **affected_files**:
+  - `web/.env.example`
+  - `web/src/data/local/settings-manager.ts`
+  - `web/tests/unit/env.test.ts`
+- **verification_command**: `Test-Path web/.env.example` (Trả về `True`)
 
 ---
 
