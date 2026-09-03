@@ -145,4 +145,21 @@ test.describe("BỘ 10 KỊCH BẢN SMOKE TEST TOÀN DIỆN (BEHAVIORAL PARITY)"
     await expect(page.getByText("Đã phát hiện 1 BĐS trùng vị trí")).toBeVisible();
     await expect(page.getByText("Phường 25, Quận Bình Thạnh").last()).toBeVisible();
   });
+
+  test("SMOKE-011: Web Share Target tiếp nhận văn bản chia sẻ (BEH-NAV-006)", async ({ page }) => {
+    const sharedText = "Bán nhà hẻm 48 Điện Biên Phủ, Phường 15, Bình Thạnh giá 5.2 tỷ, diện tích 55m2, liên hệ 0909111222";
+    await page.goto(`/unverified?text=${encodeURIComponent(sharedText)}`);
+
+    // Modal nhập văn bản tự động mở và điền sẵn nội dung từ Web Share Target
+    await expect(page.getByText("Dán văn bản tin rao BĐS")).toBeVisible();
+    const textarea = page.getByPlaceholder("Dán toàn bộ nội dung tin rao từ Zalo, Facebook, SMS...");
+    await expect(textarea).toHaveValue(sharedText);
+
+    // Bấm bóc tách & lưu tin
+    await page.getByRole("button", { name: "Trích xuất & Lưu tin chờ" }).click();
+
+    // Tin chờ mới xuất hiện trong danh sách
+    await expect(page.getByText("Bán Nhà Hẻm 48 Điện Biên Phủ, Phường 15, Bình Thạnh")).toBeVisible();
+    await expect(page.getByText("5.2 tỷ")).toBeVisible();
+  });
 });

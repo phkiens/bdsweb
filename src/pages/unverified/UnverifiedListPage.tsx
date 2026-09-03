@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Inbox,
   Sparkles,
@@ -20,8 +20,19 @@ import { nowTimestamp } from "../../core/utils/date";
 
 export const UnverifiedListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [rawInput, setRawInput] = useState("");
+  const [searchParams] = useSearchParams();
+
+  // Khởi tạo nội dung văn bản chia sẻ từ PWA Web Share Target URL params
+  const sharedText = searchParams.get("text");
+  const sharedTitle = searchParams.get("title");
+  const sharedUrl = searchParams.get("url");
+  const initialShared = [sharedTitle, sharedText, sharedUrl]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  const [showImportModal, setShowImportModal] = useState(Boolean(initialShared));
+  const [rawInput, setRawInput] = useState(initialShared);
 
   const unverifiedList = useLiveQuery(async () => {
     return await db.properties
