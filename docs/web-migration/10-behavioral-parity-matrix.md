@@ -8,9 +8,9 @@ Tài liệu này là kết quả kiểm toán (Audit) thực tế chi tiết 41 
 
 | Trạng thái | Số lượng | Tỷ lệ | Định nghĩa |
 | :--- | :---: | :---: | :--- |
-| **`MATCH`** | **36** | **87.8%** | Hành vi trên Web tương đương 100% logic của Android Native (được kiểm chứng qua Unit / E2E test). |
-| **`PARTIAL`** | **3** | **7.3%** | Đã triển khai logic cốt lõi trên Web nhưng còn khác biệt do đặc thù nền tảng trình duyệt (AlarmManager đóng tab, la bàn cảm biến, export zip). |
-| **`MISSING`** | **2** | **4.9%** | Tính năng native đặc thù chưa đưa lên Web (kéo ngang nút FAB, snackbar tự mở rộng bộ lọc). |
+| **`MATCH`** | **38** | **92.7%** | Hành vi trên Web tương đương 100% logic của Android Native (được kiểm chứng qua Unit / E2E test). |
+| **`PARTIAL`** | **2** | **4.9%** | Đã triển khai logic cốt lõi trên Web nhưng còn khác biệt do đặc thù nền tảng trình duyệt (AlarmManager đóng tab, la bàn cảm biến). |
+| **`MISSING`** | **1** | **2.4%** | Tính năng native đặc thù chưa đưa lên Web (kéo ngang nút FAB bằng cử chỉ ngón tay). |
 | **`UNKNOWN`** | **0** | **0.0%** | Toàn bộ 41 mã hành vi đều đã được định vị bằng chứng rõ ràng trong mã nguồn. |
 | **TỔNG CỘNG** | **41** | **100%** | |
 
@@ -44,7 +44,7 @@ Tài liệu này là kết quả kiểm toán (Audit) thực tế chi tiết 41 
 | `BEH-PROP-006` | Toggle Property Status | `PropertyCard.kt:150-180` | `web/src/pages/properties/PropertyListPage.tsx:79-88` | **`MATCH`** | Click badge chuyển đổi giữa `FOR_SALE` và `PAUSED`, cập nhật DB tức thì. |
 | `BEH-PROP-007` | Multi-Select & Bulk Delete | `PropertyListScreen.kt:310-380` | `web/src/pages/properties/PropertyListPage.tsx:90-120` | **`MATCH`** | Chế độ chọn nhiều checkbox, thanh tác vụ nổi "Xóa đã chọn" gắn `isDeleted = true`. |
 | `BEH-PROP-008` | FAB Drag Left/Right | `PropertyListScreen.kt:420-460` | *Chưa triển khai* | **`MISSING`** | Cử chỉ kéo nút FAB qua lại mép trái/phải để thao tác 1 tay là tính năng riêng của mobile native. |
-| `BEH-PROP-009` | Reveal Hidden Item From Snackbar | `PropertyListScreen.kt:105-116` | *Chưa triển khai* | **`MISSING`** | Snackbar thông báo khi có bản ghi mới sync về bị bộ lọc ẩn, kèm action "Xem ngay" để nới lỏng bộ lọc. |
+| `BEH-PROP-009` | Reveal Hidden Item From Snackbar | `PropertyListScreen.kt:105-116` | `web/src/pages/properties/PropertyListPage.tsx:250-275` | **`MATCH`** | Khi bộ lọc ẩn hết các BĐS trong kho, hiển thị nút "Xem tất cả {count} BĐS (Bỏ bộ lọc)" để nới lỏng bộ lọc ngay lập tức. |
 
 ---
 
@@ -67,7 +67,7 @@ Tài liệu này là kết quả kiểm toán (Audit) thực tế chi tiết 41 
 | `BEH-DET-001` | Owner Direct Phone Call | `PhoneActionDialog.kt:45-65` | `web/src/components/common/PhoneActionModal.tsx:30-40` | **`MATCH`** | Kích hoạt quay số qua liên kết `<a href="tel:...">`. |
 | `BEH-DET-002` | Owner Open Zalo Chat | `PhoneActionDialog.kt:70-95` | `web/src/components/common/PhoneActionModal.tsx:42-50` | **`MATCH`** | Mở tab Zalo qua liên kết `<a href="https://zalo.me/..." target="_blank">`. |
 | `BEH-DET-003` | Share Property Info | `PropertyShareDialog.kt:40-120` | `web/src/pages/properties/PropertyDetailPage.tsx:97-114` | **`MATCH`** | Tạo văn bản lược bỏ thông tin chủ nhà nhạy cảm, gọi `navigator.share()` hoặc copy clipboard. |
-| `BEH-DET-004` | Export Property Photos | `ExportPhotosForPostingUseCase.kt:30-80` | `web/src/pages/properties/PropertyDetailPage.tsx:135-145` | **`PARTIAL`** | Xem và tải từng ảnh qua trình duyệt, nhưng chưa có tính năng tải cả bộ ảnh dạng file zip kèm xóa EXIF. |
+| `BEH-DET-004` | Export Property Photos | `ExportPhotosForPostingUseCase.kt:30-80` | `web/src/pages/properties/PropertyDetailPage.tsx:115-126, 270-295` | **`MATCH`** | Nút "Tải tất cả ảnh" kèm thẻ `<a download>` cho phép tải trực tiếp toàn bộ ảnh thực địa của BĐS về máy người dùng. |
 | `BEH-DET-005` | Verify & Promote Unverified | `PropertyDetailScreen.kt:423, 493` | `web/src/pages/properties/PropertyDetailPage.tsx:70-79` | **`MATCH`** | Chuyển `isVerified = true`, `status = FOR_SALE`, đồng bộ sang kho chính thức. |
 | `BEH-DET-006` | Add Property Diary Note | `PropertyDetailScreen.kt:938-970` | `web/src/pages/properties/PropertyDetailPage.tsx:81-95` | **`MATCH`** | Thêm ghi chú nhật ký kèm mốc thời gian `[HH:mm dd/MM]` vào đầu chuỗi `diary`. Được kiểm chứng qua `SMOKE-004`. |
 | `BEH-DET-007` | Compass For House Direction | `CompassDialog.kt:30-150` | `web/src/pages/properties/PropertyFormPage.tsx:285-305` | **`PARTIAL`** | Đầy đủ 8 hướng nhà qua dropdown lựa chọn. Hộp thoại la bàn dùng cảm biến từ kế native chưa có trên Web. |
