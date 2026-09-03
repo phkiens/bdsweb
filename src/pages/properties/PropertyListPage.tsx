@@ -34,9 +34,7 @@ export const PropertyListPage: React.FC = () => {
   // Reactive query from Dexie IndexedDB
   const properties = useLiveQuery(async () => {
     return await db.properties
-      .where("isDeleted")
-      .equals(0 as any)
-      .and((p) => p.isVerified)
+      .filter((p) => !p.isDeleted && p.isVerified)
       .reverse()
       .sortBy("updatedAt");
   }, []);

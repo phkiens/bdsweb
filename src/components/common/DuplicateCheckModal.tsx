@@ -39,10 +39,8 @@ export const DuplicateCheckModal: React.FC<DuplicateCheckModalProps> = ({
 
     // Truy vấn Room / Dexie DB theo dung sai 0.000005
     const results = await db.properties
-      .where("isDeleted")
-      .equals(0 as any)
-      .and((p) => {
-        if (p.latitude === null || p.longitude === null) return false;
+      .filter((p) => {
+        if (p.isDeleted || p.latitude === null || p.longitude === null) return false;
         return (
           Math.abs(p.latitude - lat) <= COORD_DELTA &&
           Math.abs(p.longitude - lng) <= COORD_DELTA

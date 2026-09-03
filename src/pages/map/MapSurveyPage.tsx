@@ -43,8 +43,7 @@ export const MapSurveyPage: React.FC = () => {
 
   const properties = useLiveQuery(async () => {
     return await db.properties
-      .where("isDeleted")
-      .equals(0 as any)
+      .filter((p) => !p.isDeleted)
       .toArray();
   }, []);
 
