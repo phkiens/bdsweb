@@ -16,6 +16,7 @@ import { SettingsPage } from "./pages/settings/SettingsPage";
 import { ApiConfigPage } from "./pages/settings/ApiConfigPage";
 import { SyncHistoryPage } from "./pages/settings/SyncHistoryPage";
 import { PermissionOnboardingPage } from "./pages/onboarding/PermissionOnboardingPage";
+import { ScrollRestoration } from "./components/layout/ScrollRestoration";
 import { settingsManager } from "./data/local/settings-manager";
 import { syncManager } from "./data/sync/sync-manager";
 
@@ -43,6 +44,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+      <ScrollRestoration />
       <OfflineBanner />
 
       {!isOnboarding && (

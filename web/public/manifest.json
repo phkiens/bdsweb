@@ -1,0 +1,57 @@
+{
+  "name": "BĐS Collector Web",
+  "short_name": "BĐS Collector",
+  "description": "Ứng dụng quản lý bất động sản thực địa dành cho môi giới BĐS Việt Nam",
+  "start_url": "/properties",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Kiểm tra trùng",
+      "short_name": "Kiểm tra trùng",
+      "description": "Kiểm tra trùng vị trí BĐS theo tọa độ",
+      "url": "/properties?action=check_duplicate",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Thêm BĐS chính thức",
+      "short_name": "Thêm BĐS",
+      "description": "Nhập bất động sản mới vào kho",
+      "url": "/properties/new",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Thêm tin chờ",
+      "short_name": "Tin chờ",
+      "description": "Lưu tin chờ duyệt khảo sát",
+      "url": "/properties/new?isVerified=false",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Khách hàng CRM",
+      "short_name": "Khách hàng",
+      "description": "Danh sách khách hàng và nhu cầu",
+      "url": "/customers",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ],
+  "share_target": {
+    "action": "/unverified",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}

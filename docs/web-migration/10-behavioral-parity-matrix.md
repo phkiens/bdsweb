@@ -8,8 +8,8 @@ Tài liệu này là kết quả kiểm toán (Audit) thực tế chi tiết 41 
 
 | Trạng thái | Số lượng | Tỷ lệ | Định nghĩa |
 | :--- | :---: | :---: | :--- |
-| **`MATCH`** | **34** | **82.9%** | Hành vi trên Web tương đương 100% logic của Android Native (được kiểm chứng qua Unit / E2E test). |
-| **`PARTIAL`** | **5** | **12.2%** | Đã triển khai logic cốt lõi trên Web nhưng còn khác biệt do đặc thù nền tảng trình duyệt (Web Share Target, AlarmManager đóng tab, la bàn cảm biến). |
+| **`MATCH`** | **36** | **87.8%** | Hành vi trên Web tương đương 100% logic của Android Native (được kiểm chứng qua Unit / E2E test). |
+| **`PARTIAL`** | **3** | **7.3%** | Đã triển khai logic cốt lõi trên Web nhưng còn khác biệt do đặc thù nền tảng trình duyệt (AlarmManager đóng tab, la bàn cảm biến, export zip). |
 | **`MISSING`** | **2** | **4.9%** | Tính năng native đặc thù chưa đưa lên Web (kéo ngang nút FAB, snackbar tự mở rộng bộ lọc). |
 | **`UNKNOWN`** | **0** | **0.0%** | Toàn bộ 41 mã hành vi đều đã được định vị bằng chứng rõ ràng trong mã nguồn. |
 | **TỔNG CỘNG** | **41** | **100%** | |
@@ -23,11 +23,11 @@ Tài liệu này là kết quả kiểm toán (Audit) thực tế chi tiết 41 
 | Mã ID | Tên hành vi | Android Native Reference | Web Implementation Reference | Trạng thái | Ghi chú bằng chứng |
 | :--- | :--- | :--- | :--- | :---: | :--- |
 | `BEH-NAV-001` | App Launch & Route Determination | `MainActivity.kt:117-166` | `web/src/App.tsx:54-65` | **`MATCH`** | Kiểm tra `hasShownOnboarding` trong `SettingsManager`. Chưa xong sang `/onboarding`, đã xong sang `/properties`. Được kiểm chứng qua `SMOKE-001`. |
-| `BEH-NAV-002` | Bottom Navigation Tab Switch | `MainActivity.kt:243-288` | `web/src/components/layout/Navbar.tsx:20-26, 80-109` | **`PARTIAL`** | Đầy đủ 5 tab điều hướng Material 3. Tuy nhiên, Web SPA unmount component khi đổi route nên chưa duy trì vị trí cuộn trang (scroll preservation) khi quay lại. |
-| `BEH-NAV-003` | Shortcut Check Duplicate | `MainActivity.kt:100-115, 190-197` | `web/src/App.tsx:24, 49`, `Navbar.tsx:61-68` | **`MATCH`** | Mở `DuplicateCheckModal` trực tiếp từ nút trên Navbar và hỗ trợ URL query `?action=check_duplicate`. Được kiểm chứng qua `SMOKE-010`. |
-| `BEH-NAV-004` | Shortcut Add Property | `MainActivity.kt:198-201` | `web/src/components/layout/Navbar.tsx:70-76`, `PropertyFormPage.tsx:43` | **`MATCH`** | Điều hướng `/properties/new`, form khởi tạo mặc định `isVerified = true`. |
-| `BEH-NAV-005` | Shortcut Add Unverified | `MainActivity.kt:202-205` | `web/src/pages/unverified/UnverifiedListPage.tsx:88`, `PropertyFormPage.tsx:43` | **`MATCH`** | Điều hướng `/properties/new?isVerified=false`, form khởi tạo `isVerified = false`. |
-| `BEH-NAV-006` | Share Text Intent Receiver | `MainActivity.kt:136-139` | `web/src/pages/unverified/UnverifiedListPage.tsx:23, 90-130` | **`PARTIAL`** | Có modal nhập văn bản nhanh và nút bóc tách trên UI, nhưng thiếu khai báo Web Share Target trong `manifest.json`. |
+| `BEH-NAV-002` | Bottom Navigation Tab Switch | `MainActivity.kt:243-288` | `web/src/components/layout/Navbar.tsx`, `ScrollRestoration.tsx` | **`MATCH`** | Đầy đủ 5 tab điều hướng Material 3; component `ScrollRestoration` tự động ghi nhớ và khôi phục vị trí cuộn qua `sessionStorage`. |
+| `BEH-NAV-003` | Shortcut Check Duplicate | `MainActivity.kt:100-115, 190-197` | `web/src/App.tsx:24, 49`, `Navbar.tsx:61-68`, `manifest.json` | **`MATCH`** | Mở `DuplicateCheckModal` qua Navbar, URL query `?action=check_duplicate` và PWA App Shortcut. Được kiểm chứng qua `SMOKE-010`. |
+| `BEH-NAV-004` | Shortcut Add Property | `MainActivity.kt:198-201` | `web/src/components/layout/Navbar.tsx:70-76`, `manifest.json` | **`MATCH`** | Điều hướng `/properties/new`, form khởi tạo mặc định `isVerified = true`. Hỗ trợ PWA shortcut. |
+| `BEH-NAV-005` | Shortcut Add Unverified | `MainActivity.kt:202-205` | `web/src/pages/unverified/UnverifiedListPage.tsx:88`, `manifest.json` | **`MATCH`** | Điều hướng `/properties/new?isVerified=false`, form khởi tạo `isVerified = false`. Hỗ trợ PWA shortcut. |
+| `BEH-NAV-006` | Share Text Intent Receiver | `MainActivity.kt:136-139` | `web/public/manifest.json`, `UnverifiedListPage.tsx:24-35` | **`MATCH`** | Khai báo Web Share Target trong `manifest.json`, tự động bắt `text`/`title`/`url` điền vào modal trích xuất. Được kiểm chứng qua `SMOKE-011` và `pwa.test.ts`. |
 | `BEH-NAV-007` | Deep Link Open Property | `MainActivity.kt:168-171` | `web/src/App.tsx:70`, `PropertyDetailPage.tsx:32` | **`MATCH`** | Route `/properties/:id` tải và render trực tiếp bản ghi từ IndexedDB. Được kiểm chứng qua `SMOKE-004`. |
 
 ---
