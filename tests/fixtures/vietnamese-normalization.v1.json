@@ -1,0 +1,152 @@
+{
+  "version": "1.0",
+  "contract": "vietnamese-normalization",
+  "name_cases": [
+    {
+      "id": "NAME-001",
+      "description": "Chuỗi rỗng",
+      "input": "",
+      "expected": ""
+    },
+    {
+      "id": "NAME-002",
+      "description": "Chỉ có khoảng trắng đầu cuối",
+      "input": "   ",
+      "expected": ""
+    },
+    {
+      "id": "NAME-003",
+      "description": "Chữ hoa Đ và dấu ngã/huyền (Đà Nẵng)",
+      "input": "ĐÀ NẴNG",
+      "expected": "da nang"
+    },
+    {
+      "id": "NAME-004",
+      "description": "Chữ thường đ và dấu sắc (đống đa)",
+      "input": "đống đa",
+      "expected": "dong da"
+    },
+    {
+      "id": "NAME-005",
+      "description": "Tên người đầy đủ có dấu (Nguyễn Văn Bình)",
+      "input": "Nguyễn Văn Bình",
+      "expected": "nguyen van binh"
+    },
+    {
+      "id": "NAME-006",
+      "description": "Địa chỉ có ký tự đặc biệt, dấu chấm phẩy (P. 25, Q. Bình Thạnh)",
+      "input": "P. 25, Q. Bình Thạnh (TP.HCM)",
+      "expected": "p. 25, q. binh thanh (tp.hcm)"
+    },
+    {
+      "id": "NAME-007",
+      "description": "Các nguyên âm tiếng Việt phức hợp (Hoàng Diệu, Phường Cầu Ông Lãnh)",
+      "input": "Hoàng Diệu, Phường Cầu Ông Lãnh",
+      "expected": "hoang dieu, phuong cau ong lanh"
+    },
+    {
+      "id": "NAME-008",
+      "description": "Khoảng trắng thừa ở đầu và cuối chuỗi",
+      "input": "   Trần Hưng Đạo   ",
+      "expected": "tran hung dao"
+    }
+  ],
+  "phone_cases": [
+    {
+      "id": "PHONE-001",
+      "description": "Chuỗi rỗng",
+      "input": "",
+      "expected": ""
+    },
+    {
+      "id": "PHONE-002",
+      "description": "Khoảng trắng thừa",
+      "input": "   ",
+      "expected": ""
+    },
+    {
+      "id": "PHONE-003",
+      "description": "Dạng chuẩn 10 số bắt đầu bằng 0",
+      "input": "0909123456",
+      "expected": "0909123456"
+    },
+    {
+      "id": "PHONE-004",
+      "description": "Dạng quốc tế +84 di động",
+      "input": "+84909123456",
+      "expected": "0909123456"
+    },
+    {
+      "id": "PHONE-005",
+      "description": "Dạng 84 không dấu cộng",
+      "input": "84912345678",
+      "expected": "0912345678"
+    },
+    {
+      "id": "PHONE-006",
+      "description": "Đầu số 84 với mạng Viettel 038",
+      "input": "84381234567",
+      "expected": "0381234567"
+    },
+    {
+      "id": "PHONE-007",
+      "description": "Đầu số 84 với mạng Mobifone 077",
+      "input": "84771234567",
+      "expected": "0771234567"
+    },
+    {
+      "id": "PHONE-008",
+      "description": "Đầu số 84 với mạng Vietnamobile 058",
+      "input": "84581234567",
+      "expected": "0581234567"
+    },
+    {
+      "id": "PHONE-009",
+      "description": "Đầu số 84 với mạng Vinaphone 089",
+      "input": "84891234567",
+      "expected": "0891234567"
+    },
+    {
+      "id": "PHONE-010",
+      "description": "Thiếu số 0 ở đầu (9 số đầu 9)",
+      "input": "909123456",
+      "expected": "0909123456"
+    },
+    {
+      "id": "PHONE-011",
+      "description": "Thiếu số 0 ở đầu (9 số đầu 3)",
+      "input": "381234567",
+      "expected": "0381234567"
+    },
+    {
+      "id": "PHONE-012",
+      "description": "Số điện thoại có dấu chấm phân cách",
+      "input": "090.912.3456",
+      "expected": "0909123456"
+    },
+    {
+      "id": "PHONE-013",
+      "description": "Số điện thoại có dấu gạch ngang",
+      "input": "090-912-3456",
+      "expected": "0909123456"
+    },
+    {
+      "id": "PHONE-014",
+      "description": "Số điện thoại có dấu ngoặc đơn và khoảng trắng",
+      "input": "(+84) 90 912 3456",
+      "expected": "0909123456"
+    },
+    {
+      "id": "PHONE-015",
+      "description": "Số cố định bắt đầu bằng 84 nhưng không phải đầu số di động 35789",
+      "input": "84243123456",
+      "expected": "84243123456"
+    },
+    {
+      "id": "PHONE-016",
+      "description": "Số tổng đài ngắn",
+      "input": "19001000",
+      "expected": "19001000"
+    }
+  ]
+}
