@@ -19,6 +19,7 @@ import { PropertyStatus, PropertyType, Direction } from "../../core/models/enums
 import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
 import { parseVietnamCoordinates } from "../../core/utils/coordinates";
 import { syncManager } from "../../data/sync/sync-manager";
+import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 
 export const PropertyFormPage: React.FC = () => {
   const navigate = useNavigate();
@@ -191,6 +192,9 @@ export const PropertyFormPage: React.FC = () => {
       } else {
         await db.properties.add(updated);
       }
+
+      // Tự động tạo/liên kết hồ sơ Chủ nhà (OWNER) theo đúng chuẩn Android
+      await ensureCustomerForProperty(db, updated, paramCustomerId);
 
       // Kích hoạt đồng bộ ngầm nếu online
       syncManager.pushChanges();
