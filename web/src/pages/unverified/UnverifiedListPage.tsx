@@ -17,6 +17,7 @@ import { createDefaultProperty } from "../../core/models/property";
 import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
 import { parseVietnamCoordinates } from "../../core/utils/coordinates";
 import { nowTimestamp } from "../../core/utils/date";
+import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 
 export const UnverifiedListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -42,12 +43,15 @@ export const UnverifiedListPage: React.FC = () => {
   }, []);
 
   const handleVerify = async (p: Property) => {
-    await db.properties.update(p.id, {
+    const updated = {
+      ...p,
       isVerified: true,
       status: PropertyStatus.FOR_SALE,
       updatedAt: nowTimestamp(),
       isTextSynced: false
-    });
+    };
+    await db.properties.put(updated);
+    await ensureCustomerForProperty(db, updated);
     syncManager.pushChanges();
   };
 

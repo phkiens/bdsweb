@@ -20,6 +20,7 @@ import { PropertyStatus } from "../../core/models/enums";
 import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
+import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -69,14 +70,17 @@ export const PropertyDetailPage: React.FC = () => {
   };
 
   const handleVerify = async () => {
-    await db.properties.update(property.id, {
+    const updated = {
+      ...property,
       isVerified: true,
       status: PropertyStatus.FOR_SALE,
       updatedAt: Date.now(),
       isTextSynced: false
-    });
+    };
+    await db.properties.put(updated);
+    await ensureCustomerForProperty(db, updated);
     syncManager.pushChanges();
-    alert("Đã xác thực BĐS thành công và chuyển sang danh mục chính thức!");
+    alert("Đã xác thực BĐS thành công và đồng bộ hồ sơ chủ nhà!");
   };
 
   const handleAddDiary = async () => {
