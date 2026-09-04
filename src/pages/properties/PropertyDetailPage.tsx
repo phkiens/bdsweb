@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -13,7 +13,12 @@ import {
   AlertTriangle,
   Sparkles,
   Plus,
-  Download
+  Download,
+  BookOpen,
+  UserCheck,
+  UserPlus,
+  ChevronRight,
+  Clock
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { PropertyStatus } from "../../core/models/enums";
@@ -21,6 +26,11 @@ import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
 import { ensureCustomerForProperty } from "../../core/services/customer-linker";
+import {
+  buildMergedActivityTimeline,
+  formatDiaryEntry
+} from "../../core/engine/activity-timeline-engine";
+import { AddViewingModal } from "./AddViewingModal";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +39,8 @@ export const PropertyDetailPage: React.FC = () => {
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
   const [diaryInput, setDiaryInput] = useState("");
   const [showAddDiary, setShowAddDiary] = useState(false);
+  const [showAddViewingModal, setShowAddViewingModal] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<"ALL" | "DIARY" | "VIEWING">("ALL");
   const [activeTab, setActiveTab] = useState<"detail" | "diary" | "matches">("detail");
 
   const property = useLiveQuery(() => (id ? db.properties.get(id) : undefined), [id]);
@@ -37,6 +49,51 @@ export const PropertyDetailPage: React.FC = () => {
       .filter((c) => !c.isDeleted)
       .toArray()
   );
+  const propertyLinks = useLiveQuery(
+    async () =>
+      id
+        ? await db.customer_property_links
+            .where("propertyId")
+            .equals(id)
+            .filter((l) => !l.isDeleted)
+            .toArray()
+        : [],
+    [id]
+  );
+
+  const customersMap = useMemo(
+    () => new Map((activeCustomers || []).map((c) => [c.id, c])),
+    [activeCustomers]
+  );
+
+  const existingLinkedCustomerIds = useMemo(
+    () => new Set((propertyLinks || []).map((l) => l.customerId)),
+    [propertyLinks]
+  );
+
+  const mergedActivityItems = useMemo(
+    () => buildMergedActivityTimeline(property?.diary, propertyLinks || [], customersMap),
+    [property?.diary, propertyLinks, customersMap]
+  );
+
+  const diaryCount = useMemo(
+    () => mergedActivityItems.filter((item) => item.type === "DIARY").length,
+    [mergedActivityItems]
+  );
+  const viewingCount = useMemo(
+    () => mergedActivityItems.filter((item) => item.type === "VIEWING").length,
+    [mergedActivityItems]
+  );
+
+  const displayedActivityItems = useMemo(() => {
+    if (activityFilter === "DIARY") {
+      return mergedActivityItems.filter((i) => i.type === "DIARY");
+    }
+    if (activityFilter === "VIEWING") {
+      return mergedActivityItems.filter((i) => i.type === "VIEWING");
+    }
+    return mergedActivityItems;
+  }, [mergedActivityItems, activityFilter]);
 
   if (!property) {
     return (
@@ -85,9 +142,7 @@ export const PropertyDetailPage: React.FC = () => {
 
   const handleAddDiary = async () => {
     if (!diaryInput.trim()) return;
-    const now = new Date();
-    const timeStr = `${now.getHours()}:${now.getMinutes()} ${now.getDate()}/${now.getMonth() + 1}`;
-    const newEntry = `[${timeStr}] ${diaryInput.trim()}`;
+    const newEntry = formatDiaryEntry(diaryInput.trim());
     const updatedDiary = property.diary ? `${newEntry}\n${property.diary}` : newEntry;
 
     await db.properties.update(property.id, {
@@ -95,8 +150,19 @@ export const PropertyDetailPage: React.FC = () => {
       updatedAt: Date.now(),
       isTextSynced: false
     });
+    syncManager.pushChanges();
     setDiaryInput("");
     setShowAddDiary(false);
+  };
+
+  const handleDeleteViewing = async (customerId: string, customerName: string) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa lượt xem nhà của ${customerName}?`)) return;
+    await db.customer_property_links.update([customerId, property.id], {
+      isDeleted: true,
+      updatedAt: Date.now(),
+      isSynced: false
+    });
+    syncManager.pushChanges();
   };
 
   const handleShare = async () => {
@@ -319,13 +385,20 @@ export const PropertyDetailPage: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab("diary")}
-          className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors ${
+          className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
             activeTab === "diary"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
-          Nhật ký làm việc
+          <span>Nhật ký & Xem nhà</span>
+          <span
+            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === "diary" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {mergedActivityItems.length}
+          </span>
         </button>
         <button
           onClick={() => setActiveTab("matches")}
@@ -381,42 +454,95 @@ export const PropertyDetailPage: React.FC = () => {
               </p>
             </div>
           )}
+
+          {/* Activity Preview Card */}
+          <div
+            onClick={() => setActiveTab("diary")}
+            className="p-3.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl cursor-pointer transition-colors flex items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                  <span>Nhật ký & Xem nhà</span>
+                  <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">
+                    {mergedActivityItems.length}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                  {mergedActivityItems.length > 0 ? (
+                    mergedActivityItems[0].type === "DIARY" ? (
+                      <span>
+                        {mergedActivityItems[0].displayDate && `${mergedActivityItems[0].displayDate} · `}
+                        {mergedActivityItems[0].text}
+                      </span>
+                    ) : (
+                      <span>
+                        {mergedActivityItems[0].displayDate && `${mergedActivityItems[0].displayDate} · `}
+                        Khách {mergedActivityItems[0].customerName} xem nhà
+                      </span>
+                    )
+                  ) : (
+                    "Chưa có ghi chép nhật ký hoặc lượt dẫn khách"
+                  )}
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+          </div>
         </div>
       )}
 
-      {/* Tab 2: Diary */}
+      {/* Tab 2: Merged Activity (Diary + Customer Viewings) */}
       {activeTab === "diary" && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-slate-800">Lịch sử nhật ký</h4>
-            <button
-              onClick={() => setShowAddDiary(true)}
-              className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Thêm nhật ký</span>
-            </button>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-800">Nhật ký & Lịch sử xem nhà</h4>
+              <p className="text-[11px] text-slate-500">
+                Tổng hợp {mergedActivityItems.length} mốc hoạt động thực địa và dẫn khách
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAddDiary(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Thêm nhật ký</span>
+              </button>
+              <button
+                onClick={() => setShowAddViewingModal(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Khách xem nhà</span>
+              </button>
+            </div>
           </div>
 
           {showAddDiary && (
-            <div className="p-3 bg-white border border-blue-200 rounded-xl space-y-2">
+            <div className="p-3.5 bg-white border border-blue-200 rounded-2xl shadow-xs space-y-2 animate-in fade-in duration-150">
+              <div className="text-xs font-semibold text-slate-700">Ghi chú nhật ký mới</div>
               <textarea
-                rows={2}
+                rows={3}
                 value={diaryInput}
                 onChange={(e) => setDiaryInput(e.target.value)}
-                placeholder="Nhập ghi chú xem nhà, đàm phán giá..."
-                className="w-full text-xs md:text-sm p-2 bg-slate-50 border border-slate-200 rounded-lg outline-hidden"
+                placeholder="Nhập ghi chép thực địa, đàm phán giá, tình trạng chủ nhà..."
+                className="w-full text-xs md:text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-hidden focus:bg-white focus:border-blue-500 transition-colors"
               />
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setShowAddDiary(false)}
-                  className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   onClick={handleAddDiary}
-                  className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
                 >
                   Lưu nhật ký
                 </button>
@@ -424,15 +550,149 @@ export const PropertyDetailPage: React.FC = () => {
             </div>
           )}
 
-          {property.diary ? (
-            <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-              <pre className="text-xs md:text-sm font-sans text-slate-700 whitespace-pre-wrap leading-relaxed">
-                {property.diary}
-              </pre>
+          {/* Quick Filter Chips */}
+          <div className="flex items-center gap-1.5 pb-1 overflow-x-auto">
+            <button
+              onClick={() => setActivityFilter("ALL")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                activityFilter === "ALL"
+                  ? "bg-slate-800 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              Tất cả ({mergedActivityItems.length})
+            </button>
+            <button
+              onClick={() => setActivityFilter("DIARY")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 ${
+                activityFilter === "DIARY"
+                  ? "bg-blue-600 text-white"
+                  : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+              }`}
+            >
+              <BookOpen className="w-3 h-3" />
+              <span>Nhật ký ({diaryCount})</span>
+            </button>
+            <button
+              onClick={() => setActivityFilter("VIEWING")}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 ${
+                activityFilter === "VIEWING"
+                  ? "bg-purple-600 text-white"
+                  : "bg-purple-50 text-purple-700 hover:bg-purple-100"
+              }`}
+            >
+              <UserCheck className="w-3 h-3" />
+              <span>Khách xem nhà ({viewingCount})</span>
+            </button>
+          </div>
+
+          {/* Activity Timeline List */}
+          {displayedActivityItems.length === 0 ? (
+            <div className="text-center py-12 px-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2">
+              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                <Clock className="w-5 h-5" />
+              </div>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                {activityFilter === "ALL"
+                  ? "Chưa có ghi chép nhật ký hoặc lượt dẫn khách xem nhà nào cho BĐS này."
+                  : activityFilter === "DIARY"
+                  ? "Chưa có nhật ký ghi chép thực địa."
+                  : "Chưa có lịch sử dẫn khách xem nhà."}
+              </p>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                <button
+                  onClick={() => setShowAddDiary(true)}
+                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Thêm nhật ký
+                </button>
+                <button
+                  onClick={() => setShowAddViewingModal(true)}
+                  className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Thêm khách xem nhà
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="text-center py-8 text-xs text-slate-400 bg-white border border-slate-200 rounded-2xl">
-              Chưa có ghi chép nhật ký nào cho BĐS này.
+            <div className="space-y-2.5">
+              {displayedActivityItems.map((item) => {
+                if (item.type === "DIARY") {
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-3.5 bg-white border border-blue-100 rounded-2xl shadow-2xs hover:border-blue-200 transition-colors flex items-start gap-3"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+                        <BookOpen className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                            Nhật ký
+                          </span>
+                          {item.displayDate && (
+                            <span className="text-[11px] font-semibold text-slate-500">
+                              {item.displayDate}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs md:text-sm text-slate-700 whitespace-pre-line leading-relaxed">
+                          {item.text}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={item.id}
+                    className="p-3.5 bg-white border border-purple-100 rounded-2xl shadow-2xs hover:border-purple-200 transition-colors flex items-start justify-between gap-3"
+                  >
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 mt-0.5">
+                        <UserCheck className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">
+                            Khách xem nhà
+                          </span>
+                          {item.displayDate && (
+                            <span className="text-[11px] font-semibold text-slate-500">
+                              {item.displayDate}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            onClick={() => navigate(`/customers/${item.customerId}`)}
+                            className="text-xs md:text-sm font-bold text-slate-800 hover:text-purple-700 underline decoration-dotted transition-colors cursor-pointer"
+                          >
+                            {item.customerName}
+                          </button>
+                          {item.customerPhone && (
+                            <span className="text-[11px] text-slate-400">({item.customerPhone})</span>
+                          )}
+                        </div>
+                        {item.note && (
+                          <p className="text-xs text-slate-600 mt-1.5 bg-slate-50 p-2 rounded-xl leading-relaxed">
+                            {item.note}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteViewing(item.customerId, item.customerName)}
+                      className="text-slate-300 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors shrink-0 cursor-pointer"
+                      title="Xóa lượt xem nhà này"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -501,6 +761,17 @@ export const PropertyDetailPage: React.FC = () => {
         phoneNumber={phoneModalNumber || ""}
         isOpen={Boolean(phoneModalNumber)}
         onClose={() => setPhoneModalNumber(null)}
+      />
+
+      {/* Add Customer Viewing Modal */}
+      <AddViewingModal
+        isOpen={showAddViewingModal}
+        onClose={() => setShowAddViewingModal(false)}
+        propertyId={property.id}
+        propertyArea={property.area}
+        activeCustomers={activeCustomers || []}
+        existingLinkedCustomerIds={existingLinkedCustomerIds}
+        onSuccess={() => {}}
       />
     </div>
   );
