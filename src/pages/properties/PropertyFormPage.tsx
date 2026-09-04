@@ -11,7 +11,8 @@ import {
   Building,
   User,
   AlertCircle,
-  Compass
+  Compass,
+  CheckCircle2
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { createDefaultProperty, Property } from "../../core/models/property";
@@ -20,6 +21,7 @@ import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietn
 import { parseVietnamCoordinates } from "../../core/utils/coordinates";
 import { syncManager } from "../../data/sync/sync-manager";
 import { ensureCustomerForProperty } from "../../core/services/customer-linker";
+import { checkVerificationReadiness } from "../../core/engine/verification-engine";
 
 export const PropertyFormPage: React.FC = () => {
   const navigate = useNavigate();
@@ -48,6 +50,8 @@ export const PropertyFormPage: React.FC = () => {
   const [quickText, setQuickText] = useState("");
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const isOpenForVerify = searchParams.get("openForVerify") === "true";
+  const readiness = checkVerificationReadiness(formData);
 
   useEffect(() => {
     if (isEditMode && id) {
@@ -188,11 +192,19 @@ export const PropertyFormPage: React.FC = () => {
     setSaving(true);
     try {
       const now = Date.now();
+      const shouldVerify = isOpenForVerify || formData.isVerified;
+      const resolvedStatus =
+        shouldVerify && formData.status === PropertyStatus.PENDING_SURVEY
+          ? PropertyStatus.FOR_SALE
+          : formData.status;
+
       const updated: Property = {
         ...formData,
         area: toTitleCase(formData.area),
         ownerPhone: canonicalizeVietnamesePhone(formData.ownerPhone),
         imagePath: previewImages.length > 0 ? previewImages.join("|||") : null,
+        isVerified: shouldVerify,
+        status: resolvedStatus,
         updatedAt: now,
         lastEditedAt: now,
         isTextSynced: false
@@ -240,19 +252,53 @@ export const PropertyFormPage: React.FC = () => {
         </button>
 
         <h2 className="font-bold text-slate-800 text-base md:text-lg">
-          {isEditMode ? "Chỉnh sửa BĐS" : formData.isVerified ? "Thêm BĐS mới" : "Thêm tin chờ duyệt"}
+          {isOpenForVerify
+            ? "Phê duyệt BĐS chính"
+            : isEditMode
+            ? "Chỉnh sửa BĐS"
+            : formData.isVerified
+            ? "Thêm BĐS mới"
+            : "Thêm tin chờ duyệt"}
         </h2>
 
         <button
           type="button"
           onClick={handleSubmit}
           disabled={saving}
-          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors disabled:opacity-50"
+          className={`flex items-center gap-1.5 px-4 py-2 font-medium text-xs rounded-xl shadow-xs transition-colors disabled:opacity-50 text-white ${
+            isOpenForVerify
+              ? "bg-emerald-600 hover:bg-emerald-700"
+              : "bg-blue-600 hover:bg-blue-700"
+          }`}
         >
-          <Save className="w-4 h-4" />
-          <span>{saving ? "Đang lưu..." : "Lưu BĐS"}</span>
+          {isOpenForVerify ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+          <span>{saving ? "Đang lưu..." : isOpenForVerify ? "Phê duyệt BĐS" : "Lưu BĐS"}</span>
         </button>
       </div>
+
+      {isOpenForVerify && (
+        <div className="mb-5 p-4 bg-emerald-50/90 border border-emerald-200 rounded-2xl space-y-2">
+          <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wider">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Chế độ phê duyệt BĐS thực địa</span>
+          </div>
+          <p className="text-xs text-emerald-700 leading-relaxed">
+            Vui lòng rà soát lại thông tin AI trích xuất, đo tọa độ GPS, chụp ảnh thực tế và kiểm tra số điện thoại chủ nhà trước khi phê duyệt đưa vào kho hàng chính thức.
+          </p>
+          {!readiness.isReady && (
+            <div className="pt-2 border-t border-emerald-100 flex flex-wrap gap-1.5">
+              {readiness.warnings.map((w, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-0.5 rounded-md bg-amber-100/90 text-amber-800 text-[11px] font-medium"
+                >
+                  ⚠ {w}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-xs md:text-sm">
@@ -550,10 +596,20 @@ export const PropertyFormPage: React.FC = () => {
           <button
             type="submit"
             disabled={saving}
-            className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2"
+            className={`flex-1 py-3 text-white text-sm font-semibold rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 ${
+              isOpenForVerify
+                ? "bg-emerald-600 hover:bg-emerald-700"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
           >
-            <Save className="w-4 h-4" />
-            <span>{saving ? "Đang lưu..." : "Lưu Bất Động Sản"}</span>
+            {isOpenForVerify ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            <span>
+              {saving
+                ? "Đang lưu..."
+                : isOpenForVerify
+                ? "Phê duyệt & Đưa vào kho chính"
+                : "Lưu Bất Động Sản"}
+            </span>
           </button>
         </div>
       </form>
