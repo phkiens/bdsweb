@@ -25,7 +25,6 @@ import { PropertyStatus } from "../../core/models/enums";
 import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
-import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 import {
   buildMergedActivityTimeline,
   formatDiaryEntry
@@ -126,18 +125,8 @@ export const PropertyDetailPage: React.FC = () => {
     navigate("/properties");
   };
 
-  const handleVerify = async () => {
-    const updated = {
-      ...property,
-      isVerified: true,
-      status: PropertyStatus.FOR_SALE,
-      updatedAt: Date.now(),
-      isTextSynced: false
-    };
-    await db.properties.put(updated);
-    await ensureCustomerForProperty(db, updated);
-    syncManager.pushChanges();
-    alert("Đã xác thực BĐS thành công và đồng bộ hồ sơ chủ nhà!");
+  const handleVerify = () => {
+    navigate(`/properties/edit/${property.id}?openForVerify=true`);
   };
 
   const handleAddDiary = async () => {

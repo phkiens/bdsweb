@@ -71,6 +71,7 @@ const AppContent: React.FC = () => {
           <Route path="/properties" element={<PropertyListPage />} />
           <Route path="/properties/new" element={<PropertyFormPage />} />
           <Route path="/properties/edit/:id" element={<PropertyFormPage />} />
+          <Route path="/properties/:id/edit" element={<PropertyFormPage />} />
           <Route path="/properties/:id" element={<PropertyDetailPage />} />
 
           {/* Unverified Routes */}

@@ -17,7 +17,6 @@ import { createDefaultProperty } from "../../core/models/property";
 import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
 import { parseVietnamCoordinates } from "../../core/utils/coordinates";
 import { nowTimestamp } from "../../core/utils/date";
-import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 
 export const UnverifiedListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -42,17 +41,8 @@ export const UnverifiedListPage: React.FC = () => {
       .sortBy("updatedAt");
   }, []);
 
-  const handleVerify = async (p: Property) => {
-    const updated = {
-      ...p,
-      isVerified: true,
-      status: PropertyStatus.FOR_SALE,
-      updatedAt: nowTimestamp(),
-      isTextSynced: false
-    };
-    await db.properties.put(updated);
-    await ensureCustomerForProperty(db, updated);
-    syncManager.pushChanges();
+  const handleVerify = (p: Property) => {
+    navigate(`/properties/edit/${p.id}?openForVerify=true`);
   };
 
   const handleDelete = async (id: string) => {

@@ -18,7 +18,7 @@
 | **`PROP-FILTER-ADVANCED-001`** | Bộ lọc BĐS nâng cao (Khoảng giá, diện tích m², hướng nhà, phạm vi) | `CALCULATION`, `DATA_READ` | **P2** | **MATCH (RESOLVED)** |
 | **`MAP-SURVEY-GPS-001`** | Bản đồ: Lọc bán kính thực địa theo GPS và phân biệt màu ghim BĐS | `CALCULATION`, `UI_PRESENTATION` | **P2** | **MATCH (RESOLVED)** |
 | **`PROP-MERGED-ACTIVITY-001`** | Hợp nhất Nhật ký thực địa và Lịch sử dẫn khách xem nhà | `DATA_READ`, `UI_PRESENTATION` | **P2** | **MATCH (RESOLVED)** |
-| **`UNVERIFIED-VERIFY-WIZARD-001`** | Quy trình xác thực tin chờ qua Wizard và tự động liên kết chủ nhà | `STATE_TRANSITION`, `DATA_WRITE` | **P2** | **CONFIRMED** |
+| **`UNVERIFIED-VERIFY-WIZARD-001`** | Quy trình xác thực tin chờ qua Wizard và tự động liên kết chủ nhà | `STATE_TRANSITION`, `DATA_WRITE` | **P2** | **MATCH (RESOLVED)** |
 
 ---
 
@@ -284,8 +284,8 @@
   - Web: `UnverifiedListPage.tsx:L44-L52`
 - **Suspected Layer**: UI Navigation & State Transition
 - **Mức độ**: **P2**
-- **Confidence**: **CONFIRMED**
-- **Recommended Test**: E2E test cho luồng xác minh tin chờ qua form chi tiết.
+- **Trạng thái**: **MATCH (RESOLVED)** - Xem báo cáo [`UNVERIFIED-VERIFY-WIZARD-001.md`](UNVERIFIED-VERIFY-WIZARD-001.md)
+- **Recommended Test**: Unit test `tests/unit/parity/unverified-verify-wizard.test.ts` (6/6 PASS) & Playwright E2E `smoke.spec.ts` (11/11 PASS).
 
 ---
 
