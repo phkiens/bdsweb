@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -12,8 +12,9 @@ import {
   Building2
 } from "lucide-react";
 import { db } from "../../data/local/db";
-import { CustomerPropertyLink } from "../../core/models/customer";
+import { CustomerPropertyLink, isEligibleForMatching } from "../../core/models/customer";
 import { Property } from "../../core/models/property";
+import { CustomerRole } from "../../core/models/enums";
 import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
@@ -23,7 +24,7 @@ export const CustomerDetailPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"matches" | "linked">("matches");
+  const [selectedTab, setSelectedTab] = useState<"matches" | "linked" | null>(null);
 
   const customer = useLiveQuery(() => (id ? db.customers.get(id) : undefined), [id]);
   const properties = useLiveQuery(() =>
@@ -59,6 +60,33 @@ export const CustomerDetailPage: React.FC = () => {
       );
   }, [id]);
 
+  const isOwner = customer ? customer.role === CustomerRole.OWNER : false;
+  const eligibleForMatching = customer ? isEligibleForMatching(customer) : false;
+  const activeTab = selectedTab || (isOwner ? "linked" : "matches");
+
+  // Calculate matched properties ONLY if customer is eligible (BUYER and ACTIVE)
+  const matches = useMemo(() => {
+    if (!eligibleForMatching || !customer || !properties) return [];
+    const matchEngine = new MatchEngine();
+    return properties
+      .map((p) => ({
+        property: p,
+        result: matchEngine.score(customer, p)
+      }))
+      .filter((item) => item.result.score > 0)
+      .sort((a, b) => b.result.score - a.result.score);
+  }, [eligibleForMatching, customer, properties]);
+
+  // Owner property statistics
+  const ownerStats = useMemo(() => {
+    if (!linkedItems) return { totalCount: 0, forSaleCount: 0, soldCount: 0 };
+    const ownerItems = linkedItems.filter((i) => i.link.role === "OWNER");
+    const totalCount = ownerItems.length;
+    const forSaleCount = ownerItems.filter((i) => i.property.status === "Đang bán").length;
+    const soldCount = ownerItems.filter((i) => i.property.status === "Đã bán").length;
+    return { totalCount, forSaleCount, soldCount };
+  }, [linkedItems]);
+
   if (!customer) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -66,16 +94,6 @@ export const CustomerDetailPage: React.FC = () => {
       </div>
     );
   }
-
-  // Calculate matched properties
-  const matchEngine = new MatchEngine();
-  const matches = (properties || [])
-    .map((p) => ({
-      property: p,
-      result: matchEngine.score(customer, p)
-    }))
-    .filter((item) => item.result.score > 0)
-    .sort((a, b) => b.result.score - a.result.score);
 
   const handleDelete = async () => {
     if (!window.confirm("Bạn có chắc muốn xóa khách hàng này?")) return;
@@ -114,8 +132,12 @@ export const CustomerDetailPage: React.FC = () => {
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded-md text-xs font-bold bg-blue-100 text-blue-800">
-                {customer.demandType}
+              <span
+                className={`px-2 py-0.5 rounded-md text-xs font-bold ${
+                  isOwner ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                }`}
+              >
+                {isOwner ? "Chủ nhà ký gửi" : customer.demandType || "Khách tìm mua"}
               </span>
               <span className="text-xs font-mono text-slate-500 font-medium">{customer.phone}</span>
             </div>
@@ -123,10 +145,23 @@ export const CustomerDetailPage: React.FC = () => {
           </div>
 
           <div className="text-right">
-            <div className="text-lg font-black text-blue-700">
-              {customer.priceMin} - {customer.priceMax} tỷ
-            </div>
-            <div className="text-xs text-slate-500">Ngân sách dự kiến</div>
+            {isOwner ? (
+              <div>
+                <div className="text-lg font-black text-amber-700">
+                  {ownerStats.totalCount} BĐS
+                </div>
+                <div className="text-xs text-slate-500">
+                  {ownerStats.forSaleCount} đang bán • {ownerStats.soldCount} đã bán
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="text-lg font-black text-blue-700">
+                  {customer.priceMin} - {customer.priceMax} tỷ
+                </div>
+                <div className="text-xs text-slate-500">Ngân sách dự kiến</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -184,32 +219,41 @@ export const CustomerDetailPage: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 mb-4">
-        <button
-          onClick={() => setActiveTab("matches")}
-          className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
-            activeTab === "matches"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <Sparkles className="w-4 h-4" />
-          <span>BĐS gợi ý phù hợp ({matches.length})</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("linked")}
-          className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors ${
-            activeTab === "linked"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          BĐS đã liên kết ({(linkedItems || []).length})
-        </button>
-      </div>
+      {isOwner ? (
+        <div className="border-b border-slate-200 mb-4 pb-2 flex items-center justify-between">
+          <h2 className="text-sm md:text-base font-bold text-slate-800 flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-amber-600" />
+            <span>Kho BĐS ký gửi của chủ nhà ({(linkedItems || []).length})</span>
+          </h2>
+        </div>
+      ) : (
+        <div className="flex border-b border-slate-200 mb-4">
+          <button
+            onClick={() => setSelectedTab("matches")}
+            className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeTab === "matches"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>BĐS gợi ý phù hợp ({matches.length})</span>
+          </button>
+          <button
+            onClick={() => setSelectedTab("linked")}
+            className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
+              activeTab === "linked"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            BĐS đã liên kết ({(linkedItems || []).length})
+          </button>
+        </div>
+      )}
 
-      {/* Tab Content */}
-      {activeTab === "matches" && (
+      {/* Tab Content for BUYER: Matches */}
+      {!isOwner && activeTab === "matches" && (
         <div className="space-y-3">
           {matches.length === 0 ? (
             <div className="text-center py-10 bg-white border border-slate-200 rounded-2xl text-xs text-slate-400">
@@ -261,12 +305,14 @@ export const CustomerDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tab Linked */}
-      {activeTab === "linked" && (
+      {/* Tab Linked: Hiển thị khi là OWNER hoặc khi BUYER chọn tab linked */}
+      {(isOwner || activeTab === "linked") && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-500 font-medium">
-              Các BĐS sở hữu hoặc đã dẫn khách xem ({linkedItems?.length || 0})
+              {isOwner
+                ? `Danh sách BĐS do chủ nhà gửi bán (${ownerStats.totalCount})`
+                : `Các BĐS sở hữu hoặc đã dẫn khách xem (${linkedItems?.length || 0})`}
             </span>
             <button
               onClick={() =>
@@ -276,10 +322,12 @@ export const CustomerDetailPage: React.FC = () => {
                   )}&ownerPhone=${encodeURIComponent(customer.phone)}`
                 )
               }
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors cursor-pointer ${
+                isOwner ? "bg-amber-600 hover:bg-amber-700" : "bg-blue-600 hover:bg-blue-700"
+              }`}
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Thêm BĐS cho khách này</span>
+              <span>{isOwner ? "Thêm BĐS cho chủ nhà này" : "Thêm BĐS cho khách này"}</span>
             </button>
           </div>
 
