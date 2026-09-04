@@ -156,4 +156,38 @@ describe("ZIP BACKUP & RESTORE (TƯƠNG THÍCH HOÀN TOÀN VỚI ANDROID ZIPHELP
     expect(restoredCust).toBeDefined();
     expect(restoredCust?.name).toBe("Bác Hùng");
   });
+
+  it("nhập unverified_properties.json từ Android và ánh xạ đúng address -> area và area -> areaSize", async () => {
+    const androidZip = new JSZip();
+    androidZip.file("properties.json", JSON.stringify([]));
+    androidZip.file("customers.json", JSON.stringify([]));
+    androidZip.file("customer_property_links.json", JSON.stringify([]));
+    androidZip.file(
+      "unverified_properties.json",
+      JSON.stringify([
+        {
+          id: "android-unv-001",
+          rawText: "Chào bán nhà Mỹ Tranh 42m2 giá 1.95 tỷ",
+          address: "Mỹ Tranh",
+          area: 42, // Trong Android UnverifiedProperty, area là số thực Double diện tích m²
+          price: 1.95,
+          ownerPhone: "0904274143"
+        }
+      ])
+    );
+
+    const zipBlob = await androidZip.generateAsync({ type: "blob" });
+    const file = new File([zipBlob], "android_unv_backup.zip", { type: "application/zip" });
+
+    const result = await importDatabaseFromZip(file, db);
+    expect(result.propertiesCount).toBe(1);
+
+    const restored = await db.properties.get("android-unv-001");
+    expect(restored).toBeDefined();
+    // Địa chỉ phải là "Mỹ Tranh", không được là "42"
+    expect(restored?.area).toBe("Mỹ Tranh");
+    // Diện tích m² phải là 42
+    expect(restored?.areaSize).toBe(42);
+    expect(restored?.isVerified).toBe(false);
+  });
 });

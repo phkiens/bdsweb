@@ -41,6 +41,26 @@ export const UnverifiedListPage: React.FC = () => {
       .sortBy("updatedAt");
   }, []);
 
+  // Tự động chuẩn hóa các tin chờ bị lưu nhầm diện tích m² vào trường area (ví dụ area = "40", "50"...)
+  React.useEffect(() => {
+    if (!unverifiedList || unverifiedList.length === 0) return;
+    const needsHeal = unverifiedList.filter(
+      (p) => !isNaN(Number(p.area)) && Number(p.area) > 0
+    );
+    if (needsHeal.length > 0) {
+      const updates = needsHeal.map((p) => {
+        const num = Number(p.area);
+        const firstLine = p.rawText ? p.rawText.trim().split("\n")[0].slice(0, 60) : "";
+        return {
+          ...p,
+          area: firstLine ? toTitleCase(firstLine) : "Tin chờ khảo sát",
+          areaSize: p.areaSize ?? num
+        };
+      });
+      db.properties.bulkPut(updates);
+    }
+  }, [unverifiedList]);
+
   const handleVerify = (p: Property) => {
     navigate(`/properties/edit/${p.id}?openForVerify=true`);
   };
@@ -149,12 +169,18 @@ export const UnverifiedListPage: React.FC = () => {
                       Chờ duyệt
                     </span>
                     <h3 className="font-semibold text-slate-800 text-sm md:text-base truncate">
-                      {p.area}
+                      {p.area && isNaN(Number(p.area))
+                        ? p.area
+                        : p.rawText
+                        ? p.rawText.trim().split("\n")[0].slice(0, 60)
+                        : "Tin chờ khảo sát"}
                     </h3>
                   </div>
                   <div className="flex items-center gap-3 text-xs text-slate-600 mt-1 font-medium">
                     <span className="text-blue-700 font-bold">{p.price > 0 ? `${p.price} tỷ` : "Chưa rõ giá"}</span>
-                    {p.areaSize && <span>• {p.areaSize} m²</span>}
+                    {(p.areaSize != null || (!isNaN(Number(p.area)) && Number(p.area) > 0)) && (
+                      <span>• {p.areaSize ?? p.area} m²</span>
+                    )}
                     {p.ownerPhone && <span>• SĐT: {p.ownerPhone}</span>}
                   </div>
                 </div>

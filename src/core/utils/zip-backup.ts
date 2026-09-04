@@ -3,6 +3,7 @@ import { AppDatabase } from "../../data/local/db";
 import { Property } from "../../core/models/property";
 import { Customer } from "../../core/models/customer";
 import { CustomerPropertyLink } from "../../core/models/customer";
+import { toTitleCase } from "./vietnamese";
 
 export interface ZipImportResult {
   propertiesCount: number;
@@ -83,7 +84,7 @@ export async function exportDatabaseToZip(
   });
 
   const processedUnverified = unverifiedProperties.map((u) => {
-    const copy = { ...u };
+    const copy: any = { ...u };
     if (copy.imagePath && copy.imagePath.startsWith("data:")) {
       const bin = dataUrlToBinary(copy.imagePath);
       if (bin && imgFolder) {
@@ -93,6 +94,8 @@ export async function exportDatabaseToZip(
         copy.imagePath = `images/${filename}`;
       }
     }
+    copy.address = copy.address || copy.area;
+    copy.area = copy.areaSize != null ? copy.areaSize : (typeof copy.area === "number" ? copy.area : 0);
     return copy;
   });
 
@@ -202,9 +205,30 @@ export async function importDatabaseFromZip(
             restoredImage = matched;
           }
         }
+        // In Android's UnverifiedProperty DTO:
+        // - `address` is the location name / street (e.g. "Kiều Trung", "Mỹ Tranh", "Hoàng Mai")
+        // - `area` is a Double representing the area size in m² (e.g. 52, 65, 42)
+        // - `title` is an optional title
+        // In Web's Property model:
+        // - `area` is the string location / title
+        // - `areaSize` is the number (m²)
+        const rawAddress =
+          (typeof u.address === "string" && u.address.trim()) ||
+          (typeof u.title === "string" && u.title.trim()) ||
+          (typeof u.area === "string" && isNaN(Number(u.area)) && u.area.trim()) ||
+          (u.rawText ? u.rawText.trim().split("\n")[0].slice(0, 60) : "") ||
+          "Tin chờ khảo sát";
+
+        const resolvedAreaSize =
+          u.areaSize != null
+            ? Number(u.areaSize)
+            : typeof u.area === "number" || (!isNaN(Number(u.area)) && Number(u.area) > 0)
+            ? Number(u.area)
+            : null;
+
         return {
           id: u.id || `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          area: u.area || u.address || "Tin chờ khảo sát",
+          area: toTitleCase(rawAddress),
           latitude: u.latitude ?? null,
           longitude: u.longitude ?? null,
           imagePath: restoredImage || null,
@@ -212,7 +236,7 @@ export async function importDatabaseFromZip(
           driveFolderId: u.driveFolderId || null,
           priceAtFolderCreation: u.priceAtFolderCreation ?? null,
           documentUrl: u.documentUrl || "",
-          areaSize: u.areaSize ?? null,
+          areaSize: resolvedAreaSize,
           price: u.price ?? 0,
           description: u.description || u.rawText || "",
           status: u.status || "Chờ duyệt",
