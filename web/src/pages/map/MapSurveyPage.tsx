@@ -34,6 +34,8 @@ export const MapSurveyPage: React.FC = () => {
   const radiusCircleRef = useRef<L.Circle | null>(null);
   const polylineLayerRef = useRef<L.Polyline | null>(null);
 
+  const hasInitialFitRef = useRef(false);
+
   const [selectedProperty, setSelectedProperty] = useState<MapPropertyItem | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [routeInfo, setRouteInfo] = useState<string | null>(null);
@@ -85,9 +87,11 @@ export const MapSurveyPage: React.FC = () => {
       zoomControl: false
     });
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
-      maxZoom: 19
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 20
     }).addTo(map);
 
     L.control.zoom({ position: "topright" }).addTo(map);
@@ -96,7 +100,12 @@ export const MapSurveyPage: React.FC = () => {
     gpsLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
+    const invalidateTimer = setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
     return () => {
+      clearTimeout(invalidateTimer);
       map.remove();
       mapRef.current = null;
     };
@@ -125,7 +134,20 @@ export const MapSurveyPage: React.FC = () => {
       });
       markersLayerRef.current?.addLayer(marker);
     });
-  }, [filteredProperties, selectedProperty]);
+
+    // Auto-fit bounds on initial load if no explicit center is specified
+    if (!hasInitialFitRef.current && !searchParams.get("lat") && !userScanCenter) {
+      const validPoints = filteredProperties
+        .filter((p) => p.latitude != null && p.longitude != null)
+        .map((p) => [p.latitude!, p.longitude!] as [number, number]);
+
+      if (validPoints.length > 0) {
+        const bounds = L.latLngBounds(validPoints);
+        mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+        hasInitialFitRef.current = true;
+      }
+    }
+  }, [filteredProperties, selectedProperty, searchParams, userScanCenter]);
 
   // Draw or update radius circle around scanCenter
   useEffect(() => {
@@ -213,6 +235,14 @@ export const MapSurveyPage: React.FC = () => {
   const handleClearScanCenter = () => {
     setUserScanCenter(null);
     setUserRadiusKm(null);
+    if (mapRef.current && properties) {
+      const validPoints = properties
+        .filter((p) => p.latitude != null && p.longitude != null)
+        .map((p) => [p.latitude!, p.longitude!] as [number, number]);
+      if (validPoints.length > 0) {
+        mapRef.current.fitBounds(L.latLngBounds(validPoints), { padding: [50, 50], maxZoom: 16 });
+      }
+    }
   };
 
   const handleOptimizeRoute = () => {
