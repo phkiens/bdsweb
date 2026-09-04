@@ -22,6 +22,7 @@ import { parseVietnamCoordinates } from "../../core/utils/coordinates";
 import { syncManager } from "../../data/sync/sync-manager";
 import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 import { checkVerificationReadiness } from "../../core/engine/verification-engine";
+import { mediaService } from "../../data/media/media-service";
 
 export const PropertyFormPage: React.FC = () => {
   const navigate = useNavigate();
@@ -49,6 +50,7 @@ export const PropertyFormPage: React.FC = () => {
   const [fetchingGps, setFetchingGps] = useState(false);
   const [quickText, setQuickText] = useState("");
   const [previewImages, setPreviewImages] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const isOpenForVerify = searchParams.get("openForVerify") === "true";
   const readiness = checkVerificationReadiness(formData);
@@ -106,6 +108,7 @@ export const PropertyFormPage: React.FC = () => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
+    setPendingFiles((prev) => [...prev, ...files]);
     const newUrls: string[] = [];
 
     files.forEach((file) => {
@@ -118,6 +121,7 @@ export const PropertyFormPage: React.FC = () => {
 
   const handleRemoveImage = (index: number) => {
     setPreviewImages((prev) => prev.filter((_, i) => i !== index));
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleQuickExtract = () => {
@@ -216,11 +220,26 @@ export const PropertyFormPage: React.FC = () => {
         await db.properties.add(updated);
       }
 
+      await db.enqueueOutbox("PROPERTY", updated.id, "UPSERT");
+
       // Tự động tạo/liên kết hồ sơ Chủ nhà (OWNER) theo đúng chuẩn Android
       await ensureCustomerForProperty(db, updated, paramCustomerId);
 
       // Kích hoạt đồng bộ ngầm nếu online
-      syncManager.pushChanges();
+      await syncManager.pushChanges();
+
+      // Nếu có ảnh mới chọn, tiến hành upload lên R2
+      if (pendingFiles.length > 0) {
+        try {
+          const res = await mediaService.uploadPropertyImages(updated, pendingFiles);
+          if (!res.success) {
+            console.error("Lỗi khi tải ảnh lên R2:", res.error);
+            alert(`Đã lưu BĐS nhưng tải ảnh lên Cloudflare R2 gặp lỗi: ${res.error}\nBạn có thể vào trang chi tiết BĐS để bấm "Thêm ảnh" tải lại.`);
+          }
+        } catch (mediaErr: any) {
+          console.error("Lỗi khi tải ảnh lên R2:", mediaErr);
+        }
+      }
 
       navigate(`/properties/${updated.id}`);
     } catch (err: any) {

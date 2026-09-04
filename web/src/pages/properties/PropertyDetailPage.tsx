@@ -30,6 +30,7 @@ import {
   formatDiaryEntry
 } from "../../core/engine/activity-timeline-engine";
 import { AddViewingModal } from "./AddViewingModal";
+import { PropertyMediaGallery } from "../../components/properties/PropertyMediaGallery";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -116,11 +117,13 @@ export const PropertyDetailPage: React.FC = () => {
 
   const handleDelete = async () => {
     if (!window.confirm("Bạn có chắc muốn xóa bất động sản này?")) return;
+    const now = Date.now();
     await db.properties.update(property.id, {
       isDeleted: true,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isTextSynced: false
     });
+    await db.enqueueOutbox("PROPERTY", property.id, "DELETE");
     syncManager.pushChanges();
     navigate("/properties");
   };
@@ -133,12 +136,14 @@ export const PropertyDetailPage: React.FC = () => {
     if (!diaryInput.trim()) return;
     const newEntry = formatDiaryEntry(diaryInput.trim());
     const updatedDiary = property.diary ? `${newEntry}\n${property.diary}` : newEntry;
+    const now = Date.now();
 
     await db.properties.update(property.id, {
       diary: updatedDiary,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isTextSynced: false
     });
+    await db.enqueueOutbox("PROPERTY", property.id, "UPSERT");
     syncManager.pushChanges();
     setDiaryInput("");
     setShowAddDiary(false);
@@ -146,11 +151,13 @@ export const PropertyDetailPage: React.FC = () => {
 
   const handleDeleteViewing = async (customerId: string, customerName: string) => {
     if (!window.confirm(`Bạn có chắc muốn xóa lượt xem nhà của ${customerName}?`)) return;
+    const now = Date.now();
     await db.customer_property_links.update([customerId, property.id], {
       isDeleted: true,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isSynced: false
     });
+    await db.enqueueOutbox("LINK", `${customerId}:::${property.id}`, "DELETE");
     syncManager.pushChanges();
   };
 
@@ -324,41 +331,8 @@ export const PropertyDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Media Photo Carousel / Grid */}
-      {images.length > 0 && (
-        <div className="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-slate-800 text-xs uppercase tracking-wider">
-              Hình ảnh thực tế ({images.length})
-            </h3>
-            <button
-              onClick={handleDownloadAllImages}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
-              title="Tải toàn bộ ảnh BĐS về máy"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Tải tất cả ảnh</span>
-            </button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {images.map((src, idx) => (
-              <a
-                key={idx}
-                href={src}
-                download={`bds_${property.id}_img_${idx + 1}.jpg`}
-                className="aspect-4/3 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 cursor-pointer block group relative"
-                title="Click để tải ảnh"
-              >
-                <img
-                  src={src}
-                  alt={`BĐS ${idx}`}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                />
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Media Photo Carousel / Grid (Cloudflare R2 & Local Fallback) */}
+      <PropertyMediaGallery property={property} />
 
       {/* Tabs Switcher: Chi tiết | Nhật ký | Khách phù hợp */}
       <div className="flex border-b border-slate-200 mb-4">

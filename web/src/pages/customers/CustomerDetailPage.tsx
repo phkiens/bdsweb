@@ -9,7 +9,8 @@ import {
   Trash2,
   Sparkles,
   Plus,
-  Building2
+  Building2,
+  Pencil
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { CustomerPropertyLink, isEligibleForMatching } from "../../core/models/customer";
@@ -18,6 +19,9 @@ import { CustomerRole } from "../../core/models/enums";
 import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
+import { CustomerAvatar } from "../../components/customers/CustomerAvatar";
+import { EditCustomerModal } from "../../components/customers/EditCustomerModal";
+import { ConfirmModal } from "../../components/common/ConfirmModal";
 
 export const CustomerDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +29,8 @@ export const CustomerDetailPage: React.FC = () => {
 
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<"matches" | "linked" | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const customer = useLiveQuery(() => (id ? db.customers.get(id) : undefined), [id]);
   const properties = useLiveQuery(() =>
@@ -95,76 +101,102 @@ export const CustomerDetailPage: React.FC = () => {
     );
   }
 
-  const handleDelete = async () => {
-    if (!window.confirm("Bạn có chắc muốn xóa khách hàng này?")) return;
+  const handleConfirmDelete = async () => {
+    const now = Date.now();
     await db.customers.update(customer.id, {
       isDeleted: true,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isSynced: false
     });
+    await db.enqueueOutbox("CUSTOMER", customer.id, "DELETE");
     syncManager.pushChanges();
+    setShowDeleteModal(false);
     navigate("/customers");
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-4 md:py-6 pb-24 md:pb-12">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between mb-4">
+    <div className="max-w-3xl mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-24 md:pb-12">
+      {/* Top Bar - Bổ sung nút Edit theo PARITY-CUST-001 */}
+      <div className="flex items-center justify-between mb-3">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-sm font-medium transition-colors"
+          className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-xs sm:text-sm font-medium transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Quay lại</span>
         </button>
 
-        <button
-          onClick={handleDelete}
-          className="p-2 text-slate-400 hover:text-red-600 hover:bg-slate-100 rounded-xl transition-colors"
-          title="Xóa khách hàng"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* Nút sửa thông tin khách hàng (PARITY-CUST-001) */}
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors cursor-pointer"
+            title="Chỉnh sửa thông tin khách hàng"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            <span>Sửa thông tin</span>
+          </button>
+
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+            title="Xóa khách hàng"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      {/* Customer Header Card */}
-      <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3 mb-4">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`px-2 py-0.5 rounded-md text-xs font-bold ${
-                  isOwner ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                }`}
-              >
-                {isOwner ? "Chủ nhà ký gửi" : customer.demandType || "Khách tìm mua"}
-              </span>
-              <span className="text-xs font-mono text-slate-500 font-medium">{customer.phone}</span>
-            </div>
-            <h1 className="text-xl font-bold text-slate-900 mt-1">{customer.name}</h1>
-          </div>
+      {/* Customer Header Card có Avatar 56px */}
+      <div className="p-4 sm:p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3 mb-4">
+        <div className="flex items-start gap-3.5">
+          {/* Customer Avatar */}
+          <CustomerAvatar
+            name={customer.name}
+            avatarPath={customer.avatarPath}
+            avatarDriveUrl={customer.avatarDriveUrl}
+            size={56}
+            className="shrink-0 mt-0.5"
+          />
 
-          <div className="text-right">
-            {isOwner ? (
-              <div>
-                <div className="text-lg font-black text-amber-700">
-                  {ownerStats.totalCount} BĐS
-                </div>
-                <div className="text-xs text-slate-500">
-                  {ownerStats.forSaleCount} đang bán • {ownerStats.soldCount} đã bán
-                </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                    isOwner ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
+                  }`}
+                >
+                  {isOwner ? "Chủ nhà ký gửi" : customer.demandType || "Khách tìm mua"}
+                </span>
+                <span className="text-xs font-mono text-slate-500 font-medium">{customer.phone}</span>
               </div>
-            ) : (
-              <div>
-                <div className="text-lg font-black text-blue-700">
-                  {customer.priceMin} - {customer.priceMax} tỷ
-                </div>
-                <div className="text-xs text-slate-500">Ngân sách dự kiến</div>
+
+              {/* Status or Metric */}
+              <div className="text-right shrink-0">
+                {isOwner ? (
+                  <div>
+                    <span className="text-base font-black text-amber-700">
+                      {ownerStats.totalCount} BĐS
+                    </span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="text-base font-black text-blue-700">
+                      {customer.priceMin || customer.priceMax
+                        ? `${customer.priceMin} - ${customer.priceMax} tỷ`
+                        : "Thương lượng"}
+                    </span>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 truncate">{customer.name}</h1>
           </div>
         </div>
 
+        {/* Thông tin nhu cầu chi tiết */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600 pt-2 border-t border-slate-100">
           <div>
             <span className="text-slate-400">Loại BĐS:</span>{" "}
@@ -181,7 +213,7 @@ export const CustomerDetailPage: React.FC = () => {
         </div>
 
         {customer.note && (
-          <p className="text-xs text-slate-500 italic bg-slate-50 p-2 rounded-xl">
+          <p className="text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded-xl border border-slate-100">
             Ghi chú: {customer.note}
           </p>
         )}
@@ -191,7 +223,7 @@ export const CustomerDetailPage: React.FC = () => {
           <button
             onClick={() => customer.phone && setPhoneModalNumber(customer.phone)}
             disabled={!customer.phone}
-            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40"
+            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 cursor-pointer"
           >
             <Phone className="w-4 h-4 text-emerald-600" />
             <span>Gọi điện</span>
@@ -202,7 +234,7 @@ export const CustomerDetailPage: React.FC = () => {
               customer.phone && window.open(`https://zalo.me/${customer.phone}`, "_blank")
             }
             disabled={!customer.phone}
-            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-sky-50 text-slate-700 hover:text-sky-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40"
+            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-sky-50 text-slate-700 hover:text-sky-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 cursor-pointer"
           >
             <ExternalLink className="w-4 h-4 text-sky-600" />
             <span>Mở Zalo</span>
@@ -220,14 +252,14 @@ export const CustomerDetailPage: React.FC = () => {
 
       {/* Tabs */}
       {isOwner ? (
-        <div className="border-b border-slate-200 mb-4 pb-2 flex items-center justify-between">
+        <div className="border-b border-slate-200 mb-3 pb-2 flex items-center justify-between">
           <h2 className="text-sm md:text-base font-bold text-slate-800 flex items-center gap-2">
             <Building2 className="w-4 h-4 text-amber-600" />
             <span>Kho BĐS ký gửi của chủ nhà ({(linkedItems || []).length})</span>
           </h2>
         </div>
       ) : (
-        <div className="flex border-b border-slate-200 mb-4">
+        <div className="flex border-b border-slate-200 mb-3">
           <button
             onClick={() => setSelectedTab("matches")}
             className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -254,7 +286,7 @@ export const CustomerDetailPage: React.FC = () => {
 
       {/* Tab Content for BUYER: Matches */}
       {!isOwner && activeTab === "matches" && (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           {matches.length === 0 ? (
             <div className="text-center py-10 bg-white border border-slate-200 rounded-2xl text-xs text-slate-400">
               Chưa tìm thấy BĐS nào phù hợp với các tiêu chí của khách hàng này.
@@ -264,7 +296,7 @@ export const CustomerDetailPage: React.FC = () => {
               <div
                 key={property.id}
                 onClick={() => navigate(`/properties/${property.id}`)}
-                className="p-4 bg-white border border-slate-200 hover:border-blue-300 rounded-2xl shadow-2xs hover:shadow-sm cursor-pointer transition-all flex items-start justify-between gap-3"
+                className="p-3.5 bg-white border border-slate-200 hover:border-blue-300 rounded-2xl shadow-2xs hover:shadow-sm cursor-pointer transition-all flex items-start justify-between gap-3"
               >
                 <div className="space-y-1 flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -307,7 +339,7 @@ export const CustomerDetailPage: React.FC = () => {
 
       {/* Tab Linked: Hiển thị khi là OWNER hoặc khi BUYER chọn tab linked */}
       {(isOwner || activeTab === "linked") && (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-500 font-medium">
               {isOwner
@@ -327,7 +359,7 @@ export const CustomerDetailPage: React.FC = () => {
               }`}
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>{isOwner ? "Thêm BĐS cho chủ nhà này" : "Thêm BĐS cho khách này"}</span>
+              <span>{isOwner ? "Thêm BĐS gửi bán" : "Thêm BĐS dẫn xem"}</span>
             </button>
           </div>
 
@@ -358,7 +390,7 @@ export const CustomerDetailPage: React.FC = () => {
               <div
                 key={property.id}
                 onClick={() => navigate(`/properties/${property.id}`)}
-                className="p-4 bg-white border border-slate-200 hover:border-blue-300 rounded-2xl shadow-2xs hover:shadow-sm cursor-pointer transition-all flex items-start justify-between gap-3"
+                className="p-3.5 bg-white border border-slate-200 hover:border-blue-300 rounded-2xl shadow-2xs hover:shadow-sm cursor-pointer transition-all flex items-start justify-between gap-3"
               >
                 <div className="space-y-1 flex-1 min-w-0">
                   <div className="flex items-center gap-2">
@@ -402,6 +434,25 @@ export const CustomerDetailPage: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* Edit Customer Modal (PARITY-CUST-001) */}
+      <EditCustomerModal
+        isOpen={showEditModal}
+        customer={customer}
+        onClose={() => setShowEditModal(false)}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteModal}
+        title="Xóa khách hàng"
+        message={`Bạn có chắc chắn muốn xóa khách hàng "${customer.name}"?\nThao tác này sẽ xóa khách hàng và đồng bộ lên đám mây.`}
+        confirmText="Xóa khách"
+        cancelText="Hủy"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteModal(false)}
+      />
 
       {/* Phone modal */}
       <PhoneActionModal

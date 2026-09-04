@@ -85,6 +85,7 @@ export const AddViewingModal: React.FC<AddViewingModalProps> = ({
         isSynced: false
       });
 
+      await db.enqueueOutbox("LINK", `${selectedCustomerId}:::${propertyId}`, "UPSERT");
       syncManager.pushChanges();
       onSuccess();
       onClose();

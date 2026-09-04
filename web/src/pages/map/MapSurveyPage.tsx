@@ -7,10 +7,12 @@ import {
   Navigation,
   Calendar,
   ChevronRight,
+  ChevronLeft,
   Route,
   CheckCircle2,
   ExternalLink,
   Target,
+  Phone,
   X
 } from "lucide-react";
 import { db } from "../../data/local/db";
@@ -22,7 +24,9 @@ import {
   MapScanCenter,
   MapPropertyItem
 } from "../../core/engine/map-survey-engine";
+import { isInVietnam } from "../../core/utils/coordinates";
 import { createMapPinIcon, createGpsUserIcon } from "./map-marker-icons";
+import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
 
 export const MapSurveyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -35,8 +39,9 @@ export const MapSurveyPage: React.FC = () => {
   const polylineLayerRef = useRef<L.Polyline | null>(null);
 
   const hasInitialFitRef = useRef(false);
+  const touchStartXRef = useRef<number | null>(null);
 
-  const [selectedProperty, setSelectedProperty] = useState<MapPropertyItem | null>(null);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [routeInfo, setRouteInfo] = useState<string | null>(null);
   const [viewTodayOnly, setViewTodayOnly] = useState(false);
@@ -140,6 +145,59 @@ export const MapSurveyPage: React.FC = () => {
     return filterMapProperties(properties, scanCenter, radiusKm, viewTodayOnly);
   }, [properties, scanCenter, radiusKm, viewTodayOnly]);
 
+  // Derived selected index and property
+  const selectedIndex = useMemo(() => {
+    if (!selectedPropertyId) return -1;
+    return filteredProperties.findIndex((p) => p.id === selectedPropertyId);
+  }, [filteredProperties, selectedPropertyId]);
+
+  const selectedProperty = selectedIndex !== -1 ? filteredProperties[selectedIndex] : null;
+
+  const handleSelectIndex = (newIndex: number) => {
+    if (newIndex >= 0 && newIndex < filteredProperties.length) {
+      const target = filteredProperties[newIndex];
+      setSelectedPropertyId(target.id);
+      if (target.latitude != null && target.longitude != null && mapRef.current) {
+        mapRef.current.panTo([target.latitude, target.longitude], { animate: true });
+      }
+    }
+  };
+
+  // Keyboard navigation for preview carousel
+  useEffect(() => {
+    if (selectedIndex === -1) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" && selectedIndex > 0) {
+        handleSelectIndex(selectedIndex - 1);
+      } else if (e.key === "ArrowRight" && selectedIndex < filteredProperties.length - 1) {
+        handleSelectIndex(selectedIndex + 1);
+      } else if (e.key === "Escape") {
+        setSelectedPropertyId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIndex, filteredProperties]);
+
+  // Touch gesture handlers for mobile swipe
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartXRef.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    touchStartXRef.current = null;
+
+    if (Math.abs(deltaX) > 40) {
+      if (deltaX > 0 && selectedIndex > 0) {
+        handleSelectIndex(selectedIndex - 1);
+      } else if (deltaX < 0 && selectedIndex < filteredProperties.length - 1) {
+        handleSelectIndex(selectedIndex + 1);
+      }
+    }
+  };
+
   // Update markers on map
   useEffect(() => {
     if (!mapRef.current || !markersLayerRef.current) return;
@@ -147,13 +205,16 @@ export const MapSurveyPage: React.FC = () => {
     markersLayerRef.current.clearLayers();
 
     filteredProperties.forEach((p) => {
-      const isSelected = selectedProperty?.id === p.id;
+      const isSelected = selectedPropertyId === p.id;
       const colorType = getMarkerColorType(p);
       const icon = createMapPinIcon(colorType, isSelected);
 
       const marker = L.marker([p.latitude!, p.longitude!], { icon });
       marker.on("click", () => {
-        setSelectedProperty(p);
+        setSelectedPropertyId(p.id);
+        if (p.latitude != null && p.longitude != null && mapRef.current) {
+          mapRef.current.panTo([p.latitude, p.longitude], { animate: true });
+        }
       });
       markersLayerRef.current?.addLayer(marker);
     });
@@ -170,7 +231,7 @@ export const MapSurveyPage: React.FC = () => {
         hasInitialFitRef.current = true;
       }
     }
-  }, [filteredProperties, selectedProperty, searchParams, userScanCenter]);
+  }, [filteredProperties, selectedPropertyId, searchParams, userScanCenter]);
 
   // Draw or update radius circle around scanCenter
   useEffect(() => {
@@ -260,7 +321,7 @@ export const MapSurveyPage: React.FC = () => {
     setUserRadiusKm(null);
     if (mapRef.current && properties) {
       const validPoints = properties
-        .filter((p) => p.latitude != null && p.longitude != null)
+        .filter((p) => p.latitude != null && p.longitude != null && isInVietnam(p.latitude, p.longitude))
         .map((p) => [p.latitude!, p.longitude!] as [number, number]);
       if (validPoints.length > 0) {
         mapRef.current.fitBounds(L.latLngBounds(validPoints), { padding: [50, 50], maxZoom: 16 });
@@ -436,14 +497,69 @@ export const MapSurveyPage: React.FC = () => {
         </div>
       )}
 
-      {/* Bottom Item Preview Sheet */}
+      {/* Bottom Item Preview Sheet (PARITY-MAP-001: Horizontal Pager / Carousel for Nearby Properties) */}
       {selectedProperty && (
-        <div className="absolute bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-30 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 animate-in slide-in-from-bottom duration-200">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="flex items-center gap-1.5">
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="absolute bottom-20 md:bottom-6 left-3 right-3 md:left-auto md:right-6 md:w-[420px] z-30 bg-white rounded-2xl shadow-xl border border-slate-200 p-3.5 sm:p-4 animate-in slide-in-from-bottom duration-200 transition-all select-none"
+        >
+          {/* Header Bar: Carousel Index Pager & Close Button */}
+          <div className="flex items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              {filteredProperties.length > 1 ? (
+                <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => handleSelectIndex(selectedIndex - 1)}
+                    disabled={selectedIndex <= 0}
+                    className="p-1 rounded-md text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white cursor-pointer transition-colors"
+                    title="BĐS trước"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+
+                  <span className="text-[11px] font-bold text-blue-700 px-2 select-none">
+                    {selectedIndex + 1} / {filteredProperties.length}
+                  </span>
+
+                  <button
+                    onClick={() => handleSelectIndex(selectedIndex + 1)}
+                    disabled={selectedIndex >= filteredProperties.length - 1}
+                    className="p-1 rounded-md text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white cursor-pointer transition-colors"
+                    title="BĐS tiếp theo"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[11px] font-semibold text-slate-500">
+                  Chi tiết BĐS
+                </span>
+              )}
+            </div>
+
+            <button
+              onClick={() => setSelectedPropertyId(null)}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
+              title="Đóng"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Body: Thumbnail + Info */}
+          <div className="flex items-start gap-3">
+            <PropertyThumbnail
+              property={selectedProperty}
+              size={64}
+              showStarBadge={true}
+              className="rounded-xl shrink-0"
+            />
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
                     selectedProperty.isVerified
                       ? selectedProperty.status === PropertyStatus.FOR_SALE
                         ? "bg-emerald-100 text-emerald-800"
@@ -455,56 +571,67 @@ export const MapSurveyPage: React.FC = () => {
                 </span>
 
                 {selectedProperty.distanceKm != null && (
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                     Cách {selectedProperty.distanceKm < 1 ? `${Math.round(selectedProperty.distanceKm * 1000)} m` : `${selectedProperty.distanceKm.toFixed(1)} km`}
                   </span>
                 )}
               </div>
 
-              <h4 className="font-bold text-slate-900 text-sm md:text-base mt-1 line-clamp-1">
+              <h4 className="font-bold text-slate-900 text-sm mt-1 truncate">
                 {selectedProperty.area}
               </h4>
+
+              <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
+                <span className="text-blue-700 font-extrabold text-sm">
+                  {selectedProperty.price > 0 ? `${selectedProperty.price} tỷ` : "Thương lượng"}
+                </span>
+                {selectedProperty.areaSize && <span>• {selectedProperty.areaSize} m²</span>}
+                {selectedProperty.propertyType && <span>• {selectedProperty.propertyType}</span>}
+              </div>
             </div>
-
-            <button
-              onClick={() => setSelectedProperty(null)}
-              className="text-slate-400 hover:text-slate-600 text-sm p-1 cursor-pointer"
-            >
-              ✕
-            </button>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-600 mt-2">
-            <span className="text-blue-700 font-extrabold text-sm">
-              {selectedProperty.price > 0 ? `${selectedProperty.price} tỷ` : "Thương lượng"}
-            </span>
-            {selectedProperty.areaSize && <span>• {selectedProperty.areaSize} m²</span>}
-            {selectedProperty.propertyType && <span>• {selectedProperty.propertyType}</span>}
-          </div>
-
-          <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100">
+          {/* Footer Actions */}
+          <div className="flex gap-2 mt-3 pt-2.5 border-t border-slate-100">
             <button
               onClick={() => handleSelectPropertyAsCenter(selectedProperty)}
-              className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
               title="Đặt làm tâm quét bán kính"
             >
               <Target className="w-3.5 h-3.5" />
-              <span>Tâm quét</span>
+              <span className="hidden sm:inline">Tâm quét</span>
             </button>
 
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${selectedProperty.latitude},${selectedProperty.longitude}`}
               target="_blank"
               rel="noreferrer"
-              className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors"
+              className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors text-center"
             >
               <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
               <span>Chỉ đường</span>
             </a>
 
+            {selectedProperty.ownerPhone && (
+              <a
+                href={`tel:${selectedProperty.ownerPhone}`}
+                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors"
+                title={`Gọi: ${selectedProperty.ownerPhone}`}
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Gọi</span>
+              </a>
+            )}
+
             <button
-              onClick={() => navigate(`/properties/${selectedProperty.id}`)}
-              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+              onClick={() =>
+                navigate(
+                  selectedProperty.isVerified
+                    ? `/properties/${selectedProperty.id}`
+                    : `/unverified/${selectedProperty.id}`
+                )
+              }
+              className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer text-center"
             >
               <span>Chi tiết</span>
               <ChevronRight className="w-3.5 h-3.5" />

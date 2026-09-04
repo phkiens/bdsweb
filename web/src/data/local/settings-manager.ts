@@ -42,9 +42,11 @@ export class SettingsManager {
 
   private load(): SettingsState {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        return { ...defaultSettings, ...JSON.parse(raw) };
+      if (typeof localStorage !== "undefined") {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          return { ...defaultSettings, ...JSON.parse(raw) };
+        }
       }
     } catch (e) {
       console.error("Failed to load settings from localStorage", e);

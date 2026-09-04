@@ -7,24 +7,35 @@ let currentKey = "";
 
 export function getSupabaseClient(): SupabaseClient | null {
   const settings = settingsManager.getSettings();
-  if (!settings.supabaseUrl || !settings.supabaseAnonKey) {
+  const url =
+    settings.supabaseUrl?.trim() ||
+    (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_URL?.trim()) ||
+    (typeof process !== "undefined" && process.env?.VITE_SUPABASE_URL?.trim()) ||
+    "";
+  const key =
+    settings.supabaseAnonKey?.trim() ||
+    (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY?.trim()) ||
+    (typeof process !== "undefined" && process.env?.VITE_SUPABASE_ANON_KEY?.trim()) ||
+    "";
+
+  if (!url || !key) {
     return null;
   }
 
   if (
     clientInstance &&
-    currentUrl === settings.supabaseUrl &&
-    currentKey === settings.supabaseAnonKey
+    currentUrl === url &&
+    currentKey === key
   ) {
     return clientInstance;
   }
 
-  currentUrl = settings.supabaseUrl;
-  currentKey = settings.supabaseAnonKey;
+  currentUrl = url;
+  currentKey = key;
   clientInstance = createClient(currentUrl, currentKey, {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true
+      persistSession: false,
+      autoRefreshToken: false
     }
   });
 
