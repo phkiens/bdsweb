@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import {
@@ -10,12 +10,25 @@ import {
   Phone,
   Clock,
   Compass,
-  ChevronRight
+  ChevronRight,
+  X,
+  RotateCcw
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { Property } from "../../core/models/property";
-import { normalizeVietnamese } from "../../core/utils/vietnamese";
-import { PropertyStatus } from "../../core/models/enums";
+import {
+  PropertyStatus,
+  PropertySortType,
+  FilterScope,
+  PropertyListMode
+} from "../../core/models/enums";
+import {
+  FilterState,
+  PRICE_BUCKETS,
+  SIZE_BUCKETS,
+  PropertyFilter,
+  sortProperties
+} from "../../core/engine/property-filter";
 
 export const PropertyListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -23,9 +36,22 @@ export const PropertyListPage: React.FC = () => {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [viewTodayOnly, setViewTodayOnly] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
-  const [selectedType, setSelectedType] = useState<string>("ALL");
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
+
+  const [filterState, setFilterState] = useState<FilterState>({
+    propertyTypes: new Set(),
+    statuses: new Set(),
+    selectedPrices: new Set(),
+    priceMin: null,
+    priceMax: null,
+    selectedSizes: new Set(),
+    sizeMin: null,
+    sizeMax: null,
+    areas: new Set(),
+    directions: new Set(),
+    sortBy: PropertySortType.NEWEST,
+    scope: FilterScope.CURRENT_TAB
+  });
 
   // Multi-select state
   const [isMultiSelect, setIsMultiSelect] = useState(false);
@@ -54,35 +80,143 @@ export const PropertyListPage: React.FC = () => {
   // Reactive query from Dexie IndexedDB
   const properties = useLiveQuery(async () => {
     return await db.properties
-      .filter((p) => !p.isDeleted && p.isVerified)
-      .reverse()
-      .sortBy("updatedAt");
-  }, []);
+      .filter((p) => !p.isDeleted && (filterState.scope === FilterScope.ALL ? true : p.isVerified))
+      .toArray();
+  }, [filterState.scope]);
 
-  if (properties === undefined) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
-      </div>
+  // Derived filtered & sorted properties
+  const filteredProperties = useMemo(() => {
+    if (!properties) return [];
+    const matched = properties.filter((p) =>
+      PropertyFilter.matches(
+        p,
+        filterState,
+        searchQuery,
+        viewTodayOnly,
+        PropertyListMode.VERIFIED
+      )
     );
-  }
+    return sortProperties(matched, filterState.sortBy);
+  }, [properties, filterState, searchQuery, viewTodayOnly]);
 
-  // Filter properties in memory
-  const filteredProperties = properties.filter((p) => {
-    if (viewTodayOnly && !p.needToViewToday) return false;
-    if (selectedStatus !== "ALL" && p.status !== selectedStatus) return false;
-    if (selectedType !== "ALL" && p.propertyType !== selectedType) return false;
-
-    if (searchQuery.trim()) {
-      const q = normalizeVietnamese(searchQuery);
-      const inArea = normalizeVietnamese(p.area).includes(q);
-      const inOwner = normalizeVietnamese(p.ownerName).includes(q);
-      const inPhone = p.ownerPhone.includes(searchQuery.trim());
-      const inDesc = normalizeVietnamese(p.description).includes(q);
-      if (!inArea && !inOwner && !inPhone && !inDesc) return false;
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterState.scope === FilterScope.ALL) count++;
+    if (filterState.propertyTypes && filterState.propertyTypes.size > 0) {
+      count += filterState.propertyTypes.size;
     }
-    return true;
-  });
+    if (filterState.statuses && filterState.statuses.size > 0) {
+      count += filterState.statuses.size;
+    }
+    if (filterState.selectedPrices && filterState.selectedPrices.size > 0) {
+      count += filterState.selectedPrices.size;
+    }
+    if (filterState.priceMin != null || filterState.priceMax != null) count++;
+    if (filterState.selectedSizes && filterState.selectedSizes.size > 0) {
+      count += filterState.selectedSizes.size;
+    }
+    if (filterState.sizeMin != null || filterState.sizeMax != null) count++;
+    if (filterState.areas && filterState.areas.size > 0) {
+      count += filterState.areas.size;
+    }
+    if (filterState.directions && filterState.directions.size > 0) {
+      count += filterState.directions.size;
+    }
+    if (filterState.sortBy && filterState.sortBy !== PropertySortType.NEWEST) count++;
+    return count;
+  }, [filterState]);
+
+  const handleResetFilter = () => {
+    setFilterState({
+      propertyTypes: new Set(),
+      statuses: new Set(),
+      selectedPrices: new Set(),
+      priceMin: null,
+      priceMax: null,
+      selectedSizes: new Set(),
+      sizeMin: null,
+      sizeMax: null,
+      areas: new Set(),
+      directions: new Set(),
+      sortBy: PropertySortType.NEWEST,
+      scope: FilterScope.CURRENT_TAB
+    });
+    setSearchQuery("");
+    setViewTodayOnly(false);
+  };
+
+  const isDongTuTrach =
+    (filterState.directions?.size ?? 0) === 4 &&
+    ["Đông", "Nam", "Bắc", "Đông Nam"].every((d) => filterState.directions?.has(d));
+
+  const isTayTuTrach =
+    (filterState.directions?.size ?? 0) === 4 &&
+    ["Tây", "Đông Bắc", "Tây Bắc", "Tây Nam"].every((d) => filterState.directions?.has(d));
+
+  const toggleDongTuTrach = () => {
+    const next = new Set(filterState.directions);
+    if (isDongTuTrach) {
+      ["Đông", "Nam", "Bắc", "Đông Nam"].forEach((d) => next.delete(d));
+    } else {
+      ["Đông", "Nam", "Bắc", "Đông Nam"].forEach((d) => next.add(d));
+    }
+    setFilterState((prev) => ({ ...prev, directions: next }));
+  };
+
+  const toggleTayTuTrach = () => {
+    const next = new Set(filterState.directions);
+    if (isTayTuTrach) {
+      ["Tây", "Đông Bắc", "Tây Bắc", "Tây Nam"].forEach((d) => next.delete(d));
+    } else {
+      ["Tây", "Đông Bắc", "Tây Bắc", "Tây Nam"].forEach((d) => next.add(d));
+    }
+    setFilterState((prev) => ({ ...prev, directions: next }));
+  };
+
+  const toggleDirection = (dir: string) => {
+    const next = new Set(filterState.directions);
+    if (next.has(dir)) next.delete(dir);
+    else next.add(dir);
+    setFilterState((prev) => ({ ...prev, directions: next }));
+  };
+
+  const togglePropertyType = (tp: string) => {
+    const next = new Set(filterState.propertyTypes);
+    if (next.has(tp)) next.delete(tp);
+    else next.add(tp);
+    setFilterState((prev) => ({ ...prev, propertyTypes: next }));
+  };
+
+  const toggleStatus = (st: PropertyStatus) => {
+    const next = new Set(filterState.statuses);
+    if (next.has(st)) next.delete(st);
+    else next.add(st);
+    setFilterState((prev) => ({ ...prev, statuses: next }));
+  };
+
+  const togglePriceBucket = (label: string) => {
+    const next = new Set(filterState.selectedPrices);
+    if (next.has(label)) next.delete(label);
+    else next.add(label);
+    setFilterState((prev) => ({
+      ...prev,
+      selectedPrices: next,
+      priceMin: null,
+      priceMax: null
+    }));
+  };
+
+  const toggleSizeBucket = (label: string) => {
+    const next = new Set(filterState.selectedSizes);
+    if (next.has(label)) next.delete(label);
+    else next.add(label);
+    setFilterState((prev) => ({
+      ...prev,
+      selectedSizes: next,
+      sizeMin: null,
+      sizeMax: null
+    }));
+  };
 
   const handleToggleNeedToViewToday = async (e: React.MouseEvent, p: Property) => {
     e.stopPropagation();
@@ -133,6 +267,14 @@ export const PropertyListPage: React.FC = () => {
     setIsMultiSelect(false);
   };
 
+  if (properties === undefined) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-4 md:py-6 pb-24 md:pb-12">
       {/* Top Controls Header */}
@@ -148,6 +290,14 @@ export const PropertyListPage: React.FC = () => {
               placeholder="Tìm kiếm khu vực, chủ nhà, SĐT..."
               className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden shadow-2xs"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* View Today toggle button */}
@@ -167,14 +317,19 @@ export const PropertyListPage: React.FC = () => {
           {/* Filter Drawer Toggle */}
           <button
             onClick={() => setShowFilterDrawer(!showFilterDrawer)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-              selectedStatus !== "ALL" || selectedType !== "ALL"
+            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
+              activeFilterCount > 0 || showFilterDrawer
                 ? "bg-blue-50 text-blue-700 border-blue-300"
                 : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
             }`}
           >
             <Filter className="w-4 h-4" />
             <span className="hidden sm:inline">Bộ lọc</span>
+            {activeFilterCount > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-bold rounded-full">
+                {activeFilterCount}
+              </span>
+            )}
           </button>
 
           {/* Multi-Select Toggle */}
@@ -193,40 +348,232 @@ export const PropertyListPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Expandable Quick Filter Chips */}
+        {/* Expandable Advanced Filter Panel */}
         {showFilterDrawer && (
-          <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-xs flex flex-wrap items-center gap-2 animate-in fade-in duration-150">
-            <span className="text-xs font-semibold text-slate-500 mr-1">Trạng thái:</span>
-            {["ALL", PropertyStatus.FOR_SALE, PropertyStatus.PAUSED, PropertyStatus.SOLD].map(
-              (st) => (
+          <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col gap-3.5 animate-in fade-in duration-150">
+            {/* Header: Title + Reset Action */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-blue-600" />
+                Bộ lọc nâng cao {activeFilterCount > 0 && `(${activeFilterCount} tiêu chí)`}
+              </span>
+              <div className="flex items-center gap-2">
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={handleResetFilter}
+                    className="flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-semibold px-2 py-0.5 rounded-lg hover:bg-red-50 transition-colors"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Xóa lọc</span>
+                  </button>
+                )}
                 <button
-                  key={st}
-                  onClick={() => setSelectedStatus(st)}
-                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                    selectedStatus === st
-                      ? "bg-blue-600 text-white font-semibold"
+                  onClick={() => setShowFilterDrawer(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Scope (Phạm vi) */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Phạm vi:</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() =>
+                    setFilterState((prev) => ({ ...prev, scope: FilterScope.CURRENT_TAB }))
+                  }
+                  className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                    filterState.scope !== FilterScope.ALL
+                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
-                  {st === "ALL" ? "Tất cả" : st}
+                  SP chính thức
                 </button>
-              )
-            )}
+                <button
+                  onClick={() => setFilterState((prev) => ({ ...prev, scope: FilterScope.ALL }))}
+                  className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                    filterState.scope === FilterScope.ALL
+                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  Tất cả (gồm SP chờ)
+                </button>
+              </div>
+            </div>
 
-            <span className="text-xs font-semibold text-slate-500 ml-3 mr-1">Loại hình:</span>
-            {["ALL", "Nhà", "Đất"].map((tp) => (
-              <button
-                key={tp}
-                onClick={() => setSelectedType(tp)}
-                className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                  selectedType === tp
-                    ? "bg-blue-600 text-white font-semibold"
-                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                }`}
-              >
-                {tp === "ALL" ? "Tất cả" : tp}
-              </button>
-            ))}
+            {/* Property Types (Loại hình) */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Loại BĐS:</span>
+              <div className="flex items-center gap-1.5">
+                {["Nhà", "Đất"].map((tp) => {
+                  const isSel = filterState.propertyTypes?.has(tp);
+                  return (
+                    <button
+                      key={tp}
+                      onClick={() => togglePropertyType(tp)}
+                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                        isSel
+                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {tp === "Nhà" ? "🏠 Nhà" : "🌳 Đất"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Statuses (Trạng thái) */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Trạng thái:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[PropertyStatus.FOR_SALE, PropertyStatus.SOLD, PropertyStatus.PAUSED].map(
+                  (st) => {
+                    const isSel = filterState.statuses?.has(st);
+                    return (
+                      <button
+                        key={st}
+                        onClick={() => toggleStatus(st)}
+                        className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                          isSel
+                            ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {st}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            </div>
+
+            {/* Price Buckets (Khoảng giá tỷ) */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-slate-500">Khoảng giá (tỷ VNĐ):</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {PRICE_BUCKETS.map((b) => {
+                  const isSel = filterState.selectedPrices?.has(b.label);
+                  return (
+                    <button
+                      key={b.label}
+                      onClick={() => togglePriceBucket(b.label)}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                        isSel
+                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {b.label} tỷ
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Size Buckets (Diện tích m2) */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-slate-500">Diện tích (m²):</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {SIZE_BUCKETS.map((b) => {
+                  const isSel = filterState.selectedSizes?.has(b.label);
+                  return (
+                    <button
+                      key={b.label}
+                      onClick={() => toggleSizeBucket(b.label)}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                        isSel
+                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {b.label} m²
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Directions (Hướng) */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold text-slate-500">Hướng nhà & Cung mệnh:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={toggleDongTuTrach}
+                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                    isDongTuTrach
+                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                      : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  }`}
+                >
+                  🧭 Đông tứ trạch
+                </button>
+                <button
+                  onClick={toggleTayTuTrach}
+                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                    isTayTuTrach
+                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                      : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  }`}
+                >
+                  🧭 Tây tứ trạch
+                </button>
+
+                {["Đông", "Tây", "Nam", "Bắc", "Đông Nam", "Đông Bắc", "Tây Nam", "Tây Bắc"].map(
+                  (d) => {
+                    const isSel = filterState.directions?.has(d);
+                    return (
+                      <button
+                        key={d}
+                        onClick={() => toggleDirection(d)}
+                        className={`text-xs px-2 py-0.5 rounded-lg font-medium transition-colors ${
+                          isSel
+                            ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
+            </div>
+
+            {/* Sort options */}
+            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Sắp xếp:</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { type: PropertySortType.NEWEST, label: "Mới nhất" },
+                  { type: PropertySortType.PRICE_ASC, label: "Giá ↑" },
+                  { type: PropertySortType.PRICE_DESC, label: "Giá ↓" },
+                  { type: PropertySortType.SIZE, label: "Diện tích" }
+                ].map((s) => {
+                  const isSel = filterState.sortBy === s.type;
+                  return (
+                    <button
+                      key={s.type}
+                      onClick={() =>
+                        setFilterState((prev) => ({ ...prev, sortBy: s.type }))
+                      }
+                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
+                        isSel
+                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -250,11 +597,22 @@ export const PropertyListPage: React.FC = () => {
       {/* Counter Summary */}
       <div className="flex items-center justify-between text-xs text-slate-500 mb-3 px-1">
         <span>
-          Hiển thị <strong>{filteredProperties.length}</strong> / {properties.length} BĐS chính thức
+          Hiển thị <strong>{filteredProperties.length}</strong> / {properties.length} BĐS{" "}
+          {filterState.scope === FilterScope.ALL ? "(Tất cả)" : "chính thức"}
         </span>
-        {viewTodayOnly && (
-          <span className="text-blue-600 font-medium">Đang lọc xem hôm nay</span>
-        )}
+        <div className="flex items-center gap-2">
+          {viewTodayOnly && (
+            <span className="text-blue-600 font-medium">Đang lọc xem hôm nay</span>
+          )}
+          {activeFilterCount > 0 && (
+            <button
+              onClick={handleResetFilter}
+              className="text-red-500 hover:text-red-700 underline font-medium cursor-pointer"
+            >
+              Xóa bộ lọc ({activeFilterCount})
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Property Cards List */}
@@ -265,26 +623,21 @@ export const PropertyListPage: React.FC = () => {
           </div>
           <h4 className="text-base font-semibold text-slate-700">Không tìm thấy bất động sản nào</h4>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            {searchQuery || viewTodayOnly || selectedStatus !== "ALL" || selectedType !== "ALL"
+            {searchQuery || viewTodayOnly || activeFilterCount > 0
               ? "Hãy thử nới lỏng bộ lọc hoặc từ khóa tìm kiếm."
               : "Bấm nút bên dưới để thêm BĐS đầu tiên vào kho."}
           </p>
-          {(searchQuery || viewTodayOnly || selectedStatus !== "ALL" || selectedType !== "ALL") && properties.length > 0 ? (
+          {(searchQuery || viewTodayOnly || activeFilterCount > 0) && properties.length > 0 ? (
             <div className="flex flex-col sm:flex-row gap-2 justify-center mt-4">
               <button
-                onClick={() => {
-                  setSearchQuery("");
-                  setViewTodayOnly(false);
-                  setSelectedStatus("ALL");
-                  setSelectedType("ALL");
-                }}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors"
+                onClick={handleResetFilter}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
               >
                 <span>Xem tất cả {properties.length} BĐS (Bỏ bộ lọc)</span>
               </button>
               <button
                 onClick={() => navigate("/properties/new")}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors"
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Thêm BĐS mới</span>
