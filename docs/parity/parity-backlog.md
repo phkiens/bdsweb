@@ -16,7 +16,7 @@
 | **`CRM-OWNER-DETAIL-003`** | Chi tiết khách hàng OWNER hiển thị nhầm tính năng ghép cặp mua nhà | `VISIBILITY`, `DATA_READ` | **P1** | **MATCH (RESOLVED)** |
 | **`CRM-PHONE-DUPLICATE-VALIDATION-001`** | Chặn trùng lặp SĐT chuẩn hóa khi thêm/sửa Khách hàng CRM | `VALIDATION` | **P1** | **MATCH (RESOLVED)** |
 | **`PROP-FILTER-ADVANCED-001`** | Bộ lọc BĐS nâng cao (Khoảng giá, diện tích m², hướng nhà, phạm vi) | `CALCULATION`, `DATA_READ` | **P2** | **MATCH (RESOLVED)** |
-| **`MAP-SURVEY-GPS-001`** | Bản đồ: Lọc bán kính thực địa theo GPS và phân biệt màu ghim BĐS | `CALCULATION`, `UI_PRESENTATION` | **P2** | **CONFIRMED** |
+| **`MAP-SURVEY-GPS-001`** | Bản đồ: Lọc bán kính thực địa theo GPS và phân biệt màu ghim BĐS | `CALCULATION`, `UI_PRESENTATION` | **P2** | **MATCH (RESOLVED)** |
 | **`PROP-MERGED-ACTIVITY-001`** | Hợp nhất Nhật ký thực địa và Lịch sử dẫn khách xem nhà | `DATA_READ`, `UI_PRESENTATION` | **P2** | **CONFIRMED** |
 | **`UNVERIFIED-VERIFY-WIZARD-001`** | Quy trình xác thực tin chờ qua Wizard và tự động liên kết chủ nhà | `STATE_TRANSITION`, `DATA_WRITE` | **P2** | **CONFIRMED** |
 
@@ -232,8 +232,8 @@
   - Web: `MapSurveyPage.tsx:L50-L95`
 - **Suspected Layer**: UI Presentation & Calculation
 - **Mức độ**: **P2**
-- **Confidence**: **CONFIRMED**
-- **Recommended Test**: Unit test tính khoảng cách Haversine và lọc BĐS theo bán kính.
+- **Trạng thái**: **MATCH (RESOLVED)** - Xem báo cáo [`MAP-SURVEY-GPS-001.md`](MAP-SURVEY-GPS-001.md)
+- **Recommended Test**: Unit test `tests/unit/parity/map-survey-gps.test.ts` (4/4 PASS) & Playwright E2E `smoke.spec.ts` (11/11 PASS).
 
 ---
 
