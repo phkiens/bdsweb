@@ -33,19 +33,6 @@ function dataUrlToBinary(dataUrl: string): Uint8Array | null {
 }
 
 /**
- * Chuyển đổi Uint8Array từ tệp ZIP sang Data URL (Base64) để lưu vào IndexedDB của Web
- */
-function binaryToDataUrl(bytes: Uint8Array, mimeType: string = "image/jpeg"): string {
-  let binary = "";
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64 = btoa(binary);
-  return `data:${mimeType};base64,${base64}`;
-}
-
-/**
  * Xuất toàn bộ cơ sở dữ liệu thành tệp ZIP chuẩn định dạng Android ZipHelper
  */
 export async function exportDatabaseToZip(
@@ -70,32 +57,49 @@ export async function exportDatabaseToZip(
   onProgress?.("Đang trích xuất hình ảnh sang tệp nén...");
   const processedProperties = officialProperties.map((p) => {
     const copy = { ...p };
-    // Nếu có ảnh Data URL trong imagePath
-    if (copy.imagePath && copy.imagePath.startsWith("data:")) {
-      const bin = dataUrlToBinary(copy.imagePath);
-      if (bin && imgFolder) {
-        const filename = `prop_${p.id}.jpg`;
-        imgFolder.file(filename, bin);
-        exportedImagesCount++;
-        copy.imagePath = `images/${filename}`;
-      }
+    if (copy.imagePath) {
+      const parts = copy.imagePath.split("|||").filter(Boolean);
+      const remapped: string[] = [];
+      parts.forEach((part, idx) => {
+        if (part.startsWith("data:")) {
+          const bin = dataUrlToBinary(part);
+          if (bin && imgFolder) {
+            const filename = parts.length === 1 ? `prop_${p.id}.jpg` : `prop_${p.id}_${idx}.jpg`;
+            imgFolder.file(filename, bin);
+            exportedImagesCount++;
+            remapped.push(`images/${filename}`);
+          }
+        } else {
+          remapped.push(part);
+        }
+      });
+      copy.imagePath = remapped.join("|||");
     }
     return copy;
   });
 
   const processedUnverified = unverifiedProperties.map((u) => {
     const copy: any = { ...u };
-    if (copy.imagePath && copy.imagePath.startsWith("data:")) {
-      const bin = dataUrlToBinary(copy.imagePath);
-      if (bin && imgFolder) {
-        const filename = `unverified_${u.id}.jpg`;
-        imgFolder.file(filename, bin);
-        exportedImagesCount++;
-        copy.imagePath = `images/${filename}`;
-      }
+    const mediaPaths: string[] = [];
+    if (copy.imagePath) {
+      const parts = copy.imagePath.split("|||").filter(Boolean);
+      parts.forEach((part: string, idx: number) => {
+        if (part.startsWith("data:")) {
+          const bin = dataUrlToBinary(part);
+          if (bin && imgFolder) {
+            const filename = parts.length === 1 ? `unverified_${u.id}.jpg` : `unverified_${u.id}_${idx}.jpg`;
+            imgFolder.file(filename, bin);
+            exportedImagesCount++;
+            mediaPaths.push(`images/${filename}`);
+          }
+        } else {
+          mediaPaths.push(part);
+        }
+      });
     }
     copy.address = copy.address || copy.area;
     copy.area = copy.areaSize != null ? copy.areaSize : (typeof copy.area === "number" ? copy.area : 0);
+    copy.mediaPaths = mediaPaths;
     return copy;
   });
 
@@ -138,58 +142,143 @@ export async function importDatabaseFromZip(
   const arrayBuffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(arrayBuffer);
 
-  // 1. Đọc toàn bộ ảnh từ thư mục images/ trong tệp ZIP
-  const imageMap = new Map<string, string>();
-  const imageEntries: { name: string; file: JSZip.JSZipObject }[] = [];
+  // 1. Nhận diện phiên bản sao lưu qua manifest.json
+  let schemaVersion = 1;
+  const manifestFile = zip.file("manifest.json");
+  if (manifestFile) {
+    try {
+      const manifestText = await manifestFile.async("string");
+      const manifest = JSON.parse(manifestText);
+      if (manifest && typeof manifest.schemaVersion === "number") {
+        schemaVersion = manifest.schemaVersion;
+      } else if (manifest && manifest.schemaVersion != null) {
+        const parsed = Number(manifest.schemaVersion);
+        if (!isNaN(parsed)) {
+          schemaVersion = parsed;
+        }
+      }
+    } catch {
+      schemaVersion = 1;
+    }
+  }
 
+  const isV2 = schemaVersion >= 2;
+
+  // 2. Chỉ mục hóa các tệp ảnh trong thư mục images/ và media/ (không decode toàn bộ trước để tránh nghẽn RAM)
+  const imageEntries = new Map<string, JSZip.JSZipObject>();
   zip.forEach((relativePath, zipEntry) => {
-    if (!zipEntry.dir && relativePath.startsWith("images/")) {
-      imageEntries.push({ name: relativePath, file: zipEntry });
+    if (!zipEntry.dir && (relativePath.startsWith("images/") || relativePath.startsWith("media/"))) {
+      const baseName = relativePath.replace(/^(images|media)\//, "");
+      imageEntries.set(baseName, zipEntry);
+      imageEntries.set(relativePath, zipEntry);
     }
   });
 
-  onProgress?.(`Đang giải nén ${imageEntries.length} hình ảnh...`);
-  for (const entry of imageEntries) {
-    const bytes = await entry.file.async("uint8array");
-    const mime = entry.name.endsWith(".png") ? "image/png" : "image/jpeg";
-    const dataUrl = await binaryToDataUrl(bytes, mime);
+  const imageCache = new Map<string, string>();
+  let decodedImagesCount = 0;
 
-    // Lưu với cả đường dẫn đầy đủ và chỉ tên file để tra cứu linh hoạt
-    imageMap.set(entry.name, dataUrl);
-    const baseName = entry.name.replace("images/", "");
-    imageMap.set(baseName, dataUrl);
+  async function resolveImage(path: string): Promise<string> {
+    const baseName = path.replace(/^.*[\\/]/, "");
+    if (imageCache.has(baseName)) {
+      return imageCache.get(baseName)!;
+    }
+    const entry =
+      imageEntries.get(baseName) ||
+      imageEntries.get(`images/${baseName}`) ||
+      imageEntries.get(`media/${baseName}`) ||
+      imageEntries.get(path);
+    if (!entry) return path;
+
+    const lower = baseName.toLowerCase();
+    const mime = lower.endsWith(".png")
+      ? "image/png"
+      : lower.endsWith(".webp")
+      ? "image/webp"
+      : "image/jpeg";
+    const b64 = await entry.async("base64");
+    const dataUrl = `data:${mime};base64,${b64}`;
+    imageCache.set(baseName, dataUrl);
+    decodedImagesCount++;
+    return dataUrl;
   }
 
-  // 2. Giải nén và đọc properties.json (hoặc fallback data.json)
+  // 3. Giải nén và đọc properties.json (hoặc fallback data.json)
   let propertiesCount = 0;
   const propFile = zip.file("properties.json") || zip.file("data.json");
   if (propFile) {
     onProgress?.("Đang đọc dữ liệu Bất động sản chính thức...");
     const propText = await propFile.async("string");
-    const rawList: Property[] = JSON.parse(propText);
+    const rawList: any[] = JSON.parse(propText);
 
     if (Array.isArray(rawList)) {
-      const restoredProps = rawList.map((p) => {
-        let restoredImage = p.imagePath;
-        if (p.imagePath) {
-          const matched = imageMap.get(p.imagePath) || imageMap.get(p.imagePath.replace(/^.*[\\/]/, ""));
-          if (matched) {
-            restoredImage = matched;
-          }
+      const restoredProps: Property[] = [];
+      for (let i = 0; i < rawList.length; i++) {
+        const p = rawList[i];
+        if (i % 25 === 0) {
+          onProgress?.(`Đang khôi phục BĐS chính thức (${i + 1}/${rawList.length})...`);
         }
-        return {
+        let restoredImage: string | null = null;
+        const mediaList: string[] = Array.isArray(p.mediaPaths)
+          ? p.mediaPaths
+          : typeof p.imagePath === "string"
+          ? p.imagePath.split("|||").filter(Boolean)
+          : [];
+
+        if (mediaList.length > 0) {
+          const resolvedParts: string[] = [];
+          for (const part of mediaList) {
+            if (typeof part === "string" && part.trim()) {
+              const resolved = await resolveImage(part);
+              resolvedParts.push(resolved);
+            }
+          }
+          restoredImage = resolvedParts.length > 0 ? resolvedParts.join("|||") : null;
+        }
+
+        let resolvedArea: string;
+        let resolvedAreaSize: number | null;
+
+        if (isV2) {
+          // V2: Canonical fields (areaName, landAreaM2) take precedence over legacy fields (area, areaSize)
+          const rawArea =
+            p.areaName !== undefined && p.areaName !== null
+              ? String(p.areaName)
+              : p.area !== undefined && p.area !== null
+              ? String(p.area)
+              : "";
+          resolvedArea = rawArea || "Chưa rõ khu vực";
+
+          const rawSize =
+            p.landAreaM2 !== undefined && p.landAreaM2 !== null
+              ? Number(p.landAreaM2)
+              : p.areaSize !== undefined && p.areaSize !== null
+              ? Number(p.areaSize)
+              : null;
+          resolvedAreaSize = rawSize != null && !isNaN(rawSize) ? rawSize : null;
+        } else {
+          // V1: explicit mapping (source.area -> Web area, source.areaSize -> Web areaSize)
+          resolvedArea = p.area ? String(p.area) : "Chưa rõ khu vực";
+          resolvedAreaSize = p.areaSize != null && !isNaN(Number(p.areaSize)) ? Number(p.areaSize) : null;
+        }
+
+        restoredProps.push({
           ...p,
+          area: toTitleCase(resolvedArea),
+          areaSize: resolvedAreaSize,
+          latitude: p.latitude !== undefined && p.latitude !== null ? Number(p.latitude) : null,
+          longitude: p.longitude !== undefined && p.longitude !== null ? Number(p.longitude) : null,
+          rawText: p.rawText !== undefined && p.rawText !== null ? String(p.rawText) : (p.rawText || ""),
           imagePath: restoredImage,
-          isVerified: true
-        };
-      });
+          isVerified: p.isVerified !== undefined ? Boolean(p.isVerified) : true
+        });
+      }
 
       await db.properties.bulkPut(restoredProps);
       propertiesCount += restoredProps.length;
     }
   }
 
-  // 3. Giải nén và đọc unverified_properties.json
+  // 4. Giải nén và đọc unverified_properties.json
   const unverifiedFile = zip.file("unverified_properties.json");
   if (unverifiedFile) {
     onProgress?.("Đang đọc dữ liệu Tin chờ khảo sát...");
@@ -197,41 +286,69 @@ export async function importDatabaseFromZip(
     const rawList: any[] = JSON.parse(unverifiedText);
 
     if (Array.isArray(rawList)) {
-      const restoredUnverified: Property[] = rawList.map((u) => {
-        let restoredImage = u.imagePath;
-        if (u.imagePath) {
-          const matched = imageMap.get(u.imagePath) || imageMap.get(u.imagePath.replace(/^.*[\\/]/, ""));
-          if (matched) {
-            restoredImage = matched;
-          }
+      const restoredUnverified: Property[] = [];
+      for (let i = 0; i < rawList.length; i++) {
+        const u = rawList[i];
+        if (i % 25 === 0) {
+          onProgress?.(`Đang khôi phục Tin chờ (${i + 1}/${rawList.length})...`);
         }
-        // In Android's UnverifiedProperty DTO:
-        // - `address` is the location name / street (e.g. "Kiều Trung", "Mỹ Tranh", "Hoàng Mai")
-        // - `area` is a Double representing the area size in m² (e.g. 52, 65, 42)
-        // - `title` is an optional title
-        // In Web's Property model:
-        // - `area` is the string location / title
-        // - `areaSize` is the number (m²)
-        const rawAddress =
-          (typeof u.address === "string" && u.address.trim()) ||
-          (typeof u.title === "string" && u.title.trim()) ||
-          (typeof u.area === "string" && isNaN(Number(u.area)) && u.area.trim()) ||
-          (u.rawText ? u.rawText.trim().split("\n")[0].slice(0, 60) : "") ||
-          "Tin chờ khảo sát";
 
-        const resolvedAreaSize =
-          u.areaSize != null
-            ? Number(u.areaSize)
-            : typeof u.area === "number" || (!isNaN(Number(u.area)) && Number(u.area) > 0)
-            ? Number(u.area)
-            : null;
+        let restoredImage: string | null = null;
+        const mediaList: string[] = Array.isArray(u.mediaPaths)
+          ? u.mediaPaths
+          : typeof u.imagePath === "string"
+          ? u.imagePath.split("|||").filter(Boolean)
+          : [];
 
-        return {
+        if (mediaList.length > 0) {
+          const resolvedParts: string[] = [];
+          for (const part of mediaList) {
+            if (typeof part === "string" && part.trim()) {
+              const resolved = await resolveImage(part);
+              resolvedParts.push(resolved);
+            }
+          }
+          restoredImage = resolvedParts.length > 0 ? resolvedParts.join("|||") : null;
+        }
+
+        let resolvedArea: string;
+        let resolvedAreaSize: number | null;
+
+        if (isV2) {
+          // V2: Canonical fields (areaName, landAreaM2) are source of truth.
+          // Legacy fields (address, area, areaSize) are only compatibility fallback.
+          const rawArea =
+            u.areaName !== undefined && u.areaName !== null
+              ? String(u.areaName)
+              : u.address !== undefined && u.address !== null
+              ? String(u.address)
+              : u.area !== undefined && u.area !== null
+              ? String(u.area)
+              : "";
+          resolvedArea = rawArea || "Tin chờ khảo sát";
+
+          const rawSize =
+            u.landAreaM2 !== undefined && u.landAreaM2 !== null
+              ? Number(u.landAreaM2)
+              : u.areaSize !== undefined && u.areaSize !== null
+              ? Number(u.areaSize)
+              : u.area !== undefined && u.area !== null
+              ? Number(u.area)
+              : null;
+          resolvedAreaSize = rawSize != null && !isNaN(rawSize) ? rawSize : null;
+        } else {
+          // V1 explicit mapping: source.address -> Web area, source.area -> Web areaSize
+          // Không dùng heuristic (u.area || u.address, isNaN, typeof, rawText fallback)
+          resolvedArea = u.address ? String(u.address) : "Tin chờ khảo sát";
+          resolvedAreaSize = u.area != null && !isNaN(Number(u.area)) ? Number(u.area) : null;
+        }
+
+        restoredUnverified.push({
           id: u.id || `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          area: toTitleCase(rawAddress),
-          latitude: u.latitude ?? null,
-          longitude: u.longitude ?? null,
-          imagePath: restoredImage || null,
+          area: toTitleCase(resolvedArea),
+          latitude: u.latitude !== undefined && u.latitude !== null ? Number(u.latitude) : null,
+          longitude: u.longitude !== undefined && u.longitude !== null ? Number(u.longitude) : null,
+          imagePath: restoredImage,
           driveMediaIds: u.driveMediaIds || null,
           driveFolderId: u.driveFolderId || null,
           priceAtFolderCreation: u.priceAtFolderCreation ?? null,
@@ -247,7 +364,7 @@ export async function importDatabaseFromZip(
           propertyType: u.propertyType || "Nhà",
           needToViewToday: Boolean(u.needToViewToday),
           isDraft: Boolean(u.isDraft),
-          rawText: u.rawText || "",
+          rawText: u.rawText !== undefined && u.rawText !== null ? String(u.rawText) : "",
           diary: u.diary || "",
           updatedAt: Number(u.updatedAt) || Date.now(),
           lastEditedAt: Number(u.lastEditedAt) || Date.now(),
@@ -263,8 +380,8 @@ export async function importDatabaseFromZip(
           mapLink: u.mapLink || null,
           extractedBy: u.extractedBy || "MANUAL",
           r2MediaKeys: null
-        };
-      });
+        });
+      }
 
       await db.properties.bulkPut(restoredUnverified);
       propertiesCount += restoredUnverified.length;
@@ -280,19 +397,17 @@ export async function importDatabaseFromZip(
     const rawList: Customer[] = JSON.parse(custText);
 
     if (Array.isArray(rawList)) {
-      const restoredCustomers = rawList.map((c) => {
+      const restoredCustomers: Customer[] = [];
+      for (const c of rawList) {
         let restoredAvatar = c.avatarPath;
         if (c.avatarPath) {
-          const matched = imageMap.get(c.avatarPath) || imageMap.get(c.avatarPath.replace(/^.*[\\/]/, ""));
-          if (matched) {
-            restoredAvatar = matched;
-          }
+          restoredAvatar = await resolveImage(c.avatarPath);
         }
-        return {
+        restoredCustomers.push({
           ...c,
           avatarPath: restoredAvatar
-        };
-      });
+        });
+      }
 
       await db.customers.bulkPut(restoredCustomers);
       customersCount = restoredCustomers.length;
@@ -310,6 +425,16 @@ export async function importDatabaseFromZip(
     if (Array.isArray(rawList)) {
       await db.customer_property_links.bulkPut(rawList);
       linksCount = rawList.length;
+
+      // Cập nhật linkedCustomerId cho các BĐS có chủ nhà
+      for (const link of rawList) {
+        if (!link.isDeleted && link.role === "OWNER" && link.customerId && link.propertyId) {
+          const prop = await db.properties.get(link.propertyId);
+          if (prop && !prop.linkedCustomerId) {
+            await db.properties.update(link.propertyId, { linkedCustomerId: link.customerId });
+          }
+        }
+      }
     }
   }
 
@@ -318,6 +443,6 @@ export async function importDatabaseFromZip(
     propertiesCount,
     customersCount,
     linksCount,
-    imagesCount: imageEntries.length
+    imagesCount: decodedImagesCount
   };
 }

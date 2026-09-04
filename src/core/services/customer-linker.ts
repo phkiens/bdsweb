@@ -36,6 +36,7 @@ export async function ensureCustomerForProperty(
         isDeleted: false,
         isSynced: false
       });
+      await db.enqueueOutbox("LINK", `${targetExplicitId}:::${property.id}`, "UPSERT");
     }
     return targetExplicitId;
   }
@@ -62,13 +63,15 @@ export async function ensureCustomerForProperty(
       const newPhone = canonicalInputPhone.length > 0 ? canonicalInputPhone : cust.phone;
 
       if (cust.name !== newName || cust.phone !== newPhone) {
+        const now = Date.now();
         await db.customers.update(cust.id, {
           name: newName,
           nameNormalized: normalizeVietnamese(newName),
           phone: newPhone,
           isSynced: false,
-          updatedAt: Date.now()
+          updatedAt: now
         });
+        await db.enqueueOutbox("CUSTOMER", cust.id, "UPSERT");
       }
       return cust.id;
     }
@@ -121,6 +124,7 @@ export async function ensureCustomerForProperty(
       avatarDriveUrl: null
     };
     await db.customers.put(newCustomer);
+    await db.enqueueOutbox("CUSTOMER", newCustomer.id, "UPSERT");
   }
 
   // Tạo liên kết CustomerPropertyLink
@@ -131,14 +135,16 @@ export async function ensureCustomerForProperty(
     .toArray();
 
   if (existingLinksForPair.length === 0) {
+    const now = Date.now();
     await db.customer_property_links.put({
       customerId,
       propertyId: property.id,
       role: CustomerRole.OWNER,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isDeleted: false,
       isSynced: false
     });
+    await db.enqueueOutbox("LINK", `${customerId}:::${property.id}`, "UPSERT");
   }
 
   return customerId;

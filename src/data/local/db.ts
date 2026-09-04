@@ -14,11 +14,34 @@ export interface SyncLog {
   totalCount?: number;
 }
 
+export interface OutboxItem {
+  id?: number;
+  entityType: "PROPERTY" | "CUSTOMER" | "LINK";
+  entityId: string;
+  operation: "UPSERT" | "DELETE";
+  createdAt: number;
+  attemptCount: number;
+  lastError?: string | null;
+  idempotencyKey: string;
+}
+
+export interface MediaOrphanItem {
+  id?: number;
+  propertyId: string;
+  objectKey: string;
+  mediaId: string;
+  fileName: string;
+  contentType: string;
+  createdAt: number;
+}
+
 export class AppDatabase extends Dexie {
   properties!: Table<Property, string>;
   customers!: Table<Customer, string>;
   customer_property_links!: Table<CustomerPropertyLink, [string, string]>;
   sync_logs!: Table<SyncLog, number>;
+  sync_outbox!: Table<OutboxItem, number>;
+  media_orphans!: Table<MediaOrphanItem, number>;
 
   constructor() {
     super("bds_collector_web_db");
@@ -34,6 +57,74 @@ export class AppDatabase extends Dexie {
       sync_logs:
         "++id, timestamp, type, status"
     });
+
+    // Phiên bản 2: Bổ sung bảng Persistent Outbox cho đồng bộ hai chiều (Two-Way Sync)
+    this.version(2).stores({
+      sync_outbox:
+        "++id, entityType, entityId, createdAt, idempotencyKey"
+    });
+
+    // Phiên bản 3: Bổ sung bảng hàng đợi Orphan Media phục vụ R2 upload
+    this.version(3).stores({
+      media_orphans:
+        "++id, propertyId, objectKey, createdAt"
+    });
+  }
+
+  /**
+   * Thêm hoặc cập nhật một thao tác vào hàng đợi Persistent Outbox (coalesce theo entityType + entityId)
+   */
+  async enqueueOutbox(
+    entityType: "PROPERTY" | "CUSTOMER" | "LINK",
+    entityId: string,
+    operation: "UPSERT" | "DELETE" = "UPSERT"
+  ): Promise<number> {
+    const existing = await this.sync_outbox
+      .where("entityType")
+      .equals(entityType)
+      .and((item) => item.entityId === entityId)
+      .first();
+
+    const now = Date.now();
+    const idempotencyKey = `${entityType}_${entityId}_${now}`;
+
+    if (existing && existing.id !== undefined) {
+      await this.sync_outbox.update(existing.id, {
+        operation,
+        createdAt: now,
+        attemptCount: 0,
+        lastError: null,
+        idempotencyKey
+      });
+      return existing.id;
+    } else {
+      return (await this.sync_outbox.add({
+        entityType,
+        entityId,
+        operation,
+        createdAt: now,
+        attemptCount: 0,
+        idempotencyKey
+      })) as number;
+    }
+  }
+
+  async getPendingOutbox(): Promise<OutboxItem[]> {
+    return await this.sync_outbox.orderBy("createdAt").toArray();
+  }
+
+  async removeOutbox(id: number): Promise<void> {
+    await this.sync_outbox.delete(id);
+  }
+
+  async updateOutboxError(id: number, error: string): Promise<void> {
+    const item = await this.sync_outbox.get(id);
+    if (item) {
+      await this.sync_outbox.update(id, {
+        attemptCount: (item.attemptCount || 0) + 1,
+        lastError: error
+      });
+    }
   }
 
   /**

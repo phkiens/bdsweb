@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Property } from "../../../src/core/models/property";
 import { PropertyStatus } from "../../../src/core/models/enums";
 import {
@@ -116,5 +116,51 @@ describe("FEATURE PARITY: MAP-SURVEY-GPS-001 (Bản đồ khảo sát: Lọc bá
 
     const result = filterMapProperties([valid, nullLat, nullLng, outOfVn], null, null);
     expect(result.map((p) => p.id)).toEqual(["valid"]);
+  });
+
+  describe("PARITY-MAP-001: Horizontal Pager Carousel for Nearby Properties", () => {
+    it("Cho phép duyệt mảng BĐS lân cận theo index, chỉ số trang và giới hạn biên", () => {
+      const p1 = createMockProp({ id: "p1", latitude: 10.7798, longitude: 106.6999 });
+      const p2 = createMockProp({ id: "p2", latitude: 10.7725, longitude: 106.6980 });
+      const p3 = createMockProp({ id: "p3", latitude: 10.7875, longitude: 106.7053 });
+
+      const filtered = filterMapProperties([p1, p2, p3], userGps, 2.0);
+      expect(filtered.length).toBe(3);
+
+      // Giả lập logic chọn index ban đầu và di chuyển
+      let selectedPropertyId = "p1";
+      let currentIndex = filtered.findIndex((p) => p.id === selectedPropertyId);
+      expect(currentIndex).toBe(0);
+
+      // Chuyển sang item tiếp theo
+      if (currentIndex < filtered.length - 1) {
+        currentIndex++;
+        selectedPropertyId = filtered[currentIndex].id;
+      }
+      expect(currentIndex).toBe(1);
+      expect(selectedPropertyId).toBe("p2");
+
+      // Chuyển tiếp sang item cuối
+      if (currentIndex < filtered.length - 1) {
+        currentIndex++;
+        selectedPropertyId = filtered[currentIndex].id;
+      }
+      expect(currentIndex).toBe(2);
+      expect(selectedPropertyId).toBe("p3");
+
+      // Không thể vượt quá biên cuối
+      const canGoNext = currentIndex < filtered.length - 1;
+      expect(canGoNext).toBe(false);
+
+      // Quay lại item trước
+      const canGoPrev = currentIndex > 0;
+      expect(canGoPrev).toBe(true);
+      if (canGoPrev) {
+        currentIndex--;
+        selectedPropertyId = filtered[currentIndex].id;
+      }
+      expect(currentIndex).toBe(1);
+      expect(selectedPropertyId).toBe("p2");
+    });
   });
 });

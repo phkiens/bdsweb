@@ -40,6 +40,20 @@ export const SyncStatusBar: React.FC = () => {
         </>
       )}
 
+      {state === "CONFLICT" && (
+        <>
+          <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+          <span className="text-amber-700 font-medium">{message || "Xung đột dữ liệu"}</span>
+          <button
+            onClick={handleSyncNow}
+            className="ml-1 text-blue-600 hover:underline font-medium"
+            title="Đồng bộ lại"
+          >
+            Đồng bộ lại
+          </button>
+        </>
+      )}
+
       {state === "ERROR" && (
         <>
           <AlertCircle className="w-3.5 h-3.5 text-amber-600" />

@@ -145,6 +145,22 @@ export const SettingsPage: React.FC = () => {
     window.location.reload();
   };
 
+  const handleClearAllData = async () => {
+    if (
+      !window.confirm(
+        "CẢNH BÁO: Hành động này sẽ xóa sạch toàn bộ BĐS, Tin chờ, Khách hàng và liên kết trong IndexedDB để chuẩn bị cho việc test import. Bạn có chắc chắn muốn xóa?"
+      )
+    ) {
+      return;
+    }
+    await db.properties.clear();
+    await db.customers.clear();
+    await db.customer_property_links.clear();
+    await db.sync_outbox.clear();
+    alert("Đã xóa sạch toàn bộ dữ liệu trong trình duyệt!");
+    window.location.reload();
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-4 md:py-6 pb-24 md:pb-12 space-y-4">
       {/* Header */}
@@ -283,6 +299,15 @@ export const SettingsPage: React.FC = () => {
         >
           <Database className="w-4 h-4" />
           <span>Nạp dữ liệu mẫu cố định (5 BĐS, 3 Khách hàng)</span>
+        </button>
+
+        <button
+          onClick={handleClearAllData}
+          className="w-full flex items-center justify-center gap-2 p-2.5 bg-red-100 hover:bg-red-200 text-red-800 font-bold rounded-xl text-xs transition-colors cursor-pointer border border-red-200"
+          title="Xóa toàn bộ BĐS, tin chờ, khách hàng hiện có trong trình duyệt"
+        >
+          <Trash2 className="w-4 h-4 text-red-700" />
+          <span>Xóa sạch toàn bộ dữ liệu (Reset CSDL)</span>
         </button>
       </div>
 

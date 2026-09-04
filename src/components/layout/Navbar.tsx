@@ -25,9 +25,22 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
     { to: "/settings", label: "Cài đặt", icon: Settings },
   ];
 
+  // PARITY-NAV-001: Chỉ hiển thị Bottom Navigation trên các màn hình tab chính trên mobile.
+  // Khi vào màn hình chi tiết, biểu mẫu thêm/sửa, hoặc cài đặt con, tự động ẩn thanh điều hướng đáy
+  // để tối đa hóa không gian thao tác và chiều cao viewport khả dụng cho người dùng.
+  const topLevelRoutes = [
+    "/properties",
+    "/unverified",
+    "/customers",
+    "/map",
+    "/settings",
+    "/statistics"
+  ];
+  const showMobileBottomNav = topLevelRoutes.includes(location.pathname);
+
   return (
     <>
-      {/* Top Bar Desktop */}
+      {/* Top Bar Desktop - Luôn hiển thị trên màn hình rộng */}
       <header className="hidden md:flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 font-bold text-lg text-blue-700">
@@ -60,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
         <div className="flex items-center gap-2.5">
           <button
             onClick={onOpenDuplicateCheck}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-300"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-slate-300 cursor-pointer"
             title="Kiểm tra trùng BĐS theo tọa độ / bản đồ"
           >
             <Search className="w-3.5 h-3.5 text-slate-500" />
@@ -77,34 +90,38 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar matching Material 3 NavigationBar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-2 shadow-lg safe-area-inset-bottom">
-        {navItems.map(({ to, label, icon: Icon }) => {
-          const isActive = location.pathname.startsWith(to);
-          return (
-            <NavLink
-              key={to}
-              to={to}
-              className="flex flex-col items-center justify-center flex-1 py-1 group"
-            >
-              <div
-                className={`flex items-center justify-center w-12 h-7 rounded-full transition-colors ${
-                  isActive ? "bg-blue-100 text-blue-700" : "text-slate-500 group-hover:text-slate-800"
-                }`}
+      {/* Mobile Bottom Navigation Bar matching Material 3 NavigationBar - Tự ẩn trên trang con */}
+      {showMobileBottomNav && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-40 px-2 shadow-lg safe-area-inset-bottom animate-in slide-in-from-bottom duration-150">
+          {navItems.map(({ to, label, icon: Icon }) => {
+            const isActive = location.pathname === to;
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                className="flex flex-col items-center justify-center flex-1 py-1 group"
               >
-                <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.5]" : "stroke-[1.75]"}`} />
-              </div>
-              <span
-                className={`text-[11px] mt-0.5 font-medium transition-colors ${
-                  isActive ? "text-blue-700 font-semibold" : "text-slate-500"
-                }`}
-              >
-                {label}
-              </span>
-            </NavLink>
-          );
-        })}
-      </nav>
+                <div
+                  className={`flex items-center justify-center w-12 h-7 rounded-full transition-colors ${
+                    isActive
+                      ? "bg-blue-100 text-blue-700"
+                      : "text-slate-500 group-hover:text-slate-800"
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 ${isActive ? "stroke-[2.5]" : "stroke-[1.75]"}`} />
+                </div>
+                <span
+                  className={`text-[11px] mt-0.5 font-medium transition-colors ${
+                    isActive ? "text-blue-700 font-semibold" : "text-slate-500"
+                  }`}
+                >
+                  {label}
+                </span>
+              </NavLink>
+            );
+          })}
+        </nav>
+      )}
     </>
   );
 };

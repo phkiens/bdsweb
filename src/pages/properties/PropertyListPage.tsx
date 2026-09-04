@@ -7,14 +7,12 @@ import {
   Calendar,
   Plus,
   Trash2,
-  Phone,
-  Clock,
-  Compass,
-  ChevronRight,
   X,
-  RotateCcw
+  CheckSquare,
+  Square
 } from "lucide-react";
 import { db } from "../../data/local/db";
+import { syncManager } from "../../data/sync/sync-manager";
 import { Property } from "../../core/models/property";
 import {
   PropertyStatus,
@@ -24,11 +22,12 @@ import {
 } from "../../core/models/enums";
 import {
   FilterState,
-  PRICE_BUCKETS,
-  SIZE_BUCKETS,
   PropertyFilter,
   sortProperties
 } from "../../core/engine/property-filter";
+import { PropertyCard } from "../../components/properties/PropertyCard";
+import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
+import { ConfirmModal } from "../../components/common/ConfirmModal";
 
 export const PropertyListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -36,7 +35,7 @@ export const PropertyListPage: React.FC = () => {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [viewTodayOnly, setViewTodayOnly] = useState(false);
-  const [showFilterDrawer, setShowFilterDrawer] = useState(false);
+  const [showFilterBottomSheet, setShowFilterBottomSheet] = useState(false);
 
   const [filterState, setFilterState] = useState<FilterState>({
     propertyTypes: new Set(),
@@ -56,6 +55,7 @@ export const PropertyListPage: React.FC = () => {
   // Multi-select state
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   // FAB position state (BEH-PROP-008: Chuyển đổi vị trí FAB trái/phải hỗ trợ thao tác một tay)
   const [fabPosition, setFabPosition] = useState<"left" | "right">(() => {
@@ -145,98 +145,31 @@ export const PropertyListPage: React.FC = () => {
     setViewTodayOnly(false);
   };
 
-  const isDongTuTrach =
-    (filterState.directions?.size ?? 0) === 4 &&
-    ["Đông", "Nam", "Bắc", "Đông Nam"].every((d) => filterState.directions?.has(d));
-
-  const isTayTuTrach =
-    (filterState.directions?.size ?? 0) === 4 &&
-    ["Tây", "Đông Bắc", "Tây Bắc", "Tây Nam"].every((d) => filterState.directions?.has(d));
-
-  const toggleDongTuTrach = () => {
-    const next = new Set(filterState.directions);
-    if (isDongTuTrach) {
-      ["Đông", "Nam", "Bắc", "Đông Nam"].forEach((d) => next.delete(d));
-    } else {
-      ["Đông", "Nam", "Bắc", "Đông Nam"].forEach((d) => next.add(d));
-    }
-    setFilterState((prev) => ({ ...prev, directions: next }));
-  };
-
-  const toggleTayTuTrach = () => {
-    const next = new Set(filterState.directions);
-    if (isTayTuTrach) {
-      ["Tây", "Đông Bắc", "Tây Bắc", "Tây Nam"].forEach((d) => next.delete(d));
-    } else {
-      ["Tây", "Đông Bắc", "Tây Bắc", "Tây Nam"].forEach((d) => next.add(d));
-    }
-    setFilterState((prev) => ({ ...prev, directions: next }));
-  };
-
-  const toggleDirection = (dir: string) => {
-    const next = new Set(filterState.directions);
-    if (next.has(dir)) next.delete(dir);
-    else next.add(dir);
-    setFilterState((prev) => ({ ...prev, directions: next }));
-  };
-
-  const togglePropertyType = (tp: string) => {
-    const next = new Set(filterState.propertyTypes);
-    if (next.has(tp)) next.delete(tp);
-    else next.add(tp);
-    setFilterState((prev) => ({ ...prev, propertyTypes: next }));
-  };
-
-  const toggleStatus = (st: PropertyStatus) => {
-    const next = new Set(filterState.statuses);
-    if (next.has(st)) next.delete(st);
-    else next.add(st);
-    setFilterState((prev) => ({ ...prev, statuses: next }));
-  };
-
-  const togglePriceBucket = (label: string) => {
-    const next = new Set(filterState.selectedPrices);
-    if (next.has(label)) next.delete(label);
-    else next.add(label);
-    setFilterState((prev) => ({
-      ...prev,
-      selectedPrices: next,
-      priceMin: null,
-      priceMax: null
-    }));
-  };
-
-  const toggleSizeBucket = (label: string) => {
-    const next = new Set(filterState.selectedSizes);
-    if (next.has(label)) next.delete(label);
-    else next.add(label);
-    setFilterState((prev) => ({
-      ...prev,
-      selectedSizes: next,
-      sizeMin: null,
-      sizeMax: null
-    }));
-  };
-
   const handleToggleNeedToViewToday = async (e: React.MouseEvent, p: Property) => {
     e.stopPropagation();
     const nextVal = !p.needToViewToday;
+    const now = Date.now();
     await db.properties.update(p.id, {
       needToViewToday: nextVal,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isTextSynced: false
     });
+    await db.enqueueOutbox("PROPERTY", p.id, "UPSERT");
+    syncManager.pushChanges();
   };
 
   const handleToggleStatus = async (e: React.MouseEvent, p: Property) => {
     e.stopPropagation();
     const nextStatus =
       p.status === PropertyStatus.FOR_SALE ? PropertyStatus.PAUSED : PropertyStatus.FOR_SALE;
+    const now = Date.now();
     await db.properties.update(p.id, {
       status: nextStatus,
-      updatedAt: Date.now(),
+      updatedAt: now,
       isTextSynced: false
     });
+    await db.enqueueOutbox("PROPERTY", p.id, "UPSERT");
+    syncManager.pushChanges();
   };
 
   const handleToggleSelect = (id: string) => {
@@ -249,22 +182,32 @@ export const PropertyListPage: React.FC = () => {
     setSelectedIds(next);
   };
 
-  const handleDeleteSelected = async () => {
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredProperties.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredProperties.map((p) => p.id)));
+    }
+  };
+
+  const handleConfirmDeleteSelected = async () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedIds.size} BĐS đã chọn?`)) return;
 
     const now = Date.now();
-    await db.transaction("rw", db.properties, async () => {
+    await db.transaction("rw", [db.properties, db.sync_outbox], async () => {
       for (const id of selectedIds) {
         await db.properties.update(id, {
           isDeleted: true,
           updatedAt: now,
           isTextSynced: false
         });
+        await db.enqueueOutbox("PROPERTY", id, "DELETE");
       }
     });
+    syncManager.pushChanges();
     setSelectedIds(new Set());
     setIsMultiSelect(false);
+    setConfirmDeleteOpen(false);
   };
 
   if (properties === undefined) {
@@ -275,327 +218,123 @@ export const PropertyListPage: React.FC = () => {
     );
   }
 
+  const isAllSelected =
+    filteredProperties.length > 0 && selectedIds.size === filteredProperties.length;
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-4 md:py-6 pb-24 md:pb-12">
-      {/* Top Controls Header */}
-      <div className="flex flex-col gap-3 mb-4">
-        <div className="flex items-center gap-2">
-          {/* Search Box */}
-          <div className="relative flex-1">
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-24 md:pb-12">
+      {/* Top Controls Header - PARITY-PROP-004: Responsive mobile ergonomics */}
+      <div className="flex flex-col gap-2.5 mb-3">
+        {/* On mobile: Row 1 is full-width Search Box; Row 2 is button actions. On tablet/desktop: 1 clean row */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          {/* Search Box - Chiếm trọn chiều ngang trên mobile tránh bị ép nhỏ */}
+          <div className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Tìm kiếm khu vực, chủ nhà, SĐT..."
-              className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden shadow-2xs"
+              className="w-full pl-9 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden shadow-2xs transition-all"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                title="Xóa tìm kiếm"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          {/* View Today toggle button */}
-          <button
-            onClick={() => setViewTodayOnly(!viewTodayOnly)}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-              viewTodayOnly
-                ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-            }`}
-            title="Lọc BĐS cần khảo sát hôm nay"
-          >
-            <Calendar className="w-4 h-4" />
-            <span className="hidden sm:inline">Hôm nay</span>
-          </button>
+          {/* Action Buttons Row */}
+          <div className="flex items-center gap-1.5 shrink-0 justify-between sm:justify-start">
+            {/* View Today toggle button */}
+            <button
+              onClick={() => setViewTodayOnly(!viewTodayOnly)}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                viewTodayOnly
+                  ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+              title="Lọc BĐS cần khảo sát hôm nay"
+            >
+              <Calendar className="w-4 h-4" />
+              <span>Hôm nay</span>
+            </button>
 
-          {/* Filter Drawer Toggle */}
-          <button
-            onClick={() => setShowFilterDrawer(!showFilterDrawer)}
-            className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-              activeFilterCount > 0 || showFilterDrawer
-                ? "bg-blue-50 text-blue-700 border-blue-300"
-                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            <span className="hidden sm:inline">Bộ lọc</span>
-            {activeFilterCount > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-bold rounded-full">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
+            {/* Filter Drawer Toggle - PARITY-PROP-003: Mở BottomSheet thay vì đẩy layout */}
+            <button
+              onClick={() => setShowFilterBottomSheet(true)}
+              className={`flex-1 sm:flex-initial relative flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                activeFilterCount > 0
+                  ? "bg-blue-50 text-blue-700 border-blue-300 shadow-2xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+              title="Mở bộ lọc nâng cao"
+            >
+              <Filter className="w-4 h-4" />
+              <span>Bộ lọc</span>
+              {activeFilterCount > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-bold rounded-full">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
 
-          {/* Multi-Select Toggle */}
-          <button
-            onClick={() => {
-              setIsMultiSelect(!isMultiSelect);
-              setSelectedIds(new Set());
-            }}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all ${
-              isMultiSelect
-                ? "bg-slate-800 text-white border-slate-800"
-                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            {isMultiSelect ? "Hủy chọn" : "Chọn nhiều"}
-          </button>
-        </div>
-
-        {/* Expandable Advanced Filter Panel */}
-        {showFilterDrawer && (
-          <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col gap-3.5 animate-in fade-in duration-150">
-            {/* Header: Title + Reset Action */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Filter className="w-3.5 h-3.5 text-blue-600" />
-                Bộ lọc nâng cao {activeFilterCount > 0 && `(${activeFilterCount} tiêu chí)`}
-              </span>
-              <div className="flex items-center gap-2">
-                {activeFilterCount > 0 && (
-                  <button
-                    onClick={handleResetFilter}
-                    className="flex items-center gap-1 text-[11px] text-red-600 hover:text-red-700 font-semibold px-2 py-0.5 rounded-lg hover:bg-red-50 transition-colors"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Xóa lọc</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowFilterDrawer(false)}
-                  className="text-slate-400 hover:text-slate-600 p-1"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Scope (Phạm vi) */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Phạm vi:</span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() =>
-                    setFilterState((prev) => ({ ...prev, scope: FilterScope.CURRENT_TAB }))
-                  }
-                  className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                    filterState.scope !== FilterScope.ALL
-                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  SP chính thức
-                </button>
-                <button
-                  onClick={() => setFilterState((prev) => ({ ...prev, scope: FilterScope.ALL }))}
-                  className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                    filterState.scope === FilterScope.ALL
-                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  }`}
-                >
-                  Tất cả (gồm SP chờ)
-                </button>
-              </div>
-            </div>
-
-            {/* Property Types (Loại hình) */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Loại BĐS:</span>
-              <div className="flex items-center gap-1.5">
-                {["Nhà", "Đất"].map((tp) => {
-                  const isSel = filterState.propertyTypes?.has(tp);
-                  return (
-                    <button
-                      key={tp}
-                      onClick={() => togglePropertyType(tp)}
-                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                        isSel
-                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                    >
-                      {tp === "Nhà" ? "🏠 Nhà" : "🌳 Đất"}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Statuses (Trạng thái) */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Trạng thái:</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[PropertyStatus.FOR_SALE, PropertyStatus.SOLD, PropertyStatus.PAUSED].map(
-                  (st) => {
-                    const isSel = filterState.statuses?.has(st);
-                    return (
-                      <button
-                        key={st}
-                        onClick={() => toggleStatus(st)}
-                        className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                          isSel
-                            ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}
-                      >
-                        {st}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-            </div>
-
-            {/* Price Buckets (Khoảng giá tỷ) */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-slate-500">Khoảng giá (tỷ VNĐ):</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {PRICE_BUCKETS.map((b) => {
-                  const isSel = filterState.selectedPrices?.has(b.label);
-                  return (
-                    <button
-                      key={b.label}
-                      onClick={() => togglePriceBucket(b.label)}
-                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                        isSel
-                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                    >
-                      {b.label} tỷ
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Size Buckets (Diện tích m2) */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-slate-500">Diện tích (m²):</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {SIZE_BUCKETS.map((b) => {
-                  const isSel = filterState.selectedSizes?.has(b.label);
-                  return (
-                    <button
-                      key={b.label}
-                      onClick={() => toggleSizeBucket(b.label)}
-                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                        isSel
-                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                    >
-                      {b.label} m²
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Directions (Hướng) */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold text-slate-500">Hướng nhà & Cung mệnh:</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  onClick={toggleDongTuTrach}
-                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                    isDongTuTrach
-                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                      : "bg-blue-50 text-blue-700 hover:bg-blue-100"
-                  }`}
-                >
-                  🧭 Đông tứ trạch
-                </button>
-                <button
-                  onClick={toggleTayTuTrach}
-                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                    isTayTuTrach
-                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                      : "bg-blue-50 text-blue-700 hover:bg-blue-100"
-                  }`}
-                >
-                  🧭 Tây tứ trạch
-                </button>
-
-                {["Đông", "Tây", "Nam", "Bắc", "Đông Nam", "Đông Bắc", "Tây Nam", "Tây Bắc"].map(
-                  (d) => {
-                    const isSel = filterState.directions?.has(d);
-                    return (
-                      <button
-                        key={d}
-                        onClick={() => toggleDirection(d)}
-                        className={`text-xs px-2 py-0.5 rounded-lg font-medium transition-colors ${
-                          isSel
-                            ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}
-                      >
-                        {d}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-            </div>
-
-            {/* Sort options */}
-            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-              <span className="text-xs font-semibold text-slate-500 w-20 shrink-0">Sắp xếp:</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[
-                  { type: PropertySortType.NEWEST, label: "Mới nhất" },
-                  { type: PropertySortType.PRICE_ASC, label: "Giá ↑" },
-                  { type: PropertySortType.PRICE_DESC, label: "Giá ↓" },
-                  { type: PropertySortType.SIZE, label: "Diện tích" }
-                ].map((s) => {
-                  const isSel = filterState.sortBy === s.type;
-                  return (
-                    <button
-                      key={s.type}
-                      onClick={() =>
-                        setFilterState((prev) => ({ ...prev, sortBy: s.type }))
-                      }
-                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors ${
-                        isSel
-                          ? "bg-blue-600 text-white font-semibold shadow-2xs"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Multi-Select Toggle */}
+            <button
+              onClick={() => {
+                setIsMultiSelect(!isMultiSelect);
+                setSelectedIds(new Set());
+              }}
+              className={`flex-1 sm:flex-initial px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                isMultiSelect
+                  ? "bg-slate-800 text-white border-slate-800 shadow-2xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {isMultiSelect ? "Hủy chọn" : "Chọn nhiều"}
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Multi-Select Action Bar */}
-      {isMultiSelect && selectedIds.size > 0 && (
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between animate-in fade-in">
-          <span className="text-sm font-semibold text-blue-900">
-            Đã chọn {selectedIds.size} BĐS
-          </span>
-          <button
-            onClick={handleDeleteSelected}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Xóa đã chọn</span>
-          </button>
+      {isMultiSelect && (
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSelectAll}
+              className="flex items-center gap-1.5 text-xs font-semibold text-blue-800 hover:text-blue-950 cursor-pointer"
+            >
+              {isAllSelected ? (
+                <CheckSquare className="w-4 h-4 text-blue-600" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400" />
+              )}
+              <span>{isAllSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}</span>
+            </button>
+            <span className="text-xs text-blue-700 font-medium">
+              Đã chọn <strong>{selectedIds.size}</strong> BĐS
+            </span>
+          </div>
+
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setConfirmDeleteOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Xóa ({selectedIds.size})</span>
+            </button>
+          )}
         </div>
       )}
 
       {/* Counter Summary */}
-      <div className="flex items-center justify-between text-xs text-slate-500 mb-3 px-1">
+      <div className="flex items-center justify-between text-xs text-slate-500 mb-2 px-1">
         <span>
           Hiển thị <strong>{filteredProperties.length}</strong> / {properties.length} BĐS{" "}
           {filterState.scope === FilterScope.ALL ? "(Tất cả)" : "chính thức"}
@@ -615,7 +354,7 @@ export const PropertyListPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Property Cards List */}
+      {/* Property Cards List - Đạt parity mật độ cao 76dp như Native Compose */}
       {filteredProperties.length === 0 ? (
         <div className="text-center py-16 px-4 bg-white border border-slate-200 rounded-2xl shadow-xs">
           <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
@@ -646,7 +385,7 @@ export const PropertyListPage: React.FC = () => {
           ) : (
             <button
               onClick={() => navigate("/properties/new")}
-              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors"
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Thêm BĐS mới</span>
@@ -654,123 +393,21 @@ export const PropertyListPage: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="space-y-3">
+        /* Danh sách phẳng có đường phân cách mỏng (Continuous Flat List matching Native) */
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden divide-y divide-slate-100">
           {filteredProperties.map((p) => {
             const isSelected = selectedIds.has(p.id);
             return (
-              <div
+              <PropertyCard
                 key={p.id}
-                onClick={() => {
-                  if (isMultiSelect) {
-                    handleToggleSelect(p.id);
-                  } else {
-                    navigate(`/properties/${p.id}`);
-                  }
-                }}
-                className={`p-4 bg-white border rounded-2xl shadow-2xs hover:shadow-sm transition-all cursor-pointer flex flex-col gap-2 relative ${
-                  isSelected
-                    ? "border-blue-500 ring-2 ring-blue-100 bg-blue-50/20"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                {/* Header Row: Type, Area, Status, Calendar Toggle */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    {isMultiSelect && (
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => handleToggleSelect(p.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-4 h-4 text-blue-600 rounded-sm border-slate-300 focus:ring-blue-500"
-                      />
-                    )}
-                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 shrink-0">
-                      {p.propertyType}
-                    </span>
-                    <h3 className="font-semibold text-slate-800 text-sm md:text-base truncate">
-                      {p.area || "Chưa có tên khu vực"}
-                    </h3>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Status Badge */}
-                    <button
-                      onClick={(e) => handleToggleStatus(e, p)}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-bold transition-colors ${
-                        p.status === PropertyStatus.FOR_SALE
-                          ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                          : p.status === PropertyStatus.PAUSED
-                          ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                      title="Click để đổi nhanh trạng thái"
-                    >
-                      {p.status}
-                    </button>
-
-                    {/* Need to view today calendar button */}
-                    <button
-                      onClick={(e) => handleToggleNeedToViewToday(e, p)}
-                      className={`p-1.5 rounded-lg transition-colors ${
-                        p.needToViewToday
-                          ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                          : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                      }`}
-                      title={p.needToViewToday ? "Bỏ đánh dấu xem hôm nay" : "Đánh dấu cần xem hôm nay"}
-                    >
-                      <Calendar className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Metrics Row: Price, Area Size, Direction */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                  <div className="font-bold text-blue-700 text-sm md:text-base">
-                    {p.price > 0 ? `${p.price} tỷ` : "Thương lượng"}
-                  </div>
-                  {p.areaSize && (
-                    <div className="flex items-center gap-1">
-                      <span>•</span>
-                      <span>{p.areaSize} m²</span>
-                    </div>
-                  )}
-                  {p.direction && (
-                    <div className="flex items-center gap-1">
-                      <span>•</span>
-                      <Compass className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{p.direction}</span>
-                    </div>
-                  )}
-                  {p.ownerPhone && (
-                    <div className="flex items-center gap-1 text-slate-500">
-                      <span>•</span>
-                      <Phone className="w-3 h-3" />
-                      <span>{p.ownerPhone}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Description snippet */}
-                {p.description && (
-                  <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
-                    {p.description}
-                  </p>
-                )}
-
-                {/* Footer status row */}
-                <div className="flex items-center justify-between pt-1 border-t border-slate-50 text-[11px] text-slate-400">
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    <span>KS: {p.surveyDate || "N/A"}</span>
-                  </div>
-
-                  <div className="flex items-center gap-1 text-blue-600 font-medium hover:underline">
-                    <span>Chi tiết</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-              </div>
+                property={p}
+                onClick={() => navigate(`/properties/${p.id}`)}
+                isMultiSelectMode={isMultiSelect}
+                isSelected={isSelected}
+                onToggleSelect={() => handleToggleSelect(p.id)}
+                onToggleNeedToViewToday={(e) => handleToggleNeedToViewToday(e, p)}
+                onToggleStatus={(e) => handleToggleStatus(e, p)}
+              />
             );
           })}
         </div>
@@ -810,6 +447,29 @@ export const PropertyListPage: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* Property Filter BottomSheet (PARITY-PROP-003) */}
+      <PropertyFilterBottomSheet
+        isOpen={showFilterBottomSheet}
+        filterState={filterState}
+        onFilterChange={setFilterState}
+        onClose={() => setShowFilterBottomSheet(false)}
+        onReset={handleResetFilter}
+        activeFilterCount={activeFilterCount}
+        totalMatchedCount={filteredProperties.length}
+      />
+
+      {/* Modal xác nhận xóa hàng loạt */}
+      <ConfirmModal
+        isOpen={confirmDeleteOpen}
+        title="Xác nhận xóa bất động sản"
+        message={`Bạn có chắc chắn muốn xóa ${selectedIds.size} bất động sản đã chọn?\nThao tác này sẽ đánh dấu xóa và đồng bộ lên đám mây.`}
+        confirmText="Xóa BĐS"
+        cancelText="Hủy"
+        variant="danger"
+        onConfirm={handleConfirmDeleteSelected}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
     </div>
   );
 };

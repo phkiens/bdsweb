@@ -48,12 +48,15 @@ export enum ExtractionType {
 export enum SyncStatus {
   SUCCESS = "SUCCESS",
   FAILED = "FAILED",
-  IN_PROGRESS = "IN_PROGRESS"
+  IN_PROGRESS = "IN_PROGRESS",
+  CONFLICT = "CONFLICT"
 }
 
 export enum SyncType {
   PUSH = "PUSH",
   PULL = "PULL",
+  PUSH_TEXT = "PUSH_TEXT",
+  PULL_TEXT = "PULL_TEXT",
   MEDIA = "MEDIA",
   GENERAL = "GENERAL"
 }
