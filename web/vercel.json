@@ -1,12 +1,12 @@
 {
-  "": "https://openapi.vercel.sh/vercel.json",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
     {
       "source": "/r2-proxy/(.*)",
-      "destination": "https://bds-collector.69297b7358dde768a284b602690502ce.r2.cloudflarestorage.com/"
+      "destination": "https://bds-collector.69297b7358dde768a284b602690502ce.r2.cloudflarestorage.com/$1"
     },
     {
       "source": "/(.*)",
