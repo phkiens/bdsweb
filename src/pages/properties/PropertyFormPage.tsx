@@ -60,8 +60,19 @@ export const PropertyFormPage: React.FC = () => {
         }
         setLoading(false);
       });
+    } else if (!isEditMode && paramCustomerId) {
+      db.customers.get(paramCustomerId).then((cust) => {
+        if (cust) {
+          setFormData((prev) => ({
+            ...prev,
+            ownerName: prev.ownerName || cust.name,
+            ownerPhone: prev.ownerPhone || cust.phone,
+            linkedCustomerId: cust.id
+          }));
+        }
+      });
     }
-  }, [id, isEditMode]);
+  }, [id, isEditMode, paramCustomerId]);
 
   const handleFetchGps = () => {
     if (!navigator.geolocation) {
