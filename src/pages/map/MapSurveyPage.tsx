@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import L from "leaflet";
@@ -9,24 +9,20 @@ import {
   ChevronRight,
   Route,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Target,
+  X
 } from "lucide-react";
 import { db } from "../../data/local/db";
-import { Property } from "../../core/models/property";
 import { RouteOptimizer } from "../../core/engine/route-optimizer";
 import { PropertyStatus } from "../../core/models/enums";
-
-// Fix standard leaflet icon path issues in Vite
-const DefaultIcon = L.icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-L.Marker.prototype.options.icon = DefaultIcon;
+import {
+  filterMapProperties,
+  getMarkerColorType,
+  MapScanCenter,
+  MapPropertyItem
+} from "../../core/engine/map-survey-engine";
+import { createMapPinIcon, createGpsUserIcon } from "./map-marker-icons";
 
 export const MapSurveyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -34,18 +30,47 @@ export const MapSurveyPage: React.FC = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const gpsLayerRef = useRef<L.LayerGroup | null>(null);
+  const radiusCircleRef = useRef<L.Circle | null>(null);
   const polylineLayerRef = useRef<L.Polyline | null>(null);
 
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<MapPropertyItem | null>(null);
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [routeInfo, setRouteInfo] = useState<string | null>(null);
   const [viewTodayOnly, setViewTodayOnly] = useState(false);
+
+  // GPS & Radius survey state (MAP-SURVEY-GPS-001)
+  const [userScanCenter, setUserScanCenter] = useState<MapScanCenter | null>(null);
+  const [userRadiusKm, setUserRadiusKm] = useState<number | null>(null);
+  const [userGps, setUserGps] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isLocatingGps, setIsLocatingGps] = useState(false);
 
   const properties = useLiveQuery(async () => {
     return await db.properties
       .filter((p) => !p.isDeleted)
       .toArray();
   }, []);
+
+  // Derive scan center from user selection or query param
+  const scanCenter = useMemo(() => {
+    if (userScanCenter) return userScanCenter;
+    const centerPropId = searchParams.get("centerPropertyId");
+    if (centerPropId && properties) {
+      const centerProp = properties.find((p) => p.id === centerPropId);
+      if (centerProp && centerProp.latitude != null && centerProp.longitude != null) {
+        return {
+          type: "PROPERTY" as const,
+          latitude: centerProp.latitude,
+          longitude: centerProp.longitude,
+          propertyId: centerProp.id,
+          label: centerProp.area
+        };
+      }
+    }
+    return null;
+  }, [userScanCenter, searchParams, properties]);
+
+  const radiusKm = userRadiusKm !== null ? userRadiusKm : scanCenter ? 2.0 : null;
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -61,14 +86,14 @@ export const MapSurveyPage: React.FC = () => {
     });
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution: "&copy; OpenStreetMap contributors",
       maxZoom: 19
     }).addTo(map);
 
     L.control.zoom({ position: "topright" }).addTo(map);
 
-    const markersLayer = L.layerGroup().addTo(map);
-    markersLayerRef.current = markersLayer;
+    markersLayerRef.current = L.layerGroup().addTo(map);
+    gpsLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
     return () => {
@@ -77,47 +102,124 @@ export const MapSurveyPage: React.FC = () => {
     };
   }, [searchParams]);
 
-  // Update markers when properties or filter changes
+  // Filtered properties based on GPS/Center and Radius
+  const filteredProperties = useMemo(() => {
+    if (!properties) return [];
+    return filterMapProperties(properties, scanCenter, radiusKm, viewTodayOnly);
+  }, [properties, scanCenter, radiusKm, viewTodayOnly]);
+
+  // Update markers on map
   useEffect(() => {
-    if (!mapRef.current || !markersLayerRef.current || !properties) return;
+    if (!mapRef.current || !markersLayerRef.current) return;
 
     markersLayerRef.current.clearLayers();
 
-    const validProps = properties.filter((p) => {
-      if (p.latitude === null || p.longitude === null) return false;
-      if (viewTodayOnly && !p.needToViewToday) return false;
-      return true;
-    });
+    filteredProperties.forEach((p) => {
+      const isSelected = selectedProperty?.id === p.id;
+      const colorType = getMarkerColorType(p);
+      const icon = createMapPinIcon(colorType, isSelected);
 
-    validProps.forEach((p) => {
-      const marker = L.marker([p.latitude!, p.longitude!]);
+      const marker = L.marker([p.latitude!, p.longitude!], { icon });
       marker.on("click", () => {
         setSelectedProperty(p);
       });
       markersLayerRef.current?.addLayer(marker);
     });
-  }, [properties, viewTodayOnly]);
+  }, [filteredProperties, selectedProperty]);
+
+  // Draw or update radius circle around scanCenter
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (radiusCircleRef.current) {
+      radiusCircleRef.current.remove();
+      radiusCircleRef.current = null;
+    }
+
+    if (scanCenter != null && radiusKm != null) {
+      const circle = L.circle([scanCenter.latitude, scanCenter.longitude], {
+        radius: radiusKm * 1000,
+        color: "#3b82f6",
+        fillColor: "#93c5fd",
+        fillOpacity: 0.15,
+        weight: 1.5,
+        dashArray: "6, 6"
+      }).addTo(mapRef.current);
+
+      radiusCircleRef.current = circle;
+    }
+  }, [scanCenter, radiusKm]);
+
+  // Update user GPS location pin on map
+  useEffect(() => {
+    if (!mapRef.current || !gpsLayerRef.current) return;
+
+    gpsLayerRef.current.clearLayers();
+
+    if (userGps) {
+      const userMarker = L.marker([userGps.latitude, userGps.longitude], {
+        icon: createGpsUserIcon(),
+        zIndexOffset: 1000
+      });
+      gpsLayerRef.current.addLayer(userMarker);
+    }
+  }, [userGps]);
 
   const handleCenterGps = () => {
-    if (!navigator.geolocation || !mapRef.current) return;
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude, longitude } = pos.coords;
-      mapRef.current?.setView([latitude, longitude], 16);
-      L.circleMarker([latitude, longitude], {
-        radius: 8,
-        fillColor: "#2563eb",
-        color: "#ffffff",
-        weight: 3,
-        fillOpacity: 1
-      }).addTo(mapRef.current!);
+    if (!navigator.geolocation || !mapRef.current) {
+      alert("Thiết bị hoặc trình duyệt không hỗ trợ Geolocation.");
+      return;
+    }
+
+    setIsLocatingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocatingGps(false);
+        const { latitude, longitude } = pos.coords;
+        setUserGps({ latitude, longitude });
+
+        setUserScanCenter({
+          type: "GPS",
+          latitude,
+          longitude,
+          label: "Vị trí GPS của bạn"
+        });
+
+        setUserRadiusKm(2.0);
+
+        mapRef.current?.setView([latitude, longitude], 15);
+      },
+      (err) => {
+        setIsLocatingGps(false);
+        alert("Không thể lấy vị trí GPS: " + err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSelectPropertyAsCenter = (p: MapPropertyItem) => {
+    if (p.latitude == null || p.longitude == null) return;
+    setUserScanCenter({
+      type: "PROPERTY",
+      latitude: p.latitude,
+      longitude: p.longitude,
+      propertyId: p.id,
+      label: p.area
     });
+    setUserRadiusKm(2.0);
+    mapRef.current?.setView([p.latitude, p.longitude], 15);
+  };
+
+  const handleClearScanCenter = () => {
+    setUserScanCenter(null);
+    setUserRadiusKm(null);
   };
 
   const handleOptimizeRoute = () => {
-    if (!properties || !mapRef.current) return;
+    if (!filteredProperties || !mapRef.current) return;
 
-    const points = properties
-      .filter((p) => p.latitude !== null && p.longitude !== null && (viewTodayOnly ? p.needToViewToday : true))
+    const points = filteredProperties
+      .filter((p) => p.latitude !== null && p.longitude !== null)
       .map((p) => ({
         id: p.id,
         latitude: p.latitude!,
@@ -132,9 +234,12 @@ export const MapSurveyPage: React.FC = () => {
     }
 
     setIsOptimizing(true);
-    const result = RouteOptimizer.optimize(null, points);
+    const startPoint: [number, number] | null = userGps
+      ? [userGps.latitude, userGps.longitude]
+      : null;
 
-    // Draw polyline
+    const result = RouteOptimizer.optimize(startPoint, points);
+
     if (polylineLayerRef.current) {
       polylineLayerRef.current.remove();
     }
@@ -160,34 +265,114 @@ export const MapSurveyPage: React.FC = () => {
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
       {/* Floating Map Controls */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
-        <button
-          onClick={() => setViewTodayOnly(!viewTodayOnly)}
-          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-md transition-all ${
-            viewTodayOnly ? "bg-blue-600 text-white" : "bg-white text-slate-800 hover:bg-slate-50"
-          }`}
-        >
-          <Calendar className="w-4 h-4" />
-          <span>{viewTodayOnly ? "Đang lọc: Hôm nay" : "Chỉ xem hôm nay"}</span>
-        </button>
+      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-[calc(100vw-32px)] sm:max-w-md">
+        {/* Row 1: Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setViewTodayOnly(!viewTodayOnly)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-md transition-all cursor-pointer ${
+              viewTodayOnly ? "bg-blue-600 text-white" : "bg-white text-slate-800 hover:bg-slate-50 border border-slate-200"
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>{viewTodayOnly ? "Đang lọc: Hôm nay" : "Chỉ xem hôm nay"}</span>
+          </button>
 
-        <button
-          onClick={handleOptimizeRoute}
-          disabled={isOptimizing}
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-semibold shadow-md transition-all border border-slate-200/80"
-        >
-          <Route className="w-4 h-4 text-blue-600" />
-          <span>{isOptimizing ? "Đang tính..." : "Tối ưu lộ trình khảo sát"}</span>
-        </button>
+          <button
+            onClick={handleOptimizeRoute}
+            disabled={isOptimizing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-semibold shadow-md transition-all border border-slate-200 cursor-pointer"
+          >
+            <Route className="w-3.5 h-3.5 text-blue-600" />
+            <span>{isOptimizing ? "Đang tính..." : "Tối ưu lộ trình"}</span>
+          </button>
+        </div>
+
+        {/* Row 2: Radius Filter Bar (MAP-SURVEY-GPS-001) */}
+        <div className="p-2.5 bg-white/95 backdrop-blur-xs rounded-2xl shadow-lg border border-slate-200 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700">
+            <span className="flex items-center gap-1 text-slate-500">
+              <Target className="w-3.5 h-3.5 text-blue-600" />
+              {scanCenter ? scanCenter.label || "Tâm quét" : "Toàn bộ bản đồ"}
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[10px]">
+                {filteredProperties.length} BĐS
+              </span>
+              {scanCenter && (
+                <button
+                  onClick={handleClearScanCenter}
+                  className="text-slate-400 hover:text-red-600 p-0.5"
+                  title="Hủy tâm quét"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
+            {[
+              { val: null, label: "Tất cả" },
+              { val: 0.5, label: "500m" },
+              { val: 1.0, label: "1 km" },
+              { val: 2.0, label: "2 km" },
+              { val: 5.0, label: "5 km" }
+            ].map((b) => {
+              const isSelected = radiusKm === b.val;
+              return (
+                <button
+                  key={String(b.val)}
+                  onClick={() => {
+                    setUserRadiusKm(b.val);
+                    if (b.val !== null && scanCenter === null && userGps !== null) {
+                      setUserScanCenter({
+                        type: "GPS",
+                        latitude: userGps.latitude,
+                        longitude: userGps.longitude,
+                        label: "Vị trí GPS của bạn"
+                      });
+                    }
+                  }}
+                  className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer shrink-0 ${
+                    isSelected
+                      ? "bg-blue-600 text-white font-semibold shadow-2xs"
+                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  }`}
+                >
+                  {b.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Color Legend (Parity with MapMarkerFactory.kt) */}
+          <div className="flex items-center gap-3 pt-1 border-t border-slate-100 text-[11px] text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+              <span>BĐS chính thức</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <span>Tin chờ khảo sát</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Center GPS Button */}
       <button
         onClick={handleCenterGps}
-        className="absolute bottom-24 md:bottom-8 right-4 z-20 w-11 h-11 bg-white hover:bg-slate-50 text-slate-700 rounded-full shadow-lg border border-slate-200 flex items-center justify-center transition-transform active:scale-95"
-        title="Vị trí của tôi"
+        disabled={isLocatingGps}
+        className={`absolute bottom-24 md:bottom-8 right-4 z-20 w-12 h-12 rounded-full shadow-xl border flex items-center justify-center transition-all cursor-pointer ${
+          scanCenter?.type === "GPS"
+            ? "bg-blue-600 text-white border-blue-700 shadow-blue-200"
+            : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200"
+        } ${isLocatingGps ? "animate-pulse" : "active:scale-95"}`}
+        title="Quét BĐS quanh vị trí GPS của tôi"
       >
-        <Navigation className="w-5 h-5 text-blue-600" />
+        <Navigation className={`w-5 h-5 ${scanCenter?.type === "GPS" ? "text-white fill-white" : "text-blue-600"}`} />
       </button>
 
       {/* Route Info Toast */}
@@ -203,15 +388,26 @@ export const MapSurveyPage: React.FC = () => {
         <div className="absolute bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-30 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 animate-in slide-in-from-bottom duration-200">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <span
-                className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                  selectedProperty.status === PropertyStatus.FOR_SALE
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                {selectedProperty.status}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                    selectedProperty.isVerified
+                      ? selectedProperty.status === PropertyStatus.FOR_SALE
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-slate-100 text-slate-700"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {selectedProperty.isVerified ? selectedProperty.status : "Tin chờ"}
+                </span>
+
+                {selectedProperty.distanceKm != null && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                    Cách {selectedProperty.distanceKm < 1 ? `${Math.round(selectedProperty.distanceKm * 1000)} m` : `${selectedProperty.distanceKm.toFixed(1)} km`}
+                  </span>
+                )}
+              </div>
+
               <h4 className="font-bold text-slate-900 text-sm md:text-base mt-1 line-clamp-1">
                 {selectedProperty.area}
               </h4>
@@ -219,7 +415,7 @@ export const MapSurveyPage: React.FC = () => {
 
             <button
               onClick={() => setSelectedProperty(null)}
-              className="text-slate-400 hover:text-slate-600 text-sm p-1"
+              className="text-slate-400 hover:text-slate-600 text-sm p-1 cursor-pointer"
             >
               ✕
             </button>
@@ -234,6 +430,15 @@ export const MapSurveyPage: React.FC = () => {
           </div>
 
           <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100">
+            <button
+              onClick={() => handleSelectPropertyAsCenter(selectedProperty)}
+              className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
+              title="Đặt làm tâm quét bán kính"
+            >
+              <Target className="w-3.5 h-3.5" />
+              <span>Tâm quét</span>
+            </button>
+
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${selectedProperty.latitude},${selectedProperty.longitude}`}
               target="_blank"
@@ -246,9 +451,9 @@ export const MapSurveyPage: React.FC = () => {
 
             <button
               onClick={() => navigate(`/properties/${selectedProperty.id}`)}
-              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+              className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer"
             >
-              <span>Xem chi tiết</span>
+              <span>Chi tiết</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -257,3 +462,4 @@ export const MapSurveyPage: React.FC = () => {
     </div>
   );
 };
+
