@@ -87,3 +87,21 @@ export enum OwnerPropertySort {
   DESCENDING = "Giảm dần số nhà",
   ASCENDING = "Tăng dần số nhà"
 }
+
+export enum FilterScope {
+  CURRENT_TAB = "CURRENT_TAB",
+  ALL = "ALL"
+}
+
+export enum PropertySortType {
+  NEWEST = "NEWEST",
+  PRICE_ASC = "PRICE_ASC",
+  PRICE_DESC = "PRICE_DESC",
+  SIZE = "SIZE"
+}
+
+export enum PropertyListMode {
+  VERIFIED = "VERIFIED",
+  UNVERIFIED = "UNVERIFIED",
+  ALL = "ALL"
+}
