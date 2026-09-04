@@ -1,4 +1,4 @@
-﻿import L from "leaflet";
+import L from "leaflet";
 import { MarkerColorType } from "../../core/engine/map-survey-engine";
 
 export function createMapPinIcon(
@@ -22,7 +22,7 @@ export function createMapPinIcon(
     size +
     "px; height: " +
     size +
-    "px; display: flex; align-items: center; justify-content: center; transform: translate(-50%, -100%); cursor: pointer;\">" +
+    "px; display: flex; align-items: center; justify-content: center; cursor: pointer;\">" +
     "<svg width=\"" +
     size +
     "\" height=\"" +
