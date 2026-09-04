@@ -14,7 +14,7 @@
 | **`CRM-OWNER-FILTER-001`** | Lọc và sắp xếp chủ nhà theo kho hàng (`OwnerStockFilter`, `OwnerPropertySort`) | `CALCULATION`, `DATA_READ` | **P1** | **MATCH (RESOLVED)** |
 | **`CRM-LINK-CREATION-002`** | Tạo BĐS từ Khách hàng không sinh liên kết `customer_property_links` | `DATA_WRITE` | **P1** | **MATCH (RESOLVED)** |
 | **`CRM-OWNER-DETAIL-003`** | Chi tiết khách hàng OWNER hiển thị nhầm tính năng ghép cặp mua nhà | `VISIBILITY`, `DATA_READ` | **P1** | **MATCH (RESOLVED)** |
-| **`CRM-PHONE-DUPLICATE-VALIDATION-001`** | Chặn trùng lặp SĐT chuẩn hóa khi thêm/sửa Khách hàng CRM | `VALIDATION` | **P1** | **CONFIRMED** |
+| **`CRM-PHONE-DUPLICATE-VALIDATION-001`** | Chặn trùng lặp SĐT chuẩn hóa khi thêm/sửa Khách hàng CRM | `VALIDATION` | **P1** | **MATCH (RESOLVED)** |
 | **`PROP-FILTER-ADVANCED-001`** | Bộ lọc BĐS nâng cao (Khoảng giá, diện tích m², hướng nhà, phạm vi) | `CALCULATION`, `DATA_READ` | **P2** | **CONFIRMED** |
 | **`MAP-SURVEY-GPS-001`** | Bản đồ: Lọc bán kính thực địa theo GPS và phân biệt màu ghim BĐS | `CALCULATION`, `UI_PRESENTATION` | **P2** | **CONFIRMED** |
 | **`PROP-MERGED-ACTIVITY-001`** | Hợp nhất Nhật ký thực địa và Lịch sử dẫn khách xem nhà | `DATA_READ`, `UI_PRESENTATION` | **P2** | **CONFIRMED** |
