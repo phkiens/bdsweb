@@ -25,7 +25,9 @@ export interface Customer {
 export interface CustomerPropertyLink {
   customerId: string;
   propertyId: string;
-  role: CustomerPropertyRole | string; // "OWNER", "VIEWED"
+  role: CustomerPropertyRole | string; // "OWNER", "VIEWER", "VIEWED"
+  viewDate?: string | null;
+  viewNote?: string | null;
   updatedAt: number;
   isDeleted: boolean;
   isSynced: boolean;

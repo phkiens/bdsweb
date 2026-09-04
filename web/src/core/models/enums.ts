@@ -24,6 +24,7 @@ export enum CustomerStatus {
 
 export enum CustomerPropertyRole {
   OWNER = "OWNER",
+  VIEWER = "VIEWER",
   VIEWED = "VIEWED"
 }
 
