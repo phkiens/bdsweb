@@ -28,6 +28,7 @@ import {
   calculateOwnerPropertyStats,
   applyCustomerFilters
 } from "../../core/engine/customer-filter";
+import { prepareCustomerForWrite } from "../../core/services/customer-validator";
 
 export const CustomerListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -37,6 +38,7 @@ export const CustomerListPage: React.FC = () => {
   const [ownerPropertySort, setOwnerPropertySort] = useState<OwnerPropertySort>(OwnerPropertySort.DEFAULT);
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [addError, setAddError] = useState("");
 
   // Form add customer
   const [newCustomer, setNewCustomer] = useState({
@@ -91,46 +93,53 @@ export const CustomerListPage: React.FC = () => {
     e.preventDefault();
     if (!newCustomer.name.trim()) return;
 
-    const now = Date.now();
-    const id = `cust-${now}-${Math.random().toString(36).substring(2, 6)}`;
-    const cust: Customer = {
-      id,
-      name: newCustomer.name.trim(),
-      nameNormalized: normalizeVietnamese(newCustomer.name),
-      phone: canonicalizeVietnamesePhone(newCustomer.phone),
-      demandType: newCustomer.demandType,
-      propertyType: newCustomer.propertyType,
-      demandAreas: newCustomer.demandAreas.trim(),
-      demandDirections: newCustomer.demandDirections.trim(),
-      priceMin: Number(newCustomer.priceMin) || 0,
-      priceMax: Number(newCustomer.priceMax) || 0,
-      note: newCustomer.note.trim(),
-      noteNormalized: normalizeVietnamese(newCustomer.note),
-      role: newCustomer.role,
-      status: CustomerStatus.ACTIVE,
-      updatedAt: now,
-      isSynced: false,
-      isDeleted: false,
-      avatarPath: null,
-      avatarDriveUrl: null
-    };
+    try {
+      setAddError("");
+      const now = Date.now();
+      const id = `cust-${now}-${Math.random().toString(36).substring(2, 6)}`;
+      const draft: Customer = {
+        id,
+        name: newCustomer.name.trim(),
+        nameNormalized: normalizeVietnamese(newCustomer.name),
+        phone: canonicalizeVietnamesePhone(newCustomer.phone),
+        demandType: newCustomer.demandType,
+        propertyType: newCustomer.propertyType,
+        demandAreas: newCustomer.demandAreas.trim(),
+        demandDirections: newCustomer.demandDirections.trim(),
+        priceMin: Number(newCustomer.priceMin) || 0,
+        priceMax: Number(newCustomer.priceMax) || 0,
+        note: newCustomer.note.trim(),
+        noteNormalized: normalizeVietnamese(newCustomer.note),
+        role: newCustomer.role,
+        status: CustomerStatus.ACTIVE,
+        updatedAt: now,
+        isSynced: false,
+        isDeleted: false,
+        avatarPath: null,
+        avatarDriveUrl: null
+      };
 
-    await db.customers.add(cust);
-    syncManager.pushChanges();
+      // Thẩm định và chặn trùng lặp SĐT chuẩn hóa theo chuẩn Native Android
+      const prepared = await prepareCustomerForWrite(db, draft);
+      await db.customers.add(prepared);
+      syncManager.pushChanges();
 
-    setShowAddModal(false);
-    setNewCustomer({
-      name: "",
-      phone: "",
-      demandType: "Cần mua",
-      propertyType: "Nhà",
-      demandAreas: "",
-      demandDirections: "",
-      priceMin: 0,
-      priceMax: 0,
-      note: "",
-      role: CustomerRole.BUYER
-    });
+      setShowAddModal(false);
+      setNewCustomer({
+        name: "",
+        phone: "",
+        demandType: "Cần mua",
+        propertyType: "Nhà",
+        demandAreas: "",
+        demandDirections: "",
+        priceMin: 0,
+        priceMax: 0,
+        note: "",
+        role: CustomerRole.BUYER
+      });
+    } catch (err: any) {
+      setAddError(err.message || "Lỗi khi lưu khách hàng");
+    }
   };
 
   const handleDeleteCustomer = async (e: React.MouseEvent, id: string) => {
@@ -159,7 +168,10 @@ export const CustomerListPage: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => {
+            setAddError("");
+            setShowAddModal(true);
+          }}
           className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors"
         >
           <UserPlus className="w-4 h-4" />
@@ -364,6 +376,12 @@ export const CustomerListPage: React.FC = () => {
                 ✕
               </button>
             </div>
+
+            {addError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                {addError}
+              </div>
+            )}
 
             <form onSubmit={handleCreateCustomer} className="space-y-3">
               <div>
