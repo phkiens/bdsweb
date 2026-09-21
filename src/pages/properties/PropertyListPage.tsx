@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
+import { mediaService } from "../../data/media/media-service";
 import {
   Search,
   Filter,
@@ -98,6 +99,13 @@ export const PropertyListPage: React.FC = () => {
     );
     return sortProperties(matched, filterState.sortBy);
   }, [properties, filterState, searchQuery, viewTodayOnly]);
+
+  // Batch preload media metadata for properties in current view (up to 100) to avoid N+1 RPC queries
+  useEffect(() => {
+    if (filteredProperties && filteredProperties.length > 0) {
+      mediaService.preloadPropertiesMedia(filteredProperties.slice(0, 100));
+    }
+  }, [filteredProperties]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
