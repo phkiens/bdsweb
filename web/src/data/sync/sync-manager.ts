@@ -3,6 +3,7 @@ import { getSupabaseClient } from "../remote/supabase";
 import { SyncStatus, SyncType } from "../../core/models/enums";
 import { Property } from "../../core/models/property";
 import { Customer, CustomerPropertyLink } from "../../core/models/customer";
+import { mediaService } from "../media/media-service";
 
 export type SyncState = "IDLE" | "SYNCING" | "CONFLICT" | "ERROR" | "OFFLINE";
 
@@ -48,7 +49,12 @@ export function mapRemotePropertyToDomain(item: any, existing?: Property): Prope
     createdAt: Number(item.created_at) || remoteUpdatedAt,
     isVerified: item.is_verified !== undefined ? Boolean(item.is_verified) : true,
     lastEditedAt: Number(item.last_edited_at) || remoteUpdatedAt,
-    r2MediaKeys: item.r2_media_keys || null
+    r2MediaKeys:
+      item.r2_media_keys !== undefined &&
+      item.r2_media_keys !== null &&
+      String(item.r2_media_keys).trim() !== ""
+        ? String(item.r2_media_keys)
+        : null
   };
 }
 
@@ -90,7 +96,12 @@ export function mapDomainPropertyToRemote(prop: Property): Record<string, any> {
     extracted_by: prop.extractedBy || null,
     created_at: Number(prop.createdAt) || Number(prop.updatedAt) || Date.now(),
     is_verified: Boolean(prop.isVerified),
-    r2_media_keys: prop.r2MediaKeys || null
+    r2_media_keys:
+      prop.r2MediaKeys !== undefined &&
+      prop.r2MediaKeys !== null &&
+      String(prop.r2MediaKeys).trim() !== ""
+        ? String(prop.r2MediaKeys)
+        : null
   };
 }
 
@@ -468,9 +479,18 @@ export class SyncManager {
               if (!existing.isTextSynced) {
                 continue;
               }
-              // Chỉ overwrite nếu remote.updated_at > local.updatedAt
-              if (remoteUpdatedAt > existing.updatedAt) {
+              // Chỉ overwrite nếu remote.updated_at > local.updatedAt HOẶC r2_media_keys thay đổi
+              const remoteR2Keys =
+                item.r2_media_keys !== undefined && item.r2_media_keys !== null && String(item.r2_media_keys).trim() !== ""
+                  ? String(item.r2_media_keys)
+                  : null;
+              const isMediaChanged = remoteR2Keys !== (existing.r2MediaKeys ?? null);
+
+              if (remoteUpdatedAt > existing.updatedAt || isMediaChanged) {
                 await db.properties.put(mapRemotePropertyToDomain(item, existing));
+                if (isMediaChanged) {
+                  mediaService.invalidateCache(item.id);
+                }
               }
             }
           }
@@ -702,13 +722,21 @@ export class SyncManager {
 
     if (!existing) {
       await db.properties.put(mapRemotePropertyToDomain(item));
+      mediaService.invalidateCache(item.id);
     } else {
       // Bảo vệ local unsynced: Nếu local đang sửa dở chưa push thì KHÔNG overwrite
       if (!existing.isTextSynced) {
         return;
       }
-      if (remoteUpdatedAt > existing.updatedAt) {
+      const remoteR2Keys =
+        item.r2_media_keys !== undefined && item.r2_media_keys !== null && String(item.r2_media_keys).trim() !== ""
+          ? String(item.r2_media_keys)
+          : null;
+      const isMediaChanged = remoteR2Keys !== (existing.r2MediaKeys ?? null);
+
+      if (remoteUpdatedAt > existing.updatedAt || isMediaChanged) {
         await db.properties.put(mapRemotePropertyToDomain(item, existing));
+        mediaService.invalidateCache(item.id);
       }
     }
   }

@@ -43,6 +43,21 @@ export function getMediaIdFromFileName(fileName: string): string {
 }
 
 /**
+ * Trích xuất mediaId từ objectKey hoặc fallback sang fileName
+ * Khớp 100% logic của Native Android (R2MediaItem.mediaId() tại R2MediaMetadata.kt:31)
+ * và đảm bảo vượt qua xác thực của Edge Function r2-media-sign (media-sign-helpers.ts:180).
+ */
+export function getMediaIdFromObjectKey(objectKey?: string | null, fallbackFileName?: string | null): string {
+  if (objectKey && objectKey.trim()) {
+    const keyFileName = objectKey.split("/").pop()?.split("\\").pop() || "";
+    const lastDot = keyFileName.lastIndexOf(".");
+    const fromKey = lastDot > 0 ? keyFileName.substring(0, lastDot) : keyFileName;
+    if (fromKey.trim()) return fromKey.trim();
+  }
+  return getMediaIdFromFileName(fallbackFileName || "");
+}
+
+/**
  * Tiện ích tạo slug và folderPrefix khớp 100% logic của Native Android (R2SlugUtils.kt)
  */
 export const R2SlugUtils = {
@@ -185,10 +200,10 @@ export function mergeR2MediaItems(
   const merged: R2MediaItem[] = [...existingRemoteItems];
   const seenKeys = new Set(existingRemoteItems.map((i) => i.objectKey));
   const seenFileNames = new Set(existingRemoteItems.map((i) => i.fileName));
-  const seenMediaIds = new Set(existingRemoteItems.map((i) => getMediaIdFromFileName(i.fileName)));
+  const seenMediaIds = new Set(existingRemoteItems.map((i) => getMediaIdFromObjectKey(i.objectKey, i.fileName)));
 
   for (const item of newItems) {
-    const mediaId = getMediaIdFromFileName(item.fileName);
+    const mediaId = getMediaIdFromObjectKey(item.objectKey, item.fileName);
     if (
       !seenKeys.has(item.objectKey) &&
       !seenFileNames.has(item.fileName) &&
@@ -226,6 +241,8 @@ export class R2MediaSignClient {
     return (
       (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_ACTIVATION_PUBLISHABLE_KEY) ||
       (typeof process !== "undefined" && process.env?.VITE_ACTIVATION_PUBLISHABLE_KEY) ||
+      (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY) ||
+      (typeof process !== "undefined" && process.env?.VITE_SUPABASE_PUBLISHABLE_KEY) ||
       ""
     ).trim();
   }

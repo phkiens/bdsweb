@@ -1,8 +1,17 @@
 import { Property } from "../../core/models/property";
+import {
+  MediaItem,
+  SupabaseMediaObjectRow,
+  isValidMediaItem,
+  mapMediaItemToR2Item,
+  mapR2ItemToMediaItem,
+  mapRpcRowToMediaItem
+} from "../../core/models/media";
 import { db } from "../local/db";
 import {
   ALLOWED_MIME_TYPES,
   getMediaIdFromFileName,
+  getMediaIdFromObjectKey,
   mergeR2MediaItems,
   parseR2MediaKeys,
   R2MediaItem,
@@ -38,7 +47,214 @@ export interface UploadProgressCallback {
 
 export class MediaService {
   /**
-   * Upload danh sách file ảnh lên R2 và liên kết với Property trong Supabase & IndexedDB
+   * In-memory cache mapping propertyId -> MediaItem[]
+   * Tránh N+1 query trên danh sách BĐS và tối ưu tốc độ render
+   */
+  private mediaCache = new Map<string, MediaItem[]>();
+
+  /**
+   * Xóa cache media của một hoặc toàn bộ property
+   */
+  public invalidateCache(propertyId?: string): void {
+    if (propertyId) {
+      this.mediaCache.delete(propertyId);
+    } else {
+      this.mediaCache.clear();
+    }
+  }
+
+  /**
+   * Lấy danh sách media metadata cho một property theo thứ tự phân cấp nghiêm ngặt:
+   * 1. Check zero media: r2MediaKeys == "[]" -> trả về [] ngay lập tức (không gọi RPC, không fallback Drive).
+   * 2. Cache hit -> trả về danh sách từ cache.
+   * 3. Gọi RPC public.fn_get_property_media(propertyId).
+   * 4. Nếu RPC fail hoặc rỗng -> Fallback về r2MediaKeys của property.
+   * 5. Nếu r2MediaKeys == null và có legacy Drive -> fallback Drive nếu cần.
+   */
+  public async fetchPropertyMedia(
+    propertyId: string,
+    property?: Property | null
+  ): Promise<MediaItem[]> {
+    if (!propertyId || !propertyId.trim()) {
+      return [];
+    }
+
+    // 1. Canonical zero media check
+    if (property?.r2MediaKeys === "[]") {
+      this.mediaCache.set(propertyId, []);
+      return [];
+    }
+
+    // 2. Cache hit
+    if (this.mediaCache.has(propertyId)) {
+      return this.mediaCache.get(propertyId)!;
+    }
+
+    // 3. Gọi RPC public.fn_get_property_media(propertyId)
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client.rpc("fn_get_property_media", {
+          p_property_id: propertyId
+        });
+
+        if (!error && Array.isArray(data)) {
+          const items: MediaItem[] = data
+            .map((row: SupabaseMediaObjectRow) => mapRpcRowToMediaItem(row))
+            .filter(isValidMediaItem)
+            .sort((a, b) => a.sortOrder - b.sortOrder);
+
+          if (items.length > 0) {
+            this.mediaCache.set(propertyId, items);
+            return items;
+          }
+
+          // RPC trả về []:
+          // Nếu property đã xác định r2MediaKeys == "[]" hoặc không có r2MediaKeys thì cache []
+          if (property?.r2MediaKeys === "[]" || !property?.r2MediaKeys) {
+            this.mediaCache.set(propertyId, []);
+            return [];
+          }
+        }
+      } catch (rpcErr) {
+        console.warn(`[MediaService] RPC fn_get_property_media thất bại cho ${propertyId}, fallback manifest:`, rpcErr);
+      }
+    }
+
+    // 4. Fallback sang r2_media_keys
+    let r2KeysJson = property?.r2MediaKeys;
+    if (r2KeysJson === undefined) {
+      const localProp = await db.properties.get(propertyId);
+      r2KeysJson = localProp?.r2MediaKeys || null;
+    }
+
+    if (r2KeysJson === "[]") {
+      this.mediaCache.set(propertyId, []);
+      return [];
+    }
+
+    const parsedR2 = parseR2MediaKeys(r2KeysJson);
+    if (parsedR2.length > 0) {
+      const items: MediaItem[] = parsedR2.map((r) => mapR2ItemToMediaItem(r, propertyId));
+      this.mediaCache.set(propertyId, items);
+      return items;
+    }
+
+    if (r2KeysJson !== null && r2KeysJson !== undefined) {
+      // Đã là R2-managed nhưng không có media
+      this.mediaCache.set(propertyId, []);
+      return [];
+    }
+
+    // 5. Fallback legacy Drive (chỉ khi r2KeysJson === null)
+    if (property?.driveMediaIds && property.driveMediaIds.trim()) {
+      // Property có driveMediaIds thuần
+      const ids = property.driveMediaIds
+        .split(/[|||,]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const legacyItems: MediaItem[] = ids.map((driveId, idx) => ({
+        propertyId,
+        mediaId: `drive_${driveId}`,
+        objectKey: `legacy/drive/${driveId}`,
+        fileName: `drive_${driveId}.jpg`,
+        contentType: "image/jpeg",
+        sortOrder: idx
+      }));
+      return legacyItems;
+    }
+
+    this.mediaCache.set(propertyId, []);
+    return [];
+  }
+
+  /**
+   * Preload media cho danh sách BĐS bằng RPC batch (tối đa 100 IDs/request)
+   * Chống N+1 RPC cho PropertyList / Card view
+   */
+  public async preloadPropertiesMedia(properties: Property[]): Promise<void> {
+    if (!properties || properties.length === 0) return;
+
+    // Lọc ra các property chưa có trong cache và không phải zero-media đã biết
+    const neededProps: Property[] = [];
+    for (const p of properties) {
+      if (p.r2MediaKeys === "[]") {
+        this.mediaCache.set(p.id, []);
+      } else if (!this.mediaCache.has(p.id)) {
+        neededProps.push(p);
+      }
+    }
+
+    if (neededProps.length === 0) return;
+
+    const client = getSupabaseClient();
+    const CHUNK_SIZE = 100;
+
+    for (let i = 0; i < neededProps.length; i += CHUNK_SIZE) {
+      const chunk = neededProps.slice(i, i + CHUNK_SIZE);
+      const chunkIds = chunk.map((p) => p.id);
+
+      if (client) {
+        try {
+          const { data, error } = await client.rpc("fn_get_properties_media_batch", {
+            p_property_ids: chunkIds
+          });
+
+          if (!error && Array.isArray(data)) {
+            const grouped = new Map<string, MediaItem[]>();
+            for (const row of data as SupabaseMediaObjectRow[]) {
+              const item = mapRpcRowToMediaItem(row);
+              if (isValidMediaItem(item)) {
+                const list = grouped.get(item.propertyId) || [];
+                list.push(item);
+                grouped.set(item.propertyId, list);
+              }
+            }
+
+            for (const p of chunk) {
+              const items = (grouped.get(p.id) || []).sort((a, b) => a.sortOrder - b.sortOrder);
+              if (items.length > 0) {
+                this.mediaCache.set(p.id, items);
+              } else if (p.r2MediaKeys === "[]") {
+                this.mediaCache.set(p.id, []);
+              } else {
+                // Fallback r2MediaKeys
+                const fallback = parseR2MediaKeys(p.r2MediaKeys).map((r) =>
+                  mapR2ItemToMediaItem(r, p.id)
+                );
+                this.mediaCache.set(p.id, fallback);
+              }
+            }
+            continue;
+          }
+        } catch (err) {
+          console.warn("[MediaService] Batch RPC thất bại, fallback sang parse manifest:", err);
+        }
+      }
+
+      // Fallback khi không có client hoặc batch RPC fail
+      for (const p of chunk) {
+        if (p.r2MediaKeys === "[]") {
+          this.mediaCache.set(p.id, []);
+        } else {
+          const fallback = parseR2MediaKeys(p.r2MediaKeys).map((r) =>
+            mapR2ItemToMediaItem(r, p.id)
+          );
+          this.mediaCache.set(p.id, fallback);
+        }
+      }
+    }
+  }
+
+  /**
+   * Lấy nhanh media từ cache nếu có, hoặc fetch đồng bộ
+   */
+  public getMediaSynchronous(propertyId: string): MediaItem[] | null {
+    return this.mediaCache.get(propertyId) || null;
+  }
+
+  /**
+   * Upload danh sách file ảnh/video lên R2 và liên kết với Property trong Supabase & IndexedDB
    */
   async uploadPropertyImages(
     property: Property,
@@ -203,6 +419,9 @@ export class MediaService {
         isMediaSynced: true
       });
 
+      // 8. Invalidate cache để UI load ảnh mới
+      this.invalidateCache(property.id);
+
       return { success: true, uploadedCount: newItems.length };
     } catch (err: any) {
       console.error("[MediaService] Lỗi trong quá trình upload ảnh:", err);
@@ -215,7 +434,12 @@ export class MediaService {
   }
 
   /**
-   * Xóa một ảnh khỏi Property (loại bỏ khỏi r2_media_keys cả trên Supabase và IndexedDB)
+   * Xóa một media khỏi Property.
+   * Quy tắc ZERO MEDIA SEMANTICS:
+   * - Nếu còn media: r2_media_keys = non-empty JSON array.
+   * - Nếu xóa item cuối: r2_media_keys = "[]" (TUYỆT ĐỐI KHÔNG GHI NULL).
+   * - Không xóa driveMediaIds legacy.
+   * - M3 trigger tự động soft-delete media_objects.
    */
   async deletePropertyImage(
     propertyId: string,
@@ -249,7 +473,8 @@ export class MediaService {
         .filter((item) => item.objectKey !== objectKey)
         .map((item, idx) => ({ ...item, sortOrder: idx }));
 
-      const serialized = serializeR2MediaKeys(filtered);
+      // ZERO MEDIA SEMANTICS: Nếu xóa item cuối cùng -> r2_media_keys = "[]"
+      const serialized = filtered.length === 0 ? "[]" : serializeR2MediaKeys(filtered);
       const newUpdatedAt = Date.now();
 
       if (supabase) {
@@ -272,6 +497,8 @@ export class MediaService {
         isTextSynced: true
       });
 
+      this.invalidateCache(propertyId);
+
       return { success: true };
     } catch (err: any) {
       console.error("[MediaService] Lỗi khi xóa ảnh:", err);
@@ -280,10 +507,105 @@ export class MediaService {
   }
 
   /**
-   * Lấy URL hiển thị ảnh (ưu tiên ký URL từ R2, có fallback)
+   * Sắp xếp lại thứ tự media cho một BĐS (Phase G - Web Reorder).
+   * Cập nhật sortOrder: 0..N-1, giữ nguyên identity (objectKey, mediaId, fileName).
+   * M3 trigger mirror tự động sang media_objects.
    */
-  async resolveImageUrl(propertyId: string, item: R2MediaItem): Promise<string | null> {
-    const mediaId = getMediaIdFromFileName(item.fileName);
+  async reorderPropertyImages(
+    propertyId: string,
+    orderedObjectKeys: string[]
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const supabase = getSupabaseClient();
+      let currentItems: R2MediaItem[] = [];
+
+      if (supabase) {
+        const { data, error } = await supabase
+          .from("properties")
+          .select("r2_media_keys")
+          .eq("id", propertyId)
+          .maybeSingle();
+
+        if (!error && data?.r2_media_keys) {
+          currentItems = parseR2MediaKeys(data.r2_media_keys);
+        }
+      }
+
+      if (currentItems.length === 0) {
+        const localProp = await db.properties.get(propertyId);
+        if (localProp?.r2MediaKeys) {
+          currentItems = parseR2MediaKeys(localProp.r2MediaKeys);
+        }
+      }
+
+      if (currentItems.length === 0) {
+        return { success: true };
+      }
+
+      const itemByKey = new Map<string, R2MediaItem>();
+      for (const item of currentItems) {
+        itemByKey.set(item.objectKey, item);
+      }
+
+      const reordered: R2MediaItem[] = [];
+      const assignedKeys = new Set<string>();
+
+      for (const key of orderedObjectKeys) {
+        const it = itemByKey.get(key);
+        if (it && !assignedKeys.has(key)) {
+          reordered.push({ ...it, sortOrder: reordered.length });
+          assignedKeys.add(key);
+        }
+      }
+
+      for (const it of currentItems) {
+        if (!assignedKeys.has(it.objectKey)) {
+          reordered.push({ ...it, sortOrder: reordered.length });
+          assignedKeys.add(it.objectKey);
+        }
+      }
+
+      const serialized = serializeR2MediaKeys(reordered);
+      const newUpdatedAt = Date.now();
+
+      if (supabase) {
+        const { error: updateErr } = await supabase
+          .from("properties")
+          .update({
+            r2_media_keys: serialized,
+            updated_at: newUpdatedAt
+          })
+          .eq("id", propertyId);
+
+        if (updateErr) {
+          throw new Error(`Cập nhật Supabase khi đổi thứ tự ảnh thất bại: ${updateErr.message}`);
+        }
+      }
+
+      await db.properties.update(propertyId, {
+        r2MediaKeys: serialized,
+        updatedAt: newUpdatedAt,
+        isTextSynced: true
+      });
+
+      this.invalidateCache(propertyId);
+
+      return { success: true };
+    } catch (err: any) {
+      console.error("[MediaService] Lỗi khi đổi thứ tự ảnh:", err);
+      return { success: false, error: err?.message || String(err) };
+    }
+  }
+
+  /**
+   * Lấy URL hiển thị ảnh (ưu tiên ký URL từ R2, có cache)
+   * Sử dụng mediaId bóc tách từ objectKey để đảm bảo khớp 100% với định danh R2
+   * và vượt qua kiểm tra identity của Edge Function r2-media-sign.
+   */
+  async resolveImageUrl(propertyId: string, item: MediaItem | R2MediaItem): Promise<string | null> {
+    const mediaId = ("mediaId" in item && item.mediaId)
+      ? item.mediaId
+      : getMediaIdFromObjectKey(item.objectKey, item.fileName);
     return await r2MediaSignClient.getPresignedDownloadUrl({
       ownerType: "PROPERTY",
       ownerId: propertyId,
@@ -346,6 +668,8 @@ export class MediaService {
           updatedAt: now,
           isTextSynced: true
         });
+
+        this.invalidateCache(propId);
 
         for (const orphan of propOrphans) {
           if (orphan.id) {
