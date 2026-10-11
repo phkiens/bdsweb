@@ -15,6 +15,7 @@ import { PropertyStatus } from "../../core/models/enums";
 import { toTitleCase } from "../../core/utils/vietnamese";
 import { parseR2MediaKeys } from "../../data/remote/r2-media-client";
 import { PropertyThumbnail } from "./PropertyThumbnail";
+import { formatPropertyPrice } from "../../core/utils/property-price";
 
 export enum SyncState {
   NOT_SYNCED = "NOT_SYNCED",
@@ -121,13 +122,7 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
   const isUnverified = !property.isVerified || mode === "unverified";
   const syncState = getPropertySyncState(property);
 
-  // Định dạng giá giống Native: >= 1 tỷ thì làm tròn tỷ, < 1 thì tính triệu
-  const formattedPrice =
-    property.price > 0
-      ? property.price >= 1
-        ? `${property.price} tỷ`
-        : `${Math.round(property.price * 1000)} triệu`
-      : null;
+  const formattedPrice = formatPropertyPrice(property.price);
 
   // Lấy hướng đầu tiên
   const firstDirection = property.direction

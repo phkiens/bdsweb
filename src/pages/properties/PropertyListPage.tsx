@@ -29,29 +29,32 @@ import {
 import { PropertyCard } from "../../components/properties/PropertyCard";
 import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
+import {
+  createDefaultFilterState,
+  loadPropertyListState,
+  savePropertyListState
+} from "../../core/utils/property-list-state";
 
 export const PropertyListPage: React.FC = () => {
   const navigate = useNavigate();
 
-  // Search & Filter state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [viewTodayOnly, setViewTodayOnly] = useState(false);
-  const [showFilterBottomSheet, setShowFilterBottomSheet] = useState(false);
+  // Read persisted view state once through lazy initial state (W004)
+  const [initialViewState] = useState(() => loadPropertyListState());
 
-  const [filterState, setFilterState] = useState<FilterState>({
-    propertyTypes: new Set(),
-    statuses: new Set(),
-    selectedPrices: new Set(),
-    priceMin: null,
-    priceMax: null,
-    selectedSizes: new Set(),
-    sizeMin: null,
-    sizeMax: null,
-    areas: new Set(),
-    directions: new Set(),
-    sortBy: PropertySortType.NEWEST,
-    scope: FilterScope.CURRENT_TAB
-  });
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState(initialViewState.searchQuery);
+  const [viewTodayOnly, setViewTodayOnly] = useState(initialViewState.viewTodayOnly);
+  const [showFilterBottomSheet, setShowFilterBottomSheet] = useState(false);
+  const [filterState, setFilterState] = useState<FilterState>(initialViewState.filterState);
+
+  // Persist view state whenever search query, today toggle, or filter state changes
+  useEffect(() => {
+    savePropertyListState({
+      searchQuery,
+      viewTodayOnly,
+      filterState
+    });
+  }, [searchQuery, viewTodayOnly, filterState]);
 
   // Multi-select state
   const [isMultiSelect, setIsMultiSelect] = useState(false);
@@ -135,20 +138,7 @@ export const PropertyListPage: React.FC = () => {
   }, [filterState]);
 
   const handleResetFilter = () => {
-    setFilterState({
-      propertyTypes: new Set(),
-      statuses: new Set(),
-      selectedPrices: new Set(),
-      priceMin: null,
-      priceMax: null,
-      selectedSizes: new Set(),
-      sizeMin: null,
-      sizeMax: null,
-      areas: new Set(),
-      directions: new Set(),
-      sortBy: PropertySortType.NEWEST,
-      scope: FilterScope.CURRENT_TAB
-    });
+    setFilterState(createDefaultFilterState());
     setSearchQuery("");
     setViewTodayOnly(false);
   };

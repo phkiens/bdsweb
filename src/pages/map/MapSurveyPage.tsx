@@ -27,6 +27,7 @@ import {
 import { isInVietnam } from "../../core/utils/coordinates";
 import { createMapPinIcon, createGpsUserIcon } from "./map-marker-icons";
 import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
+import { formatPropertyPrice } from "../../core/utils/property-price";
 
 export const MapSurveyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -583,7 +584,7 @@ export const MapSurveyPage: React.FC = () => {
 
               <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
                 <span className="text-blue-700 font-extrabold text-sm">
-                  {selectedProperty.price > 0 ? `${selectedProperty.price} tỷ` : "Thương lượng"}
+                  {formatPropertyPrice(selectedProperty.price) || "Thương lượng"}
                 </span>
                 {selectedProperty.areaSize && <span>• {selectedProperty.areaSize} m²</span>}
                 {selectedProperty.propertyType && <span>• {selectedProperty.propertyType}</span>}

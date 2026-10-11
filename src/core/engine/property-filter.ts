@@ -210,13 +210,20 @@ export const PropertyFilter = {
 
     // 6. Direction
     if (filter.directions && filter.directions.size > 0) {
-      const dirs = (p.direction || "").split("|||");
-      const matchDir = dirs.some((dir) =>
-        Array.from(filter.directions!).some((d) =>
-          dir.toLowerCase().includes(d.toLowerCase())
-        )
+      const selectedNorms = new Set(
+        Array.from(filter.directions)
+          .map((d) => normalizeVietnamese(d))
+          .filter((d) => d.length > 0)
       );
-      if (!matchDir) return false;
+      if (selectedNorms.size > 0) {
+        if (!p.direction || !p.direction.trim()) return false;
+        const dirs = p.direction.split("|||");
+        const matchDir = dirs.some((dir) => {
+          const norm = normalizeVietnamese(dir);
+          return norm.length > 0 && selectedNorms.has(norm);
+        });
+        if (!matchDir) return false;
+      }
     }
 
     // 7. Today only

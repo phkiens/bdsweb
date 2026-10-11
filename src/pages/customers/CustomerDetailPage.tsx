@@ -22,6 +22,7 @@ import { syncManager } from "../../data/sync/sync-manager";
 import { CustomerAvatar } from "../../components/customers/CustomerAvatar";
 import { EditCustomerModal } from "../../components/customers/EditCustomerModal";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
+import { formatPropertyPrice } from "../../core/utils/property-price";
 
 export const CustomerDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -309,7 +310,7 @@ export const CustomerDetailPage: React.FC = () => {
                   </div>
 
                   <div className="text-xs text-slate-600 font-medium">
-                    <strong className="text-blue-700">{property.price} tỷ</strong>
+                    <strong className="text-blue-700">{formatPropertyPrice(property.price) || "Thương lượng"}</strong>
                     {property.areaSize && <span> • {property.areaSize} m²</span>}
                     {property.direction && <span> • Hướng: {property.direction}</span>}
                   </div>
@@ -410,7 +411,7 @@ export const CustomerDetailPage: React.FC = () => {
 
                   <div className="text-xs text-slate-600 font-medium flex flex-wrap gap-x-3 gap-y-1">
                     <strong className="text-blue-700">
-                      {property.price > 0 ? `${property.price} tỷ` : "Thương lượng"}
+                      {formatPropertyPrice(property.price) || "Thương lượng"}
                     </strong>
                     {property.areaSize && <span>• {property.areaSize} m²</span>}
                     {property.direction && <span>• Hướng: {property.direction}</span>}

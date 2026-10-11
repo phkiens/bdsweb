@@ -31,6 +31,7 @@ import {
 } from "../../core/engine/activity-timeline-engine";
 import { AddViewingModal } from "./AddViewingModal";
 import { PropertyMediaGallery } from "../../components/properties/PropertyMediaGallery";
+import { formatPropertyPrice } from "../../core/utils/property-price";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -163,7 +164,7 @@ export const PropertyDetailPage: React.FC = () => {
 
   const handleShare = async () => {
     const text = `Cần bán: ${property.area}\nLoại hình: ${property.propertyType}\nGiá: ${
-      property.price > 0 ? property.price + " tỷ" : "Thương lượng"
+      formatPropertyPrice(property.price) || "Thương lượng"
     }\nDiện tích: ${property.areaSize ? property.areaSize + " m²" : "Đang cập nhật"}\nHướng: ${
       property.direction || "Chưa xác định"
     }\nLiên hệ: ${property.ownerPhone}`;
@@ -277,7 +278,7 @@ export const PropertyDetailPage: React.FC = () => {
 
           <div className="text-right">
             <div className="text-xl md:text-2xl font-black text-blue-700">
-              {property.price > 0 ? `${property.price} tỷ` : "Thương lượng"}
+              {formatPropertyPrice(property.price) || "Thương lượng"}
             </div>
             {property.areaSize && (
               <div className="text-xs text-slate-500 font-medium">{property.areaSize} m²</div>

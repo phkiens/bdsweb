@@ -4,6 +4,7 @@ import { X, Search, CheckCircle2, AlertTriangle, ExternalLink, Plus } from "luci
 import { COORD_DELTA, parseVietnamCoordinates } from "../../core/utils/coordinates";
 import { db } from "../../data/local/db";
 import { Property } from "../../core/models/property";
+import { formatPropertyPrice } from "../../core/utils/property-price";
 
 interface DuplicateCheckModalProps {
   isOpen: boolean;
@@ -141,7 +142,7 @@ export const DuplicateCheckModal: React.FC<DuplicateCheckModalProps> = ({
                         <div>
                           <div className="font-medium text-slate-800 text-sm">{item.area || "Chưa rõ khu vực"}</div>
                           <div className="text-xs text-slate-500 mt-0.5">
-                            {item.price} tỷ · {item.propertyType} · {item.status}
+                            {formatPropertyPrice(item.price) || "Thương lượng"} · {item.propertyType} · {item.status}
                           </div>
                         </div>
                         <ExternalLink className="w-4 h-4 text-blue-600" />

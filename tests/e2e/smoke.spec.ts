@@ -104,13 +104,13 @@ test.describe("BỘ 10 KỊCH BẢN SMOKE TEST TOÀN DIỆN (BEHAVIORAL PARITY)"
 
   test("SMOKE-007: Tạo khách hàng mới và kiểm tra số điện thoại chuẩn hóa", async ({ page }) => {
     await page.goto("/customers");
-    await page.getByRole("button", { name: "Thêm khách mới" }).click();
+    await page.getByRole("button", { name: "Thêm khách", exact: true }).click();
 
     await page.getByPlaceholder("Ví dụ: Anh Hoàng").fill("Nguyễn Văn Test");
     await page.getByPlaceholder("0901234567").fill("+84 909 888 777");
     await page.getByPlaceholder("Bình Thạnh|||Quận 1").fill("Gò Vấp");
 
-    await page.getByRole("button", { name: "Lưu khách hàng" }).click();
+    await page.getByRole("button", { name: "Tạo khách hàng" }).click();
 
     await expect(page.getByText("Nguyễn Văn Test")).toBeVisible();
     await expect(page.getByText("0909888777")).toBeVisible();
