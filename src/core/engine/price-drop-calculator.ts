@@ -1,5 +1,5 @@
 import { Property } from "../models/property";
-import { PropertyStatus } from "../models/enums";
+import { isActiveMarketProperty } from "../statistics/statistics-filter";
 import {
   PropertyPriceHistory,
   PriceHistoryChangeType,
@@ -57,14 +57,8 @@ export interface PriceDropItem {
 export const PRICE_EPSILON = 1e-4;
 export const MAX_FUTURE_TOLERANCE_MS = 60_000;
 
-export function isActiveMarketProperty(property: Property): boolean {
-  return (
-    !property.isDeleted &&
-    !property.isDraft &&
-    (property.status === PropertyStatus.FOR_SALE ||
-      property.status === PropertyStatus.PENDING_SURVEY)
-  );
-}
+export { isActiveMarketProperty } from "../statistics/statistics-filter";
+
 
 export function calculatePricePerM2Fallback(
   price: number | null | undefined,
