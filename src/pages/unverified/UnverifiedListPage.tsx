@@ -23,6 +23,8 @@ import { toTitleCase } from "../../core/utils/vietnamese";
 import { calculateDistanceKm, isInVietnam } from "../../core/utils/coordinates";
 import { parseRawText, getDistinctAreas, UnverifiedPropertyType } from "../../core/engine/property-text-extractor";
 import { nowTimestamp } from "../../core/utils/date";
+import { decodeDrillDownQuery } from "../../core/statistics/drill-down-query";
+import { applyDrillDownFilter } from "../../core/statistics/drill-down-applier";
 import { PropertyCard } from "../../components/properties/PropertyCard";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
 import { PropertyFilter } from "../../core/engine/property-filter";
@@ -102,7 +104,13 @@ export function getAreaClusteredProperties(properties: Property[]): AreaCluster[
 
 export const UnverifiedListPage: React.FC = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const drilldownRaw = searchParams.get("drilldown");
+  const drillDownFilter = useMemo(() => {
+    if (!drilldownRaw) return null;
+    return decodeDrillDownQuery(searchParams);
+  }, [drilldownRaw, searchParams]);
 
   // Khởi tạo nội dung văn bản chia sẻ từ PWA Web Share Target URL params
   const sharedText = searchParams.get("text");
@@ -149,11 +157,14 @@ export const UnverifiedListPage: React.FC = () => {
   // Lọc và xếp hạng theo chuẩn tìm kiếm Android
   const rankedResult = useMemo(() => {
     if (!rawUnverifiedList) return { items: [], ownerMatchStart: -1 };
-    const matched = rawUnverifiedList.filter((p) =>
+    let matched = rawUnverifiedList.filter((p) =>
       PropertyFilter.matchesQuery(p, searchQuery, true)
     );
+    if (drillDownFilter) {
+      matched = applyDrillDownFilter(matched, drillDownFilter);
+    }
     return PropertyFilter.rankSearchResults(matched, searchQuery, true);
-  }, [rawUnverifiedList, searchQuery]);
+  }, [rawUnverifiedList, searchQuery, drillDownFilter]);
 
   const filteredList = rankedResult.items;
   const ownerMatchStart = rankedResult.ownerMatchStart;
@@ -383,6 +394,28 @@ export const UnverifiedListPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Drill-down Banner */}
+      {Boolean(drilldownRaw) && (
+        <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs font-semibold text-amber-900 truncate">
+              {drillDownFilter
+                ? `Đang xem từ Thống kê (${drillDownFilter.contextLabel})`
+                : "Dữ liệu bộ lọc không hợp lệ."}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              searchParams.delete("drilldown");
+              setSearchParams(searchParams, { replace: true });
+            }}
+            className="text-xs font-bold text-amber-800 hover:text-amber-950 px-2 py-1 rounded-md hover:bg-amber-100 transition-colors shrink-0 cursor-pointer"
+          >
+            Xóa lọc
+          </button>
+        </div>
+      )}
 
       {/* Multi-Select Action Bar */}
       {isMultiSelect && (

@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { decodeDrillDownQuery } from "../../core/statistics/drill-down-query";
+import { applyDrillDownFilter } from "../../core/statistics/drill-down-applier";
 import { mediaService } from "../../data/media/media-service";
 import {
   Search,
@@ -42,6 +44,13 @@ import {
 
 export const PropertyListPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const drilldownRaw = searchParams.get("drilldown");
+  const drillDownFilter = useMemo(() => {
+    if (!drilldownRaw) return null;
+    return decodeDrillDownQuery(searchParams);
+  }, [drilldownRaw, searchParams]);
 
   // Read persisted view state once through lazy initial state (W004)
   const [initialViewState] = useState(() => loadPropertyListState());
@@ -99,7 +108,7 @@ export const PropertyListPage: React.FC = () => {
   // Derived filtered & sorted properties (ranked with Owner Match parity)
   const rankedResults = useMemo(() => {
     if (!properties) return { items: [], ownerMatchStart: -1 };
-    const matched = properties.filter((p) =>
+    let matched = properties.filter((p) =>
       PropertyFilter.matches(
         p,
         filterState,
@@ -109,9 +118,12 @@ export const PropertyListPage: React.FC = () => {
         true
       )
     );
+    if (drillDownFilter) {
+      matched = applyDrillDownFilter(matched, drillDownFilter);
+    }
     const sorted = sortProperties(matched, filterState.sortBy);
     return PropertyFilter.rankSearchResults(sorted, searchQuery, true);
-  }, [properties, filterState, searchQuery, viewTodayOnly]);
+  }, [properties, filterState, searchQuery, viewTodayOnly, drillDownFilter]);
 
   const filteredProperties = rankedResults.items;
   const ownerMatchStart = rankedResults.ownerMatchStart;
@@ -317,6 +329,28 @@ export const PropertyListPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Drill-down Banner */}
+      {Boolean(drilldownRaw) && (
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-xs font-semibold text-blue-900 truncate">
+              {drillDownFilter
+                ? `Đang xem từ Thống kê (${drillDownFilter.contextLabel})`
+                : "Dữ liệu bộ lọc không hợp lệ."}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              searchParams.delete("drilldown");
+              setSearchParams(searchParams, { replace: true });
+            }}
+            className="text-xs font-bold text-blue-700 hover:text-blue-900 px-2 py-1 rounded-md hover:bg-blue-100 transition-colors shrink-0 cursor-pointer"
+          >
+            Xóa lọc
+          </button>
+        </div>
+      )}
 
       {/* Multi-Select Action Bar */}
       {isMultiSelect && (
