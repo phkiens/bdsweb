@@ -37,6 +37,10 @@ export interface Property {
   isVerified: boolean;
   lastEditedAt: number;
   r2MediaKeys: string | null;
+  soldAt: number | null;
+  priceEditKind: string | null;
+  priceEditAt: number | null;
+  priceHistoryClearedRev: number;
 }
 
 export function generatePropertyId(): string {
@@ -97,6 +101,10 @@ export function createDefaultProperty(partial?: Partial<Property>): Property {
     isVerified: true,
     lastEditedAt: now,
     r2MediaKeys: null,
+    soldAt: null,
+    priceEditKind: null,
+    priceEditAt: null,
+    priceHistoryClearedRev: 0,
     ...partial
   };
 }

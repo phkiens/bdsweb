@@ -4,6 +4,13 @@ import { SyncStatus, SyncType } from "../../core/models/enums";
 import { Property } from "../../core/models/property";
 import { Customer, CustomerPropertyLink } from "../../core/models/customer";
 import { mediaService } from "../media/media-service";
+import {
+  PropertyPriceHistory,
+  parsePriceHistoryChangeType,
+  parsePriceEditKind
+} from "../../core/models/price-history";
+import { getMaxPriceHistoryRevision } from "../local/price-history-queries";
+import { computeCatchUpCursor } from "../../core/utils/price-history-helper";
 
 export type SyncState = "IDLE" | "SYNCING" | "CONFLICT" | "ERROR" | "OFFLINE";
 
@@ -54,7 +61,11 @@ export function mapRemotePropertyToDomain(item: any, existing?: Property): Prope
       item.r2_media_keys !== null &&
       String(item.r2_media_keys).trim() !== ""
         ? String(item.r2_media_keys)
-        : null
+        : null,
+    soldAt: item.sold_at != null ? Number(item.sold_at) : null,
+    priceEditKind: item.price_edit_kind != null ? String(item.price_edit_kind) : null,
+    priceEditAt: item.price_edit_at != null ? Number(item.price_edit_at) : null,
+    priceHistoryClearedRev: item.price_history_cleared_rev != null ? Number(item.price_history_cleared_rev) : 0
   };
 }
 
@@ -101,7 +112,31 @@ export function mapDomainPropertyToRemote(prop: Property): Record<string, any> {
       prop.r2MediaKeys !== null &&
       String(prop.r2MediaKeys).trim() !== ""
         ? String(prop.r2MediaKeys)
-        : null
+        : null,
+    sold_at: prop.soldAt != null ? Number(prop.soldAt) : null,
+    price_edit_kind: prop.priceEditKind != null ? String(prop.priceEditKind) : null,
+    price_edit_at: prop.priceEditAt != null ? Number(prop.priceEditAt) : null,
+    price_history_cleared_rev: Number(prop.priceHistoryClearedRev) || 0
+  };
+}
+
+/**
+ * Ánh xạ bản ghi Supabase `property_price_histories` sang `PropertyPriceHistory` domain model
+ */
+export function mapRemotePriceHistoryToDomain(item: any): PropertyPriceHistory {
+  return {
+    id: String(item.id),
+    revision: Number(item.revision) || 0,
+    propertyId: String(item.property_id),
+    changeType: parsePriceHistoryChangeType(item.change_type),
+    editKind: parsePriceEditKind(item.edit_kind),
+    previousPrice: item.previous_price != null ? Number(item.previous_price) : null,
+    currentPrice: Number(item.current_price) || 0,
+    previousAreaSize: item.previous_area_size != null ? Number(item.previous_area_size) : null,
+    currentAreaSize: item.current_area_size != null ? Number(item.current_area_size) : null,
+    previousPricePerM2: item.previous_price_per_m2 != null ? Number(item.previous_price_per_m2) : null,
+    currentPricePerM2: item.current_price_per_m2 != null ? Number(item.current_price_per_m2) : null,
+    recordedAt: Number(item.recorded_at) || Date.now()
   };
 }
 
@@ -608,6 +643,44 @@ export class SyncManager {
         if (page.length < PULL_PAGE_SIZE) break;
       }
 
+      // 4. Pull Property Price Histories (chuẩn Android)
+      try {
+        const persistedWatermark = Number(localStorage.getItem("bds_last_pull_price_history_rev")) || 0;
+        const localMaxRevision = await getMaxPriceHistoryRevision();
+        const { startRevision, cursor: initialCursor } = computeCatchUpCursor(persistedWatermark, localMaxRevision, 200);
+        let historyCursor = initialCursor;
+        let totalHistoriesPulled = 0;
+
+        while (true) {
+          const { data: page, error } = await client
+            .from("property_price_histories")
+            .select("*")
+            .gt("revision", historyCursor)
+            .order("revision", { ascending: true })
+            .limit(PULL_PAGE_SIZE);
+
+          if (error) throw error;
+          if (!page || page.length === 0) break;
+
+          const domainHistories = page.map(mapRemotePriceHistoryToDomain);
+          await db.price_histories.bulkPut(domainHistories);
+          totalHistoriesPulled += page.length;
+
+          const maxRevInPage = Math.max(...domainHistories.map((h) => h.revision));
+          if (!isNaN(maxRevInPage) && maxRevInPage > 0) {
+            historyCursor = maxRevInPage;
+          }
+
+          if (page.length < PULL_PAGE_SIZE) break;
+        }
+
+        const finalWatermark = Math.max(historyCursor, startRevision);
+        localStorage.setItem("bds_last_pull_price_history_rev", String(finalWatermark));
+        console.log(`[SyncManager] Pull lịch sử giá hoàn tất: ${totalHistoriesPulled} dòng.`);
+      } catch (historyErr: any) {
+        console.error("[SyncManager] Lỗi khi kéo lịch sử giá BĐS từ Supabase:", historyErr);
+      }
+
       console.log(`[SyncManager] Pull hoàn tất: ${totalPropsPulled} BĐS, ${totalCustsPulled} KH, ${totalLinksPulled} Links.`);
       return true;
     } catch (e: any) {
@@ -851,7 +924,27 @@ export class SyncManager {
   }
 
   /**
-   * Đăng ký Realtime WebSocket channel cho 3 bảng
+   * Xử lý Realtime cho bảng property_price_histories
+   */
+  private async handlePriceHistoryRealtime(payload: any) {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    if (eventType === "DELETE") {
+      const id = oldRecord?.id;
+      if (id) {
+        await db.price_histories.delete(id);
+      }
+      return;
+    }
+    if (eventType === "INSERT" || eventType === "UPDATE") {
+      const item = newRecord;
+      if (item && item.id) {
+        await db.price_histories.put(mapRemotePriceHistoryToDomain(item));
+      }
+    }
+  }
+
+  /**
+   * Đăng ký Realtime WebSocket channel cho 4 bảng
    */
   public startRealtime(): () => void {
     const client = getSupabaseClient();
@@ -886,6 +979,14 @@ export class SyncManager {
         async (payload) => {
           console.log("[Realtime] Thay đổi bảng customer_property_links:", payload);
           await this.handleLinkRealtime(payload);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "property_price_histories" },
+        async (payload) => {
+          console.log("[Realtime] Thay đổi bảng property_price_histories:", payload);
+          await this.handlePriceHistoryRealtime(payload);
         }
       )
       .subscribe((status) => {

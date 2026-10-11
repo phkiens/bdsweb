@@ -29,6 +29,7 @@ import {
   appendContactLine,
   CONTACT_LINE
 } from "../../core/utils/listing-text";
+import { determinePriceEditFields } from "../../core/utils/price-history-helper";
 
 export const PropertyFormPage: React.FC = () => {
   const navigate = useNavigate();
@@ -50,6 +51,7 @@ export const PropertyFormPage: React.FC = () => {
       linkedCustomerId: paramCustomerId || null
     })
   );
+  const [originalProperty, setOriginalProperty] = useState<Property | null>(null);
 
   const [loading, setLoading] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
@@ -68,6 +70,7 @@ export const PropertyFormPage: React.FC = () => {
     if (isEditMode && id) {
       db.properties.get(id).then((item) => {
         if (item) {
+          setOriginalProperty(item);
           setFormData(item);
           const decoded = decodeListingTexts(item.description);
           setTin1(decoded.first);
@@ -222,6 +225,13 @@ export const PropertyFormPage: React.FC = () => {
           ? PropertyStatus.FOR_SALE
           : formData.status;
 
+      const { priceEditKind, priceEditAt } = determinePriceEditFields(
+        isEditMode,
+        originalProperty,
+        formData.price,
+        now
+      );
+
       const updated: Property = {
         ...formData,
         description: encodeListingTexts(tin1, tin2),
@@ -232,6 +242,8 @@ export const PropertyFormPage: React.FC = () => {
         status: resolvedStatus,
         updatedAt: now,
         lastEditedAt: now,
+        priceEditKind,
+        priceEditAt,
         isTextSynced: false
       };
 

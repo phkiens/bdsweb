@@ -40,7 +40,11 @@ export const SEED_PROPERTIES: Property[] = [
     createdAt: 1788200000000,
     isVerified: true,
     lastEditedAt: 1788200000000,
-    r2MediaKeys: null
+    r2MediaKeys: null,
+    soldAt: null,
+    priceEditKind: null,
+    priceEditAt: null,
+    priceHistoryClearedRev: 0
   },
   {
     id: "prop-seed-002",
@@ -78,7 +82,11 @@ export const SEED_PROPERTIES: Property[] = [
     createdAt: 1788210000000,
     isVerified: true,
     lastEditedAt: 1788210000000,
-    r2MediaKeys: null
+    r2MediaKeys: null,
+    soldAt: null,
+    priceEditKind: null,
+    priceEditAt: null,
+    priceHistoryClearedRev: 0
   },
   {
     id: "prop-seed-003",
@@ -116,7 +124,11 @@ export const SEED_PROPERTIES: Property[] = [
     createdAt: 1788220000000,
     isVerified: true,
     lastEditedAt: 1788220000000,
-    r2MediaKeys: null
+    r2MediaKeys: null,
+    soldAt: null,
+    priceEditKind: null,
+    priceEditAt: null,
+    priceHistoryClearedRev: 0
   },
   {
     id: "prop-seed-004",
@@ -154,7 +166,11 @@ export const SEED_PROPERTIES: Property[] = [
     createdAt: 1788100000000,
     isVerified: true,
     lastEditedAt: 1788100000000,
-    r2MediaKeys: null
+    r2MediaKeys: null,
+    soldAt: null,
+    priceEditKind: null,
+    priceEditAt: null,
+    priceHistoryClearedRev: 0
   },
   {
     id: "prop-seed-005",
@@ -192,7 +208,11 @@ export const SEED_PROPERTIES: Property[] = [
     createdAt: 1788230000000,
     isVerified: false,
     lastEditedAt: 1788230000000,
-    r2MediaKeys: null
+    r2MediaKeys: null,
+    soldAt: null,
+    priceEditKind: null,
+    priceEditAt: null,
+    priceHistoryClearedRev: 0
   }
 ];
 

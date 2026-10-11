@@ -3,6 +3,11 @@ import { AppDatabase } from "../../data/local/db";
 import { Property } from "../../core/models/property";
 import { Customer } from "../../core/models/customer";
 import { CustomerPropertyLink } from "../../core/models/customer";
+import {
+  PropertyPriceHistory,
+  parsePriceHistoryChangeType,
+  parsePriceEditKind
+} from "../../core/models/price-history";
 import { toTitleCase } from "./vietnamese";
 
 export interface ZipImportResult {
@@ -10,6 +15,7 @@ export interface ZipImportResult {
   customersCount: number;
   linksCount: number;
   imagesCount: number;
+  priceHistoriesCount?: number;
 }
 
 /**
@@ -45,6 +51,7 @@ export async function exportDatabaseToZip(
   const allProperties = await db.properties.toArray();
   const customers = await db.customers.toArray();
   const links = await db.customer_property_links.toArray();
+  const priceHistories = await db.price_histories.toArray();
 
   // Tách BĐS chính thức (isVerified=true) và Tin chờ (isVerified=false) giống cấu trúc Android
   const officialProperties = allProperties.filter((p) => p.isVerified);
@@ -56,7 +63,13 @@ export async function exportDatabaseToZip(
 
   onProgress?.("Đang trích xuất hình ảnh sang tệp nén...");
   const processedProperties = officialProperties.map((p) => {
-    const copy = { ...p };
+    const copy = {
+      ...p,
+      soldAt: p.soldAt ?? null,
+      priceEditKind: p.priceEditKind ?? null,
+      priceEditAt: p.priceEditAt ?? null,
+      priceHistoryClearedRev: p.priceHistoryClearedRev ?? 0
+    };
     if (copy.imagePath) {
       const parts = copy.imagePath.split("|||").filter(Boolean);
       const remapped: string[] = [];
@@ -79,7 +92,13 @@ export async function exportDatabaseToZip(
   });
 
   const processedUnverified = unverifiedProperties.map((u) => {
-    const copy: any = { ...u };
+    const copy: any = {
+      ...u,
+      soldAt: u.soldAt ?? null,
+      priceEditKind: u.priceEditKind ?? null,
+      priceEditAt: u.priceEditAt ?? null,
+      priceHistoryClearedRev: u.priceHistoryClearedRev ?? 0
+    };
     const mediaPaths: string[] = [];
     if (copy.imagePath) {
       const parts = copy.imagePath.split("|||").filter(Boolean);
@@ -108,6 +127,22 @@ export async function exportDatabaseToZip(
   zip.file("unverified_properties.json", JSON.stringify(processedUnverified, null, 2));
   zip.file("customers.json", JSON.stringify(customers, null, 2));
   zip.file("customer_property_links.json", JSON.stringify(links, null, 2));
+
+  const serializedHistories = priceHistories.map((h) => ({
+    id: h.id,
+    propertyId: h.propertyId,
+    changeType: h.changeType,
+    previousPrice: h.previousPrice ?? null,
+    currentPrice: h.currentPrice,
+    previousAreaSize: h.previousAreaSize ?? null,
+    currentAreaSize: h.currentAreaSize ?? null,
+    previousPricePerM2: h.previousPricePerM2 ?? null,
+    currentPricePerM2: h.currentPricePerM2 ?? null,
+    recordedAt: h.recordedAt,
+    revision: h.revision,
+    editKind: h.editKind
+  }));
+  zip.file("price_histories.json", JSON.stringify(serializedHistories, null, 2));
   zip.file(
     "settings.json",
     JSON.stringify(
@@ -269,7 +304,11 @@ export async function importDatabaseFromZip(
           longitude: p.longitude !== undefined && p.longitude !== null ? Number(p.longitude) : null,
           rawText: p.rawText !== undefined && p.rawText !== null ? String(p.rawText) : (p.rawText || ""),
           imagePath: restoredImage,
-          isVerified: p.isVerified !== undefined ? Boolean(p.isVerified) : true
+          isVerified: p.isVerified !== undefined ? Boolean(p.isVerified) : true,
+          soldAt: p.soldAt != null ? Number(p.soldAt) : null,
+          priceEditKind: p.priceEditKind != null ? String(p.priceEditKind) : null,
+          priceEditAt: p.priceEditAt != null ? Number(p.priceEditAt) : null,
+          priceHistoryClearedRev: Number(p.priceHistoryClearedRev) || 0
         });
       }
 
@@ -379,7 +418,11 @@ export async function importDatabaseFromZip(
           title: u.title || null,
           mapLink: u.mapLink || null,
           extractedBy: u.extractedBy || "MANUAL",
-          r2MediaKeys: null
+          r2MediaKeys: null,
+          soldAt: u.soldAt != null ? Number(u.soldAt) : null,
+          priceEditKind: u.priceEditKind != null ? String(u.priceEditKind) : null,
+          priceEditAt: u.priceEditAt != null ? Number(u.priceEditAt) : null,
+          priceHistoryClearedRev: Number(u.priceHistoryClearedRev) || 0
         });
       }
 
@@ -438,11 +481,46 @@ export async function importDatabaseFromZip(
     }
   }
 
+  // 6. Giải nén và đọc price_histories.json (file thiếu => bỏ qua)
+  let priceHistoriesCount = 0;
+  const priceHistoryFile = zip.file("price_histories.json");
+  if (priceHistoryFile) {
+    onProgress?.("Đang giải nén lịch sử giá...");
+    try {
+      const historyText = await priceHistoryFile.async("string");
+      const rawList: any[] = JSON.parse(historyText);
+      if (Array.isArray(rawList)) {
+        const restoredHistories: PropertyPriceHistory[] = rawList
+          .map((h) => ({
+            id: String(h.id || ""),
+            propertyId: String(h.propertyId || ""),
+            changeType: parsePriceHistoryChangeType(h.changeType),
+            editKind: parsePriceEditKind(h.editKind),
+            previousPrice: h.previousPrice != null ? Number(h.previousPrice) : null,
+            currentPrice: Number(h.currentPrice) || 0,
+            previousAreaSize: h.previousAreaSize != null ? Number(h.previousAreaSize) : null,
+            currentAreaSize: h.currentAreaSize != null ? Number(h.currentAreaSize) : null,
+            previousPricePerM2: h.previousPricePerM2 != null ? Number(h.previousPricePerM2) : null,
+            currentPricePerM2: h.currentPricePerM2 != null ? Number(h.currentPricePerM2) : null,
+            recordedAt: Number(h.recordedAt) || Date.now(),
+            revision: Number(h.revision) || 0
+          }))
+          .filter((h) => Boolean(h.id && h.propertyId));
+
+        await db.price_histories.bulkPut(restoredHistories);
+        priceHistoriesCount = restoredHistories.length;
+      }
+    } catch (historyErr) {
+      console.warn("Lỗi khi đọc price_histories.json từ ZIP:", historyErr);
+    }
+  }
+
   onProgress?.("Hoàn tất khôi phục!");
   return {
     propertiesCount,
     customersCount,
     linksCount,
-    imagesCount: decodedImagesCount
+    imagesCount: decodedImagesCount,
+    priceHistoriesCount
   };
 }

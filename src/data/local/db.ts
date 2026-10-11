@@ -2,6 +2,7 @@ import Dexie, { Table } from "dexie";
 import { Customer, CustomerPropertyLink } from "../../core/models/customer";
 import { SyncStatus, SyncType } from "../../core/models/enums";
 import { Property } from "../../core/models/property";
+import { PropertyPriceHistory } from "../../core/models/price-history";
 
 export interface SyncLog {
   id?: number;
@@ -42,6 +43,7 @@ export class AppDatabase extends Dexie {
   sync_logs!: Table<SyncLog, number>;
   sync_outbox!: Table<OutboxItem, number>;
   media_orphans!: Table<MediaOrphanItem, number>;
+  price_histories!: Table<PropertyPriceHistory, string>;
 
   constructor() {
     super("bds_collector_web_db");
@@ -68,6 +70,12 @@ export class AppDatabase extends Dexie {
     this.version(3).stores({
       media_orphans:
         "++id, propertyId, objectKey, createdAt"
+    });
+
+    // Phiên bản 4: Bổ sung bảng lịch sử giá BĐS (chuẩn Android)
+    this.version(4).stores({
+      price_histories:
+        "id, revision, propertyId"
     });
   }
 

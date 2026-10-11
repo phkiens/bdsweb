@@ -49,7 +49,11 @@ describe("ZIP BACKUP & RESTORE (TƯƠNG THÍCH HOÀN TOÀN VỚI ANDROID ZIPHELP
       title: null,
       mapLink: null,
       extractedBy: null,
-      r2MediaKeys: null
+      r2MediaKeys: null,
+      soldAt: null,
+      priceEditKind: null,
+      priceEditAt: null,
+      priceHistoryClearedRev: 0
     });
 
     // Thêm 1 khách hàng
@@ -86,6 +90,7 @@ describe("ZIP BACKUP & RESTORE (TƯƠNG THÍCH HOÀN TOÀN VỚI ANDROID ZIPHELP
     expect(zip.file("unverified_properties.json")).toBeDefined();
     expect(zip.file("customers.json")).toBeDefined();
     expect(zip.file("customer_property_links.json")).toBeDefined();
+    expect(zip.file("price_histories.json")).toBeDefined();
     expect(zip.file("settings.json")).toBeDefined();
 
     // Kiểm tra ảnh đã được đưa vào thư mục images/
