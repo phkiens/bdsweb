@@ -102,6 +102,34 @@ export class DrillDownFilter {
     this.isFailClosed = options.isFailClosed ?? false;
   }
 
+  copy(changes?: Partial<DrillDownFilterOptions>): DrillDownFilter {
+    return new DrillDownFilter({
+      source: changes?.source ?? this.source,
+      contextLabel: changes?.contextLabel ?? this.contextLabel,
+      verifiedMode: changes?.verifiedMode ?? this.verifiedMode,
+      excludeDraft: changes?.excludeDraft ?? this.excludeDraft,
+      targetStatus: changes?.targetStatus !== undefined ? changes.targetStatus : this.targetStatus,
+      targetArea: changes?.targetArea !== undefined ? changes.targetArea : this.targetArea,
+      targetPropertyType: changes?.targetPropertyType !== undefined ? changes.targetPropertyType : this.targetPropertyType,
+      targetOwnerId: changes?.targetOwnerId !== undefined ? changes.targetOwnerId : this.targetOwnerId,
+      minAgeDays: changes?.minAgeDays !== undefined ? changes.minAgeDays : this.minAgeDays,
+      maxAgeDays: changes?.maxAgeDays !== undefined ? changes.maxAgeDays : this.maxAgeDays,
+      createdAtFrom: changes?.createdAtFrom !== undefined ? changes.createdAtFrom : this.createdAtFrom,
+      createdAtTo: changes?.createdAtTo !== undefined ? changes.createdAtTo : this.createdAtTo,
+      soldAtFrom: changes?.soldAtFrom !== undefined ? changes.soldAtFrom : this.soldAtFrom,
+      soldAtTo: changes?.soldAtTo !== undefined ? changes.soldAtTo : this.soldAtTo,
+      lastEditedAtBefore: changes?.lastEditedAtBefore !== undefined ? changes.lastEditedAtBefore : this.lastEditedAtBefore,
+      targetIssueType: changes?.targetIssueType !== undefined ? changes.targetIssueType : this.targetIssueType,
+      deviationMin: changes?.deviationMin !== undefined ? changes.deviationMin : this.deviationMin,
+      deviationMax: changes?.deviationMax !== undefined ? changes.deviationMax : this.deviationMax,
+      priceMin: changes?.priceMin !== undefined ? changes.priceMin : this.priceMin,
+      priceMax: changes?.priceMax !== undefined ? changes.priceMax : this.priceMax,
+      areaSizeMin: changes?.areaSizeMin !== undefined ? changes.areaSizeMin : this.areaSizeMin,
+      areaSizeMax: changes?.areaSizeMax !== undefined ? changes.areaSizeMax : this.areaSizeMax,
+      isFailClosed: changes?.isFailClosed !== undefined ? changes.isFailClosed : this.isFailClosed
+    });
+  }
+
   matches(context: DrillDownEvaluationContext): boolean {
     if (this.isFailClosed) return false;
     const prop = context.property;
@@ -124,11 +152,14 @@ export class DrillDownFilter {
 
     // 3. Physical status
     if (this.targetStatus != null) {
-      const matchValue =
-        prop.status === (this.targetStatus as any) ||
-        (typeof this.targetStatus === "string" &&
-          prop.status.toLowerCase() === this.targetStatus.toLowerCase());
-      if (!matchValue) return false;
+      const statusValue = this.targetStatus as string;
+      const statusName = getPropertyStatusName(this.targetStatus);
+      const propStatus = prop.status ?? "";
+      const matches =
+        propStatus === statusValue ||
+        propStatus.toLowerCase() === statusValue.toLowerCase() ||
+        (statusName != null && propStatus.toLowerCase() === statusName.toLowerCase());
+      if (!matches) return false;
     }
 
     // 4. Area
@@ -231,12 +262,21 @@ export class DrillDownFilter {
   }
 }
 
+export function getPropertyStatusName(status: PropertyStatus): string {
+  for (const [key, value] of Object.entries(PropertyStatus)) {
+    if (value === status) return key;
+  }
+  return String(status);
+}
+
 function resolvePropertyStatus(val: any): PropertyStatus | null {
   if (!val) return null;
-  if (val === PropertyStatus.FOR_SALE || val === "FOR_SALE") return PropertyStatus.FOR_SALE;
-  if (val === PropertyStatus.SOLD || val === "SOLD") return PropertyStatus.SOLD;
-  if (val === PropertyStatus.PENDING_SURVEY || val === "PENDING_SURVEY") return PropertyStatus.PENDING_SURVEY;
-  if (val === PropertyStatus.PAUSED || val === "PAUSED") return PropertyStatus.PAUSED;
+  const str = String(val).trim();
+  for (const [key, value] of Object.entries(PropertyStatus)) {
+    if (key.toLowerCase() === str.toLowerCase() || (value as string).toLowerCase() === str.toLowerCase()) {
+      return value as PropertyStatus;
+    }
+  }
   return null;
 }
 
@@ -338,3 +378,11 @@ export const DrillDownJsonCodec = {
     }
   }
 };
+
+export {
+  encodeDrillDownQuery,
+  decodeDrillDownQuery,
+  createDrillDownUrl,
+  DrillDownQueryCodec
+} from "./drill-down-query";
+
