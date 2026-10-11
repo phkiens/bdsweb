@@ -36,7 +36,7 @@ test.describe("BỘ 10 KỊCH BẢN SMOKE TEST TOÀN DIỆN (BEHAVIORAL PARITY)"
 
   test("SMOKE-001: Khởi động ứng dụng và điều hướng cơ bản", async ({ page }) => {
     await expect(page).toHaveTitle(/BĐS Collector Web/i);
-    await expect(page.getByPlaceholder("Tìm kiếm khu vực, chủ nhà, SĐT...")).toBeVisible();
+    await expect(page.getByPlaceholder("Khu vực, chủ, SĐT, giá...")).toBeVisible();
     await expect(page.getByRole("button", { name: "Thêm BĐS mới" }).first()).toBeVisible();
   });
 
@@ -48,7 +48,7 @@ test.describe("BỘ 10 KỊCH BẢN SMOKE TEST TOÀN DIỆN (BEHAVIORAL PARITY)"
   });
 
   test("SMOKE-003: Tìm kiếm BĐS không dấu và lọc trạng thái", async ({ page }) => {
-    const searchInput = page.getByPlaceholder("Tìm kiếm khu vực, chủ nhà, SĐT...");
+    const searchInput = page.getByPlaceholder("Khu vực, chủ, SĐT, giá...");
 
     // Tìm kiếm không dấu "binh thanh"
     await searchInput.fill("binh thanh");
