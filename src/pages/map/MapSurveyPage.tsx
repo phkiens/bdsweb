@@ -27,7 +27,6 @@ import {
   MapPropertyItem,
   MarkerColorType,
   ROUTE_NEARBY_DEFAULT_RADIUS_KM,
-  NORMAL_NEARBY_DEFAULT_RADIUS_KM,
   ROUTE_RADII_OPTIONS,
   getPropertyKey,
   computeRouteCandidateProperties,
@@ -45,6 +44,8 @@ import {
 } from "../../core/engine/property-filter";
 import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
 import { FilterTopRow } from "../../core/models/enums";
+import { settingsManager, ZOOM_KEEP_CURRENT } from "../../data/local/settings-manager";
+
 
 export const MapSurveyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -91,7 +92,7 @@ export const MapSurveyPage: React.FC = () => {
 
   // GPS & Radius survey state (MAP-SURVEY-GPS-001)
   const [userScanCenter, setUserScanCenter] = useState<MapScanCenter | null>(null);
-  const [userRadiusKm, setUserRadiusKm] = useState<number | null>(null);
+  const [userRadiusKm, setUserRadiusKm] = useState<number | null | undefined>(undefined);
   const [userGps, setUserGps] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isLocatingGps, setIsLocatingGps] = useState(false);
 
@@ -135,7 +136,15 @@ export const MapSurveyPage: React.FC = () => {
     return null;
   }, [userScanCenter, searchParams, properties]);
 
-  const radiusKm = userRadiusKm !== null ? userRadiusKm : scanCenter ? (isRouteMode ? ROUTE_NEARBY_DEFAULT_RADIUS_KM : 2.0) : null;
+  const defaultRadius = settingsManager.getMapDefaultRadius();
+  const radiusKm =
+    userRadiusKm !== undefined
+      ? userRadiusKm
+      : scanCenter
+        ? isRouteMode
+          ? ROUTE_NEARBY_DEFAULT_RADIUS_KM
+          : defaultRadius
+        : null;
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -143,30 +152,41 @@ export const MapSurveyPage: React.FC = () => {
 
     const initialLat = searchParams.get("lat") ? parseFloat(searchParams.get("lat")!) : 10.7769;
     const initialLng = searchParams.get("lng") ? parseFloat(searchParams.get("lng")!) : 106.7009;
+    const minZoom = settingsManager.getMapMinZoomLevel();
+    const mapLinkZoom = settingsManager.getSettings().mapLinkNearbyZoom;
+    const initialZoom =
+      searchParams.get("lat") && searchParams.get("lng") && mapLinkZoom !== ZOOM_KEEP_CURRENT
+        ? mapLinkZoom
+        : 14;
 
     const map = L.map(mapContainerRef.current, {
       center: [initialLat, initialLng],
-      zoom: 14,
+      zoom: initialZoom,
+      minZoom,
       zoomControl: false
     });
 
     const googleRoads = L.tileLayer("https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}", {
+      minZoom,
       maxZoom: 20,
       subdomains: ["mt0", "mt1", "mt2", "mt3"],
       attribution: "&copy; Google Maps"
     });
 
     const googleHybrid = L.tileLayer("https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}", {
+      minZoom,
       maxZoom: 20,
       subdomains: ["mt0", "mt1", "mt2", "mt3"],
       attribution: "&copy; Google Maps"
     });
 
     const osmHot = L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
+      minZoom,
       maxZoom: 19,
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tiles style by <a href="https://www.hotosm.org/">Humanitarian OpenStreetMap Team</a>'
     });
+
 
     googleRoads.addTo(map);
 
@@ -427,6 +447,21 @@ export const MapSurveyPage: React.FC = () => {
 
     // Auto-fit bounds on initial load if no explicit center is specified
     if (!hasInitialFitRef.current && !searchParams.get("lat") && !userScanCenter) {
+      const centerPropId = searchParams.get("centerPropertyId");
+      if (centerPropId && properties) {
+        const centerProp = properties.find((p) => p.id === centerPropId);
+        if (centerProp && centerProp.latitude != null && centerProp.longitude != null) {
+          const propZoom = settingsManager.getSettings().propertyNearbyZoom;
+          if (propZoom !== ZOOM_KEEP_CURRENT) {
+            mapRef.current.setView([centerProp.latitude, centerProp.longitude], propZoom);
+          } else {
+            mapRef.current.setView([centerProp.latitude, centerProp.longitude], 15);
+          }
+          hasInitialFitRef.current = true;
+          return;
+        }
+      }
+
       const validPoints = filteredProperties
         .filter((p) => p.latitude != null && p.longitude != null)
         .map((p) => [p.latitude!, p.longitude!] as [number, number]);
@@ -437,6 +472,7 @@ export const MapSurveyPage: React.FC = () => {
         hasInitialFitRef.current = true;
       }
     }
+
   }, [filteredProperties, selectedPropertyId, searchParams, userScanCenter, isRouteMode, selectedRouteKeys]);
 
   // Draw or update radius circle around scanCenter
@@ -497,9 +533,14 @@ export const MapSurveyPage: React.FC = () => {
           label: "Vị trí GPS của bạn"
         });
 
-        setUserRadiusKm(2.0);
+        setUserRadiusKm(defaultRadius);
 
-        mapRef.current?.setView([latitude, longitude], 15);
+        const gpsZoom = settingsManager.getSettings().gpsLocateZoom;
+        if (gpsZoom !== ZOOM_KEEP_CURRENT) {
+          mapRef.current?.setView([latitude, longitude], gpsZoom);
+        } else {
+          mapRef.current?.panTo([latitude, longitude]);
+        }
       },
       (err) => {
         setIsLocatingGps(false);
@@ -518,13 +559,18 @@ export const MapSurveyPage: React.FC = () => {
       propertyId: p.id,
       label: p.area
     });
-    setUserRadiusKm(2.0);
-    mapRef.current?.setView([p.latitude, p.longitude], 15);
+    setUserRadiusKm(defaultRadius);
+    const propZoom = settingsManager.getSettings().propertyNearbyZoom;
+    if (propZoom !== ZOOM_KEEP_CURRENT) {
+      mapRef.current?.setView([p.latitude, p.longitude], propZoom);
+    } else {
+      mapRef.current?.panTo([p.latitude, p.longitude]);
+    }
   };
 
   const handleClearScanCenter = () => {
     setUserScanCenter(null);
-    setUserRadiusKm(null);
+    setUserRadiusKm(undefined);
     if (mapRef.current && properties) {
       const validPoints = properties
         .filter((p) => p.latitude != null && p.longitude != null && isInVietnam(p.latitude, p.longitude))
@@ -542,13 +588,19 @@ export const MapSurveyPage: React.FC = () => {
       longitude: lng,
       label: "Điểm đã chọn"
     });
-    setUserRadiusKm(isRouteMode ? ROUTE_NEARBY_DEFAULT_RADIUS_KM : NORMAL_NEARBY_DEFAULT_RADIUS_KM);
-    mapRef.current?.panTo([lat, lng], { animate: true });
+    setUserRadiusKm(isRouteMode ? ROUTE_NEARBY_DEFAULT_RADIUS_KM : defaultRadius);
+    const pointZoom = settingsManager.getSettings().coordinatePickerZoom;
+    if (pointZoom !== ZOOM_KEEP_CURRENT) {
+      mapRef.current?.setView([lat, lng], pointZoom);
+    } else {
+      mapRef.current?.panTo([lat, lng], { animate: true });
+    }
   };
+
 
   const handleClearRouteNearby = () => {
     setUserScanCenter(null);
-    setUserRadiusKm(null);
+    setUserRadiusKm(undefined);
   };
 
   const handleToggleRouteSelection = (p: Property) => {

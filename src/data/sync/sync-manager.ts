@@ -234,6 +234,28 @@ export function isOnline(): boolean {
   return true;
 }
 
+// Con trỏ kéo lưu trong localStorage; bỏ qua khi không có (môi trường test/Node)
+function getStoredCursor(key: string): number {
+  try {
+    if (typeof localStorage !== "undefined") {
+      return Number(localStorage.getItem(key)) || 0;
+    }
+  } catch {
+    // ignore
+  }
+  return 0;
+}
+
+function setStoredCursor(key: string, value: string | number): void {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(key, String(value));
+    }
+  } catch {
+    // ignore
+  }
+}
+
 export class SyncManager {
   private syncState: SyncState = "IDLE";
   private listeners: Set<(state: SyncState, message?: string) => void> = new Set();
@@ -484,7 +506,7 @@ export class SyncManager {
 
     try {
       // 1. Pull Properties (phân trang 500 dòng theo server_updated_at ASC)
-      let propCursor = Number(localStorage.getItem("bds_last_pull_properties")) || 0;
+      let propCursor = getStoredCursor("bds_last_pull_properties");
       let totalPropsPulled = 0;
 
       while (true) {
@@ -535,14 +557,14 @@ export class SyncManager {
         const lastServerUpdatedAt = Number(page[page.length - 1].server_updated_at);
         if (!isNaN(lastServerUpdatedAt) && lastServerUpdatedAt > 0) {
           propCursor = lastServerUpdatedAt;
-          localStorage.setItem("bds_last_pull_properties", String(propCursor));
+          setStoredCursor("bds_last_pull_properties", propCursor);
         }
 
         if (page.length < PULL_PAGE_SIZE) break;
       }
 
       // 2. Pull Customers (phân trang 500 dòng theo server_updated_at ASC)
-      let custCursor = Number(localStorage.getItem("bds_last_pull_customers")) || 0;
+      let custCursor = getStoredCursor("bds_last_pull_customers");
       let totalCustsPulled = 0;
 
       while (true) {
@@ -582,14 +604,14 @@ export class SyncManager {
         const lastServerUpdatedAt = Number(page[page.length - 1].server_updated_at);
         if (!isNaN(lastServerUpdatedAt) && lastServerUpdatedAt > 0) {
           custCursor = lastServerUpdatedAt;
-          localStorage.setItem("bds_last_pull_customers", String(custCursor));
+          setStoredCursor("bds_last_pull_customers", custCursor);
         }
 
         if (page.length < PULL_PAGE_SIZE) break;
       }
 
       // 3. Pull Customer Property Links (phân trang 500 dòng theo server_updated_at ASC)
-      let linkCursor = Number(localStorage.getItem("bds_last_pull_links")) || 0;
+      let linkCursor = getStoredCursor("bds_last_pull_links");
       let totalLinksPulled = 0;
 
       while (true) {
@@ -637,7 +659,7 @@ export class SyncManager {
         const lastServerUpdatedAt = Number(page[page.length - 1].server_updated_at);
         if (!isNaN(lastServerUpdatedAt) && lastServerUpdatedAt > 0) {
           linkCursor = lastServerUpdatedAt;
-          localStorage.setItem("bds_last_pull_links", String(linkCursor));
+          setStoredCursor("bds_last_pull_links", linkCursor);
         }
 
         if (page.length < PULL_PAGE_SIZE) break;
@@ -645,7 +667,7 @@ export class SyncManager {
 
       // 4. Pull Property Price Histories (chuẩn Android)
       try {
-        const persistedWatermark = Number(localStorage.getItem("bds_last_pull_price_history_rev")) || 0;
+        const persistedWatermark = getStoredCursor("bds_last_pull_price_history_rev");
         const localMaxRevision = await getMaxPriceHistoryRevision();
         const { startRevision, cursor: initialCursor } = computeCatchUpCursor(persistedWatermark, localMaxRevision, 200);
         let historyCursor = initialCursor;
@@ -675,7 +697,7 @@ export class SyncManager {
         }
 
         const finalWatermark = Math.max(historyCursor, startRevision);
-        localStorage.setItem("bds_last_pull_price_history_rev", String(finalWatermark));
+        setStoredCursor("bds_last_pull_price_history_rev", finalWatermark);
         console.log(`[SyncManager] Pull lịch sử giá hoàn tất: ${totalHistoriesPulled} dòng.`);
       } catch (historyErr: any) {
         console.error("[SyncManager] Lỗi khi kéo lịch sử giá BĐS từ Supabase:", historyErr);

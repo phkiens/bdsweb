@@ -22,7 +22,9 @@ import { Customer } from "../../core/models/customer";
 import { PropertyStatus, PropertyType, Direction, CustomerRole } from "../../core/models/enums";
 import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
 import { parseRawText, getDistinctAreas, UnverifiedPropertyType } from "../../core/engine/property-text-extractor";
+import { settingsManager } from "../../data/local/settings-manager";
 import { syncManager } from "../../data/sync/sync-manager";
+
 import {
   savePropertyOwnerFromForm,
   ownerSaveNoticeText,
@@ -161,7 +163,9 @@ export const PropertyFormPage: React.FC = () => {
 
     // Trích xuất thông tin theo chuẩn Android GeminiHelper.parseRawText & PropertyTextExtractor
     const areas = knownAreas.length > 0 ? knownAreas : await getDistinctAreas(db);
-    const extracted = parseRawText(quickText, areas);
+    const customRegex = settingsManager.getSettings().customExtractionRegex;
+    const extracted = parseRawText(quickText, areas, customRegex);
+
 
     // Tin 1 chỉ có dòng liên hệ điền sẵn (căn mới) ⇒ đặt tin dán lên trên dòng liên hệ.
     setTin1((prev) =>

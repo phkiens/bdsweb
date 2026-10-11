@@ -18,7 +18,9 @@ import { db } from "../../data/local/db";
 import { Property } from "../../core/models/property";
 import { PropertyStatus, PropertyType } from "../../core/models/enums";
 import { syncManager } from "../../data/sync/sync-manager";
+import { settingsManager } from "../../data/local/settings-manager";
 import { createDefaultProperty } from "../../core/models/property";
+
 import { toTitleCase } from "../../core/utils/vietnamese";
 import { calculateDistanceKm, isInVietnam } from "../../core/utils/coordinates";
 import { parseRawText, getDistinctAreas, UnverifiedPropertyType } from "../../core/engine/property-text-extractor";
@@ -249,7 +251,9 @@ export const UnverifiedListPage: React.FC = () => {
 
     // Trích xuất thông tin theo chuẩn Android GeminiHelper.parseRawText & PropertyTextExtractor
     const areas = knownAreas.length > 0 ? knownAreas : await getDistinctAreas(db);
-    const extracted = parseRawText(rawInput, areas);
+    const customRegex = settingsManager.getSettings().customExtractionRegex;
+    const extracted = parseRawText(rawInput, areas, customRegex);
+
 
     const firstLine = rawInput.trim().split("\n")[0].slice(0, 60);
     const resolvedArea = extracted.address || toTitleCase(firstLine) || "Tin trích xuất mới";

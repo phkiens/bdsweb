@@ -413,7 +413,8 @@ describe("6. ZIP: Xuất rồi nhập lại giữ nguyên 4 trường và lịch
     const importResult = await importDatabaseFromZip(file, db);
 
     expect(importResult.propertiesCount).toBe(1);
-    expect(importResult.priceHistoriesCount).toBe(1);
+    // Commit 7b81f08: Bỏ qua nhập lịch sử giá từ ZIP, lịch sử giá được kéo từ máy chủ
+    expect(importResult.priceHistoriesCount ?? 0).toBe(0);
 
     // Kiểm tra dữ liệu BĐS phục hồi
     const restoredProp = await db.properties.get("prop-zip-full");
@@ -423,15 +424,10 @@ describe("6. ZIP: Xuất rồi nhập lại giữ nguyên 4 trường và lịch
     expect(restoredProp?.priceEditAt).toBe(1789000000000);
     expect(restoredProp?.priceHistoryClearedRev).toBe(8);
 
-    // Kiểm tra dữ liệu lịch sử giá phục hồi
+    // Dữ liệu lịch sử giá từ ZIP được bỏ qua (không ghi đè cục bộ)
     const restoredHistories = await db.price_histories.toArray();
-    expect(restoredHistories.length).toBe(1);
-    expect(restoredHistories[0].id).toBe("hist-zip-1");
-    expect(restoredHistories[0].revision).toBe(9);
-    expect(restoredHistories[0].propertyId).toBe("prop-zip-full");
-    expect(restoredHistories[0].changeType).toBe(PriceHistoryChangeType.PRICE_CHANGE);
-    expect(restoredHistories[0].editKind).toBe(PriceEditKind.DATA_CORRECTION);
-    expect(restoredHistories[0].currentPrice).toBe(15.0);
+    expect(restoredHistories.length).toBe(0);
+
   });
 
   it("nhập ZIP cũ không có price_histories.json và thiếu 4 trường => nạp bình thường với mặc định null/0", async () => {

@@ -1,8 +1,16 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import "fake-indexeddb/auto";
 import JSZip from "jszip";
 import { AppDatabase } from "../../src/data/local/db";
-import { exportDatabaseToZip, importDatabaseFromZip } from "../../src/core/utils/zip-backup";
+import {
+  exportDatabaseToZip,
+  importDatabaseFromZip,
+  importPhotosFromZip,
+  importTextFromZip,
+  planImageEntries,
+  ServerIds
+} from "../../src/core/utils/zip-backup";
+
 import { PropertyStatus } from "../../src/core/models/enums";
 
 describe("ZIP BACKUP & RESTORE (TƯƠNG THÍCH HOÀN TOÀN VỚI ANDROID ZIPHELPER)", () => {
@@ -195,4 +203,175 @@ describe("ZIP BACKUP & RESTORE (TƯƠNG THÍCH HOÀN TOÀN VỚI ANDROID ZIPHELP
     expect(restored?.areaSize).toBe(42);
     expect(restored?.isVerified).toBe(false);
   });
+
+  it("planImageEntries: loại trùng đường dẫn cùng tên và báo tệp khác trùng tên", () => {
+    const paths = [
+      "bds_images/photo1.jpg",
+      "bds_images/photo1.jpg", // trùng hoàn toàn -> giữ 1
+      "cache/photo1.jpg",       // khác thư mục nhưng trùng tên -> bỏ qua, đưa vào skipped
+      "bds_images/photo2.jpg"
+    ];
+    const plan = planImageEntries(paths);
+    expect(plan.files.length).toBe(2);
+    expect(plan.files).toContain("bds_images/photo1.jpg");
+    expect(plan.files).toContain("bds_images/photo2.jpg");
+    expect(plan.skippedNameClashes).toEqual(["cache/photo1.jpg"]);
+  });
+
+  it("exportDatabaseToZip: loại trùng ảnh khi hai BĐS dùng chung data URL ảnh", async () => {
+    const sharedDataUrl = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+    await db.properties.bulkAdd([
+      {
+        id: "prop-shared-1",
+        area: "Quận 1",
+        price: 5.0,
+        imagePath: sharedDataUrl,
+        isVerified: true,
+        updatedAt: 1000
+      } as any,
+      {
+        id: "prop-shared-2",
+        area: "Quận 3",
+        price: 6.0,
+        imagePath: sharedDataUrl,
+        isVerified: true,
+        updatedAt: 1000
+      } as any
+    ]);
+
+    const zipBlob = await exportDatabaseToZip(db);
+    const zip = await JSZip.loadAsync(await zipBlob.arrayBuffer());
+
+    // Thư mục images/ chỉ có 1 file ảnh duy nhất được nén
+    let imageFilesCount = 0;
+    zip.forEach((path, entry) => {
+      if (!entry.dir && path.startsWith("images/")) {
+        imageFilesCount++;
+      }
+    });
+    expect(imageFilesCount).toBe(1);
+
+    // Cả 2 BĐS trong properties.json đều trỏ tới cùng tên file trong images/
+    const propText = await zip.file("properties.json")!.async("string");
+    const parsed = JSON.parse(propText);
+    expect(parsed.length).toBe(2);
+    expect(parsed[0].imagePath).toBe(parsed[1].imagePath);
+  });
+
+  it("importPhotosFromZip: chỉ cập nhật ảnh mà không đụng đến dữ liệu text", async () => {
+    await db.properties.add({
+      id: "prop-photo-target",
+      area: "Phú Nhuận",
+      price: 9.5,
+      imagePath: "images/photo_target.jpg",
+      isVerified: true,
+      isTextSynced: true,
+      updatedAt: 1000
+    } as any);
+
+    const zip = new JSZip();
+    const dummyBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    zip.file("images/photo_target.jpg", dummyBytes);
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const file = new File([zipBlob], "photos_only.zip", { type: "application/zip" });
+
+    const result = await importPhotosFromZip(file, db);
+    expect(result.updatedPropertiesCount).toBe(1);
+    expect(result.imagesCount).toBe(1);
+
+    const prop = await db.properties.get("prop-photo-target");
+    expect(prop?.imagePath?.startsWith("data:")).toBe(true);
+    // isTextSynced và text giữ nguyên
+    expect(prop?.isTextSynced).toBe(true);
+    expect(prop?.price).toBe(9.5);
+  });
+
+  it("importTextFromZip: ném lỗi nếu không có mạng / không lấy được serverIds", async () => {
+    const zip = new JSZip();
+    zip.file("properties.json", JSON.stringify([]));
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const file = new File([zipBlob], "text_fail.zip", { type: "application/zip" });
+
+    await expect(
+      importTextFromZip(file, db, {
+        fetchServerIds: async () => {
+          throw new Error("Network offline");
+        }
+      })
+    ).rejects.toThrow("Cần mạng để nhập dữ liệu chữ — chưa ghi gì.");
+  });
+
+  it("importTextFromZip: chỉ thêm bản ghi chưa có trên máy chủ và chưa có ở local, bỏ qua price_histories.json", async () => {
+    // Bản ghi 1: đã có ở local
+    await db.properties.add({
+      id: "prop-already-local",
+      area: "Gò Vấp",
+      price: 4.2,
+      isVerified: true,
+      isTextSynced: true,
+      updatedAt: 1000
+    } as any);
+
+    const zip = new JSZip();
+    zip.file(
+      "properties.json",
+      JSON.stringify([
+        { id: "prop-already-local", area: "Gò Vấp mới", price: 4.5, isVerified: true },
+        { id: "prop-on-server", area: "Thủ Đức", price: 3.0, isVerified: true },
+        { id: "prop-brand-new", area: "Tân Phú", price: 7.0, isVerified: true }
+      ])
+    );
+    // Kèm theo price_histories.json trong ZIP
+    zip.file(
+      "price_histories.json",
+      JSON.stringify([
+        { id: "hist-1", propertyId: "prop-brand-new", currentPrice: 7.0 }
+      ])
+    );
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const file = new File([zipBlob], "text_import.zip", { type: "application/zip" });
+
+    const mockServerIds: ServerIds = {
+      propertyIds: new Set(["prop-on-server"]),
+      customerIds: new Set(),
+      linkKeys: new Set()
+    };
+
+    // Môi trường test không có localStorage ⇒ dùng bản trong bộ nhớ để kiểm việc đặt lại con trỏ kéo
+    const store = new Map<string, string>([["bds_last_pull_properties", "123"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, String(v)),
+      removeItem: (k: string) => void store.delete(k)
+    });
+    const pullAfterImport = vi.fn().mockResolvedValue(true);
+    const res = await importTextFromZip(file, db, {
+      fetchServerIds: async () => mockServerIds,
+      pullAfterImport
+    });
+    expect(pullAfterImport).toHaveBeenCalledTimes(1);
+
+    // Chỉ thêm đúng 1 bản ghi mới (prop-brand-new)
+    expect(res.addedCount).toBe(1);
+
+    const newProp = await db.properties.get("prop-brand-new");
+    expect(newProp).toBeDefined();
+    expect(newProp?.isTextSynced).toBe(false); // đánh dấu để push lên máy chủ
+    expect(newProp?.area).toBe("Tân Phú");
+
+    // prop-already-local không bị ghi đè
+    const localProp = await db.properties.get("prop-already-local");
+    expect(localProp?.price).toBe(4.2);
+
+    // price_histories.json bị bỏ qua hoàn toàn per commit 7b81f08
+    const histories = await db.price_histories.toArray();
+    expect(histories.length).toBe(0);
+
+    // Watermarks được reset về 0
+    expect(localStorage.getItem("bds_last_pull_properties")).toBe("0");
+    vi.unstubAllGlobals();
+  });
 });
+

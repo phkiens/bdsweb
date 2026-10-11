@@ -4,6 +4,7 @@ import {
   PropertySortType,
   FilterScope
 } from "../models/enums";
+import { settingsManager, FilterMode } from "../../data/local/settings-manager";
 
 export const PROPERTY_LIST_VIEW_STATE_KEY = "bds_property_list_view_state";
 export const PROPERTY_LIST_VIEW_STATE_VERSION = 1;
@@ -96,6 +97,9 @@ function getBrowserStorage(): StorageLike | null {
     if (typeof window !== "undefined" && window.localStorage) {
       return window.localStorage;
     }
+    if (typeof localStorage !== "undefined") {
+      return localStorage;
+    }
   } catch {
     return null;
   }
@@ -103,11 +107,32 @@ function getBrowserStorage(): StorageLike | null {
 }
 
 export function loadPropertyListState(storage?: StorageLike | null): PropertyListViewState {
+  const settings = settingsManager.getSettings();
+  const filterMode =
+    settings.filterMode ??
+    (settings.rememberLastFilter ? FilterMode.LAST_USED : FilterMode.ALL);
+
+  if (storage === undefined) {
+    if (filterMode === FilterMode.ALL) {
+      return createDefaultPropertyListState();
+    }
+
+    if (filterMode === FilterMode.FIXED) {
+      const fixedState = createDefaultPropertyListState();
+      if (settings.defaultPropertyType && settings.defaultPropertyType.trim()) {
+        fixedState.filterState.propertyTypes = new Set([settings.defaultPropertyType.trim()]);
+      }
+      if (settings.defaultStatus && settings.defaultStatus.trim()) {
+        fixedState.filterState.statuses = new Set([settings.defaultStatus.trim()]);
+      }
+      return fixedState;
+    }
+  }
+
   const targetStorage = storage !== undefined ? storage : getBrowserStorage();
   if (!targetStorage) {
     return createDefaultPropertyListState();
   }
-
   try {
     const raw = targetStorage.getItem(PROPERTY_LIST_VIEW_STATE_KEY);
     if (!raw) {
@@ -194,3 +219,4 @@ export function savePropertyListState(
     // Storage quota exceeded or disabled - silently ignore
   }
 }
+

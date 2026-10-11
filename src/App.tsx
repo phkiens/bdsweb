@@ -17,8 +17,8 @@ import { ActionCenterPage } from "./pages/statistics/ActionCenterPage";
 import { OwnerPerformancePage } from "./pages/statistics/OwnerPerformancePage";
 import { RadarAreaDetailPage } from "./pages/statistics/RadarAreaDetailPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
-import { ApiConfigPage } from "./pages/settings/ApiConfigPage";
 import { SyncHistoryPage } from "./pages/settings/SyncHistoryPage";
+
 import { PermissionOnboardingPage } from "./pages/onboarding/PermissionOnboardingPage";
 import { ScrollRestoration } from "./components/layout/ScrollRestoration";
 import { settingsManager } from "./data/local/settings-manager";
@@ -100,8 +100,8 @@ const AppContent: React.FC = () => {
 
           {/* Settings */}
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/settings/api-config" element={<ApiConfigPage />} />
           <Route path="/settings/sync-history" element={<SyncHistoryPage />} />
+
 
           <Route path="*" element={<Navigate to="/properties" replace />} />
         </Routes>
