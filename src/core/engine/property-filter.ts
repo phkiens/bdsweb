@@ -75,6 +75,54 @@ export interface FilterState {
   directions?: Set<string>;
   sortBy?: PropertySortType;
   scope?: FilterScope;
+  sources?: Set<string>;
+  includeVerified?: boolean;
+  includeUnverified?: boolean;
+}
+
+export const DEFAULT_FILTER_SOURCES = new Set(["OFFICIAL", "UNVERIFIED"]);
+
+function areSetsEqual<T>(a?: Set<T>, b?: Set<T>): boolean {
+  if (a === b) return true;
+  const setA = a ?? new Set<T>();
+  const setB = b ?? new Set<T>();
+  if (setA.size !== setB.size) return false;
+  for (const item of setA) {
+    if (!setB.has(item)) return false;
+  }
+  return true;
+}
+
+export function activeFilterCount(
+  filter: FilterState,
+  baselineFilter: FilterState = {}
+): number {
+  let count = 0;
+  if (filter.scope === FilterScope.ALL) count++;
+
+  const filterSources = filter.sources ?? DEFAULT_FILTER_SOURCES;
+  const baselineSources = baselineFilter.sources ?? DEFAULT_FILTER_SOURCES;
+  if (!areSetsEqual(filterSources, baselineSources)) count++;
+
+  if (!areSetsEqual(filter.propertyTypes, baselineFilter.propertyTypes)) count++;
+  if (!areSetsEqual(filter.statuses, baselineFilter.statuses)) count++;
+
+  const priceChanged =
+    !areSetsEqual(filter.selectedPrices, baselineFilter.selectedPrices) ||
+    (filter.priceMin ?? null) !== (baselineFilter.priceMin ?? null) ||
+    (filter.priceMax ?? null) !== (baselineFilter.priceMax ?? null);
+  if (priceChanged) count++;
+
+  const sizeChanged =
+    !areSetsEqual(filter.selectedSizes, baselineFilter.selectedSizes) ||
+    (filter.sizeMin ?? null) !== (baselineFilter.sizeMin ?? null) ||
+    (filter.sizeMax ?? null) !== (baselineFilter.sizeMax ?? null);
+  if (sizeChanged) count++;
+
+  if (!areSetsEqual(filter.areas, baselineFilter.areas)) count++;
+  if (!areSetsEqual(filter.directions, baselineFilter.directions)) count++;
+
+  return count;
 }
 
 // "2 tỷ", "2.5ty" → tìm theo giá như "2", "2.5"
@@ -329,6 +377,7 @@ export const PropertyFilter = {
     return true;
   },
 
+  activeFilterCount,
   matchesQuery,
   rankSearchResults
 };

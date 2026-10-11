@@ -113,3 +113,10 @@ export enum PropertyListMode {
   UNVERIFIED = "UNVERIFIED",
   ALL = "ALL"
 }
+
+/** Hàng trên cùng của bảng lọc SP (giống Android): phạm vi tab / nguồn Chính thức-Chờ / không có. */
+export enum FilterTopRow {
+  SCOPE = "SCOPE",
+  SOURCES = "SOURCES",
+  NONE = "NONE"
+}

@@ -13,11 +13,12 @@ import {
   ExternalLink,
   Target,
   Phone,
-  X
+  X,
+  Filter
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { RouteOptimizer } from "../../core/engine/route-optimizer";
-import { PropertyStatus } from "../../core/models/enums";
+import { PropertyStatus, PropertyListMode } from "../../core/models/enums";
 import { Property } from "../../core/models/property";
 import {
   filterMapProperties,
@@ -30,6 +31,12 @@ import { isInVietnam } from "../../core/utils/coordinates";
 import { createMapPinIcon, createGpsUserIcon } from "./map-marker-icons";
 import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
 import { formatPropertyPrice } from "../../core/utils/property-price";
+import {
+  PropertyFilter,
+  FilterState
+} from "../../core/engine/property-filter";
+import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
+import { FilterTopRow } from "../../core/models/enums";
 
 export const MapSurveyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -48,6 +55,10 @@ export const MapSurveyPage: React.FC = () => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [routeInfo, setRouteInfo] = useState<string | null>(null);
   const [viewTodayOnly, setViewTodayOnly] = useState(false);
+  const [filterState, setFilterState] = useState<FilterState>({
+    sources: new Set(["OFFICIAL", "UNVERIFIED"])
+  });
+  const [showFilterBottomSheet, setShowFilterBottomSheet] = useState(false);
 
   // Xử lý query selectedKeys cho chế độ lộ trình (tương đồng Android map_survey?selectedKeys=...)
   const selectedKeysParam = searchParams.get("selectedKeys");
@@ -69,6 +80,21 @@ export const MapSurveyPage: React.FC = () => {
       .filter((p) => !p.isDeleted)
       .toArray();
   }, []);
+
+  const activeFilterCount = useMemo(() => {
+    return PropertyFilter.activeFilterCount(filterState, {
+      sources: new Set(["OFFICIAL", "UNVERIFIED"])
+    });
+  }, [filterState]);
+
+  const distinctAreas = useMemo(() => {
+    if (!properties) return [];
+    const set = new Set<string>();
+    properties.forEach((p) => {
+      if (p.area && p.area.trim()) set.add(p.area.trim());
+    });
+    return Array.from(set).sort();
+  }, [properties]);
 
   // Derive scan center from user selection or query param
   const scanCenter = useMemo(() => {
@@ -170,8 +196,22 @@ export const MapSurveyPage: React.FC = () => {
       return routeProperties;
     }
     if (!properties) return [];
-    return filterMapProperties(properties, scanCenter, radiusKm, viewTodayOnly);
-  }, [isRouteMode, routeProperties, properties, scanCenter, radiusKm, viewTodayOnly]);
+    const sources = filterState.sources ?? new Set(["OFFICIAL", "UNVERIFIED"]);
+    const candidateProps = properties.filter((p) => {
+      const matchSource = p.isVerified
+        ? sources.has("OFFICIAL")
+        : sources.has("UNVERIFIED");
+      if (!matchSource) return false;
+      return PropertyFilter.matches(
+        p,
+        filterState,
+        "",
+        viewTodayOnly,
+        PropertyListMode.ALL
+      );
+    });
+    return filterMapProperties(candidateProps, scanCenter, radiusKm, false);
+  }, [isRouteMode, routeProperties, properties, scanCenter, radiusKm, viewTodayOnly, filterState]);
 
   // Tự động dựng lộ trình khi vào bản đồ từ nút "Xem trên bản đồ"
   useEffect(() => {
@@ -460,15 +500,35 @@ export const MapSurveyPage: React.FC = () => {
           )}
 
           {!isRouteMode && (
-            <button
-              onClick={() => setViewTodayOnly(!viewTodayOnly)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-md transition-all cursor-pointer ${
-                viewTodayOnly ? "bg-blue-600 text-white" : "bg-white text-slate-800 hover:bg-slate-50 border border-slate-200"
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{viewTodayOnly ? "Đang lọc: Hôm nay" : "Chỉ xem hôm nay"}</span>
-            </button>
+            <>
+              <button
+                onClick={() => setViewTodayOnly(!viewTodayOnly)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-md transition-all cursor-pointer ${
+                  viewTodayOnly ? "bg-blue-600 text-white" : "bg-white text-slate-800 hover:bg-slate-50 border border-slate-200"
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{viewTodayOnly ? "Đang lọc: Hôm nay" : "Chỉ xem hôm nay"}</span>
+              </button>
+
+              <button
+                onClick={() => setShowFilterBottomSheet(true)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-md transition-all cursor-pointer ${
+                  activeFilterCount > 0
+                    ? "bg-blue-50 text-blue-700 border border-blue-300"
+                    : "bg-white text-slate-800 hover:bg-slate-50 border border-slate-200"
+                }`}
+                title="Bộ lọc bản đồ"
+              >
+                <Filter className="w-3.5 h-3.5 text-blue-600" />
+                <span>Bộ lọc</span>
+                {activeFilterCount > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.2 bg-blue-600 text-white text-[10px] font-bold rounded-full">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            </>
           )}
 
           <button
@@ -720,6 +780,31 @@ export const MapSurveyPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Property Filter BottomSheet */}
+      <PropertyFilterBottomSheet
+        isOpen={showFilterBottomSheet}
+        filterState={filterState}
+        baselineFilter={{ sources: new Set(["OFFICIAL", "UNVERIFIED"]) }}
+        onFilterChange={setFilterState}
+        onClose={() => setShowFilterBottomSheet(false)}
+        distinctAreas={distinctAreas}
+        recentAreas={[]}
+        onSelectArea={(area) => {
+          setFilterState((prev) => ({
+            ...prev,
+            areas: new Set([...(prev.areas || []), area])
+          }));
+        }}
+        filteredCount={filteredProperties.length}
+        showStatusFilter={true}
+        topRow={FilterTopRow.SOURCES}
+        showSort={false}
+        resetButtonLabel="Hủy lọc"
+        onResetFilter={() =>
+          setFilterState({ sources: new Set(["OFFICIAL", "UNVERIFIED"]) })
+        }
+      />
     </div>
   );
 };

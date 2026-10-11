@@ -17,7 +17,6 @@ import { syncManager } from "../../data/sync/sync-manager";
 import { Property } from "../../core/models/property";
 import {
   PropertyStatus,
-  PropertySortType,
   FilterScope,
   PropertyListMode
 } from "../../core/models/enums";
@@ -131,31 +130,17 @@ export const PropertyListPage: React.FC = () => {
     }
   }, [filteredProperties]);
 
+  const distinctAreas = useMemo(() => {
+    if (!properties) return [];
+    const set = new Set<string>();
+    properties.forEach((p) => {
+      if (p.area && p.area.trim()) set.add(p.area.trim());
+    });
+    return Array.from(set).sort();
+  }, [properties]);
+
   const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (filterState.scope === FilterScope.ALL) count++;
-    if (filterState.propertyTypes && filterState.propertyTypes.size > 0) {
-      count += filterState.propertyTypes.size;
-    }
-    if (filterState.statuses && filterState.statuses.size > 0) {
-      count += filterState.statuses.size;
-    }
-    if (filterState.selectedPrices && filterState.selectedPrices.size > 0) {
-      count += filterState.selectedPrices.size;
-    }
-    if (filterState.priceMin != null || filterState.priceMax != null) count++;
-    if (filterState.selectedSizes && filterState.selectedSizes.size > 0) {
-      count += filterState.selectedSizes.size;
-    }
-    if (filterState.sizeMin != null || filterState.sizeMax != null) count++;
-    if (filterState.areas && filterState.areas.size > 0) {
-      count += filterState.areas.size;
-    }
-    if (filterState.directions && filterState.directions.size > 0) {
-      count += filterState.directions.size;
-    }
-    if (filterState.sortBy && filterState.sortBy !== PropertySortType.NEWEST) count++;
-    return count;
+    return PropertyFilter.activeFilterCount(filterState);
   }, [filterState]);
 
   const handleResetFilter = () => {
@@ -492,9 +477,15 @@ export const PropertyListPage: React.FC = () => {
         filterState={filterState}
         onFilterChange={setFilterState}
         onClose={() => setShowFilterBottomSheet(false)}
-        onReset={handleResetFilter}
-        activeFilterCount={activeFilterCount}
-        totalMatchedCount={filteredProperties.length}
+        onResetFilter={handleResetFilter}
+        distinctAreas={distinctAreas}
+        onSelectArea={(area) => {
+          setFilterState((prev) => ({
+            ...prev,
+            areas: new Set([...(prev.areas || []), area])
+          }));
+        }}
+        filteredCount={filteredProperties.length}
       />
 
       {/* Modal xác nhận xóa hàng loạt */}

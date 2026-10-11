@@ -14,12 +14,12 @@ import { db } from "../../data/local/db";
 import { getVisibleHistories } from "../../data/local/price-history-queries";
 import { PropertyPriceHistory } from "../../core/models/price-history";
 import { Property } from "../../core/models/property";
-import { FilterScope } from "../../core/models/enums";
-import { FilterState } from "../../core/engine/property-filter";
+import { FilterState, PropertyFilter } from "../../core/engine/property-filter";
 import { formatPropertyPrice } from "../../core/utils/property-price";
 import { toTitleCase } from "../../core/utils/vietnamese";
 import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
 import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
+import { FilterTopRow } from "../../core/models/enums";
 import { MultiSelectBottomBar } from "../../components/common/MultiSelectBottomBar";
 import { useHideBottomNavWhile } from "../../components/common/bottom-nav-visibility";
 import { PropertyPickerModal } from "../../components/properties/PropertyPickerModal";
@@ -60,9 +60,7 @@ export const PriceDropPage: React.FC = () => {
   );
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [showFilterSheet, setShowFilterSheet] = useState(false);
-  const [filterState, setFilterState] = useState<FilterState>({
-    scope: FilterScope.ALL
-  });
+  const [filterState, setFilterState] = useState<FilterState>({});
 
   // Chế độ chọn nhiều & Danh sách căn ngoài danh sách (extras)
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
@@ -160,23 +158,16 @@ export const PriceDropPage: React.FC = () => {
       .map((it) => it.property);
   }, [items, selectedPropertyIds]);
 
+  const distinctAreas = useMemo(() => {
+    const set = new Set<string>();
+    properties.forEach((p) => {
+      if (p.area && p.area.trim()) set.add(toTitleCase(p.area.trim()));
+    });
+    return Array.from(set).sort();
+  }, [properties]);
+
   const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (filterState.scope === FilterScope.CURRENT_TAB) count++;
-    if (filterState.propertyTypes && filterState.propertyTypes.size > 0)
-      count += filterState.propertyTypes.size;
-    if (filterState.statuses && filterState.statuses.size > 0)
-      count += filterState.statuses.size;
-    if (filterState.selectedPrices && filterState.selectedPrices.size > 0)
-      count += filterState.selectedPrices.size;
-    if (filterState.priceMin != null || filterState.priceMax != null) count++;
-    if (filterState.selectedSizes && filterState.selectedSizes.size > 0)
-      count += filterState.selectedSizes.size;
-    if (filterState.sizeMin != null || filterState.sizeMax != null) count++;
-    if (filterState.areas && filterState.areas.size > 0) count += filterState.areas.size;
-    if (filterState.directions && filterState.directions.size > 0)
-      count += filterState.directions.size;
-    return count;
+    return PropertyFilter.activeFilterCount(filterState);
   }, [filterState]);
 
   const handleToggleMultiSelect = () => {
@@ -548,11 +539,22 @@ export const PriceDropPage: React.FC = () => {
       <PropertyFilterBottomSheet
         isOpen={showFilterSheet}
         filterState={filterState}
+        baselineFilter={{}}
         onFilterChange={setFilterState}
         onClose={() => setShowFilterSheet(false)}
-        onReset={() => setFilterState({ scope: FilterScope.ALL })}
-        activeFilterCount={activeFilterCount}
-        totalMatchedCount={items.length}
+        distinctAreas={distinctAreas}
+        recentAreas={[]}
+        onSelectArea={(area) => {
+          setFilterState((prev) => ({
+            ...prev,
+            areas: new Set([...(prev.areas || []), area])
+          }));
+        }}
+        filteredCount={items.length}
+        showStatusFilter={false}
+        topRow={FilterTopRow.NONE}
+        showSort={false}
+        onResetFilter={() => setFilterState({})}
       />
     </div>
   );
