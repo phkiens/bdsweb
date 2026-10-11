@@ -15,6 +15,57 @@ export interface OwnerPropertyStats {
   totalCount: number;
   forSaleCount: number;
   soldCount: number;
+  /** Khu vực đặc trưng của chủ — hiện dưới tên trên thẻ chủ nhà để dễ nhận ra. */
+  mainArea?: string | null;
+}
+
+export interface OwnerPropertyArea {
+  area: string;
+  price: number;
+  isForSale: boolean;
+}
+
+/**
+ * Khu vực đặc trưng của chủ nhà:
+ * - Chỉ xét căn đang bán; chủ không còn căn đang bán thì xét tất cả.
+ * - Lấy khu có nhiều căn nhất; bằng nhau thì lấy khu có căn giá cao nhất
+ *   (2 khu mỗi khu 1 căn ⇒ khu có giá cao hơn).
+ * - Gộp khu theo tên bỏ dấu ("Hoà Xuân" = "Hòa Xuân").
+ */
+export function pickOwnerMainArea(items: OwnerPropertyArea[]): string | null {
+  const withArea = items.filter((it) => it.area && it.area.trim().length > 0);
+  const forSale = withArea.filter((it) => it.isForSale);
+  const pool = forSale.length > 0 ? forSale : withArea;
+  if (pool.length === 0) return null;
+
+  const groupMap = new Map<string, OwnerPropertyArea[]>();
+  for (const item of pool) {
+    const key = normalizeSearch(item.area);
+    const existing = groupMap.get(key) || [];
+    existing.push(item);
+    groupMap.set(key, existing);
+  }
+
+  const sortedGroups = Array.from(groupMap.entries()).sort((a, b) => {
+    const sizeDiff = b[1].length - a[1].length;
+    if (sizeDiff !== 0) return sizeDiff;
+    const maxPriceA = Math.max(...a[1].map((x) => x.price || 0));
+    const maxPriceB = Math.max(...b[1].map((x) => x.price || 0));
+    const priceDiff = maxPriceB - maxPriceA;
+    if (priceDiff !== 0) return priceDiff;
+    return a[0].localeCompare(b[0]);
+  });
+
+  const bestGroup = sortedGroups[0][1];
+
+  let maxItem = bestGroup[0];
+  for (let i = 1; i < bestGroup.length; i++) {
+    if ((bestGroup[i].price || 0) > (maxItem.price || 0)) {
+      maxItem = bestGroup[i];
+    }
+  }
+
+  return maxItem.area.trim();
 }
 
 export const AUTO_NOTE_PREFIX = "Tự động tạo từ thông tin BĐS";
@@ -164,6 +215,7 @@ export function calculateOwnerPropertyStats(
   }
 
   const stats: Record<string, OwnerPropertyStats> = {};
+  const customerAreas: Record<string, OwnerPropertyArea[]> = {};
 
   for (const link of links) {
     if ((link.role !== CustomerRole.OWNER && link.role !== CustomerPropertyRole.CO_OWNER) || link.isDeleted) continue;
@@ -174,17 +226,32 @@ export function calculateOwnerPropertyStats(
       stats[link.customerId] = {
         totalCount: 0,
         forSaleCount: 0,
-        soldCount: 0
+        soldCount: 0,
+        mainArea: null
       };
+      customerAreas[link.customerId] = [];
     }
 
     const current = stats[link.customerId];
     current.totalCount++;
-    if (prop.status === PropertyStatus.FOR_SALE) {
+    const isForSale = prop.status === PropertyStatus.FOR_SALE;
+    if (isForSale) {
       current.forSaleCount++;
     } else if (prop.status === PropertyStatus.SOLD) {
       current.soldCount++;
     }
+
+    if (prop.area && prop.area.trim().length > 0) {
+      customerAreas[link.customerId].push({
+        area: prop.area,
+        price: prop.price || 0,
+        isForSale
+      });
+    }
+  }
+
+  for (const [customerId, areas] of Object.entries(customerAreas)) {
+    stats[customerId].mainArea = pickOwnerMainArea(areas);
   }
 
   return stats;

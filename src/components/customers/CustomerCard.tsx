@@ -17,6 +17,7 @@ export interface CustomerCardProps {
     totalCount: number;
     forSaleCount: number;
     soldCount: number;
+    mainArea?: string | null;
   };
   onClick?: () => void;
   onPhoneClick?: (phone: string) => void;
@@ -41,12 +42,14 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
   // Thống kê BĐS cho Chủ nhà
   const totalHouses = ownerStats?.totalCount ?? 0;
   const forSaleHouses = ownerStats?.forSaleCount ?? 0;
-  const soldHouses = ownerStats?.soldCount ?? 0;
+  const mainArea = ownerStats?.mainArea;
 
   const ownerSummary =
-    totalHouses > 0
-      ? `${totalHouses} nhà • ${forSaleHouses} đang bán • ${soldHouses} đã bán`
-      : "Chưa có BĐS gửi bán";
+    totalHouses <= 0
+      ? "Chưa có BĐS"
+      : !mainArea || !mainArea.trim()
+      ? `${forSaleHouses} đang bán / ${totalHouses} nhà`
+      : `${mainArea} · ${forSaleHouses} đang bán / ${totalHouses} nhà`;
 
   return (
     <div

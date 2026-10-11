@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -19,7 +19,8 @@ import {
   UserPlus,
   ChevronRight,
   Clock,
-  X
+  X,
+  Copy
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { PropertyStatus, CustomerRole, CustomerPropertyRole } from "../../core/models/enums";
@@ -52,6 +53,84 @@ import {
 } from "../../core/utils/price-history-ops";
 import { PropertyPriceHistorySection } from "../../components/properties/PropertyPriceHistorySection";
 import { QuickPriceModal } from "../../components/properties/QuickPriceModal";
+import { buildLocationUrl, buildCoordinateText } from "../../core/utils/maps";
+
+export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: number }> = ({
+  latitude,
+  longitude
+}) => {
+  const [open, setOpen] = useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [open]);
+
+  const handleCopyLink = async () => {
+    setOpen(false);
+    const url = buildLocationUrl(latitude, longitude);
+    try {
+      await navigator.clipboard.writeText(url);
+      alert("Đã sao chép link Google Maps");
+    } catch {
+      alert("Không thể sao chép vào bộ nhớ đệm");
+    }
+  };
+
+  const handleCopyCoords = async () => {
+    setOpen(false);
+    const text = buildCoordinateText(latitude, longitude);
+    try {
+      await navigator.clipboard.writeText(text);
+      alert("Đã sao chép tọa độ");
+    } catch {
+      alert("Không thể sao chép vào bộ nhớ đệm");
+    }
+  };
+
+  return (
+    <div className="relative inline-block ml-1 align-middle" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        title="Tùy chọn sao chép vị trí"
+        aria-label="Tùy chọn sao chép vị trí"
+        className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 text-xs">
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium transition-colors cursor-pointer"
+          >
+            Sao chép link Google Maps
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyCoords}
+            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium transition-colors cursor-pointer"
+          >
+            Sao chép tọa độ
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -630,9 +709,17 @@ export const PropertyDetailPage: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-slate-500">Tọa độ:</span>{" "}
-                  <span className="font-mono text-slate-800">
-                    {property.latitude ? `${property.latitude}, ${property.longitude}` : "Chưa có"}
-                  </span>
+                  <div className="inline-flex items-center gap-1">
+                    <span className="font-mono text-slate-800">
+                      {property.latitude ? `${property.latitude}, ${property.longitude}` : "Chưa có"}
+                    </span>
+                    {hasCoords && (
+                      <CoordinateCopyButton
+                        latitude={property.latitude!}
+                        longitude={property.longitude!}
+                      />
+                    )}
+                  </div>
                 </div>
                 <div>
                   <span className="text-slate-500">Chủ nhà:</span>{" "}

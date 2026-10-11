@@ -164,10 +164,10 @@ describe("FEATURE PARITY: CRM-OWNER-FILTER-001 (OwnerStockFilter & OwnerProperty
     const stats = calculateOwnerPropertyStats(mockLinks, mockProperties as Property[]);
 
     expect(stats["owner-0"]).toBeUndefined();
-    expect(stats["owner-1"]).toEqual({ totalCount: 2, forSaleCount: 1, soldCount: 1 });
-    expect(stats["owner-2"]).toEqual({ totalCount: 1, forSaleCount: 1, soldCount: 0 });
-    expect(stats["owner-3"]).toEqual({ totalCount: 1, forSaleCount: 0, soldCount: 1 });
-    expect(stats["owner-4"]).toEqual({ totalCount: 3, forSaleCount: 0, soldCount: 3 });
+    expect(stats["owner-1"]).toMatchObject({ totalCount: 2, forSaleCount: 1, soldCount: 1 });
+    expect(stats["owner-2"]).toMatchObject({ totalCount: 1, forSaleCount: 1, soldCount: 0 });
+    expect(stats["owner-3"]).toMatchObject({ totalCount: 1, forSaleCount: 0, soldCount: 1 });
+    expect(stats["owner-4"]).toMatchObject({ totalCount: 3, forSaleCount: 0, soldCount: 3 });
   });
 
   it("lọc OwnerStockFilter.HAS_STOCK ('Còn hàng'): chỉ trả về chủ nhà có ít nhất 1 BĐS đang bán (forSaleCount > 0)", () => {

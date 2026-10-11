@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -13,15 +13,22 @@ import {
   User,
   AlertCircle,
   Compass,
-  CheckCircle2
+  CheckCircle2,
+  Link
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { createDefaultProperty, Property } from "../../core/models/property";
-import { PropertyStatus, PropertyType, Direction } from "../../core/models/enums";
+import { Customer } from "../../core/models/customer";
+import { PropertyStatus, PropertyType, Direction, CustomerRole } from "../../core/models/enums";
 import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
 import { parseRawText, getDistinctAreas, UnverifiedPropertyType } from "../../core/engine/property-text-extractor";
 import { syncManager } from "../../data/sync/sync-manager";
-import { ensureCustomerForProperty } from "../../core/services/customer-linker";
+import {
+  savePropertyOwnerFromForm,
+  ownerSaveNoticeText,
+  searchOwnersByName,
+  findCustomerByPhone
+} from "../../core/services/customer-linker";
 import { checkVerificationReadiness } from "../../core/engine/verification-engine";
 import { mediaService } from "../../data/media/media-service";
 import {
@@ -64,6 +71,10 @@ export const PropertyFormPage: React.FC = () => {
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [suggestedOwnersByName, setSuggestedOwnersByName] = useState<Customer[]>([]);
+  const [suggestedOwnerByPhone, setSuggestedOwnerByPhone] = useState<Customer | null>(null);
+  const searchByNameRequestId = useRef(0);
+  const lookupByPhoneRequestId = useRef(0);
   const isOpenForVerify = searchParams.get("openForVerify") === "true";
   const readiness = checkVerificationReadiness(formData);
 
@@ -220,6 +231,73 @@ export const PropertyFormPage: React.FC = () => {
     }
   };
 
+  const handleOwnerNameChange = (val: string) => {
+    setFormData((prev) => {
+      const unlinked = prev.linkedCustomerId && val !== prev.ownerName ? null : prev.linkedCustomerId;
+      return {
+        ...prev,
+        ownerName: val,
+        linkedCustomerId: unlinked
+      };
+    });
+
+    const reqId = ++searchByNameRequestId.current;
+    const trimmed = val.trim();
+    if (trimmed.length >= 2) {
+      searchOwnersByName(db, trimmed).then((results) => {
+        if (searchByNameRequestId.current === reqId) {
+          setSuggestedOwnersByName(results);
+        }
+      });
+    } else {
+      setSuggestedOwnersByName([]);
+    }
+  };
+
+  const handleOwnerPhoneChange = (val: string) => {
+    setFormData((prev) => {
+      const unlinked = prev.linkedCustomerId && val !== prev.ownerPhone ? null : prev.linkedCustomerId;
+      return {
+        ...prev,
+        ownerPhone: val,
+        linkedCustomerId: unlinked
+      };
+    });
+
+    const reqId = ++lookupByPhoneRequestId.current;
+    const trimmed = val.trim();
+    if (trimmed.length >= 8) {
+      findCustomerByPhone(db, trimmed).then((matched) => {
+        if (lookupByPhoneRequestId.current === reqId) {
+          setSuggestedOwnerByPhone(matched);
+          if (matched) {
+            setFormData((prev) => {
+              if (!prev.ownerName || prev.ownerName.trim() === "") {
+                return { ...prev, ownerName: matched.name };
+              }
+              return prev;
+            });
+          }
+        }
+      });
+    } else {
+      setSuggestedOwnerByPhone(null);
+    }
+  };
+
+  const handleSelectSuggestedOwner = (customer: Customer) => {
+    searchByNameRequestId.current++;
+    lookupByPhoneRequestId.current++;
+    setSuggestedOwnersByName([]);
+    setSuggestedOwnerByPhone(null);
+    setFormData((prev) => ({
+      ...prev,
+      linkedCustomerId: customer.id,
+      ownerName: customer.name,
+      ownerPhone: customer.phone || ""
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage("");
@@ -269,10 +347,18 @@ export const PropertyFormPage: React.FC = () => {
       await db.enqueueOutbox("PROPERTY", updated.id, "UPSERT");
 
       // Tự động tạo/liên kết hồ sơ Chủ nhà (OWNER) theo đúng chuẩn Android
-      await ensureCustomerForProperty(db, updated, paramCustomerId);
+      const { notice } = await savePropertyOwnerFromForm(
+        db,
+        updated,
+        formData.linkedCustomerId
+      );
 
       // Kích hoạt đồng bộ ngầm nếu online
       await syncManager.pushChanges();
+
+      if (notice) {
+        alert(ownerSaveNoticeText(notice));
+      }
 
       // Nếu có ảnh mới chọn, tiến hành upload lên R2
       if (pendingFiles.length > 0) {
@@ -564,26 +650,89 @@ export const PropertyFormPage: React.FC = () => {
             <span>Thông tin chủ nhà</span>
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Tên chủ nhà</label>
-              <input
-                type="text"
-                value={formData.ownerName}
-                onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}
-                placeholder="Ví dụ: Anh Tuấn"
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden"
-              />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="relative">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-slate-600">Tên chủ nhà</label>
+                {formData.linkedCustomerId && (
+                  <span
+                    className="flex items-center gap-1 text-[11px] text-blue-600 font-semibold"
+                    title="Đã liên kết khách hàng"
+                  >
+                    <Link className="w-3.5 h-3.5" />
+                    <span>Đã liên kết</span>
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={formData.ownerName}
+                  onChange={(e) => handleOwnerNameChange(e.target.value)}
+                  placeholder="Ví dụ: Anh Tuấn"
+                  className={`w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden focus:bg-white focus:ring-2 focus:ring-blue-500 ${
+                    formData.linkedCustomerId ? "pl-8" : ""
+                  }`}
+                />
+                {formData.linkedCustomerId && (
+                  <Link
+                    className="w-4 h-4 text-blue-600 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-label="Đã liên kết khách hàng"
+                  />
+                )}
+              </div>
+
+              {suggestedOwnersByName.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden divide-y divide-slate-100">
+                  {suggestedOwnersByName.map((owner) => (
+                    <button
+                      key={owner.id}
+                      type="button"
+                      onClick={() => handleSelectSuggestedOwner(owner)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center justify-between transition-colors cursor-pointer"
+                    >
+                      <div className="truncate mr-2">
+                        <span className="font-semibold text-slate-800">{owner.name}</span>
+                        {owner.phone && (
+                          <span className="ml-2 text-slate-400 font-mono text-[11px]">{owner.phone}</span>
+                        )}
+                      </div>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                          owner.role === CustomerRole.OWNER
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        {owner.role === CustomerRole.OWNER ? "Chủ nhà" : "Khách mua"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Số điện thoại</label>
               <input
                 type="tel"
                 value={formData.ownerPhone}
-                onChange={(e) => setFormData({ ...formData, ownerPhone: e.target.value })}
+                onChange={(e) => handleOwnerPhoneChange(e.target.value)}
                 placeholder="0901234567"
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden"
+                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden focus:bg-white focus:ring-2 focus:ring-blue-500"
               />
+
+              {suggestedOwnerByPhone &&
+                formData.linkedCustomerId == null &&
+                formData.ownerName.trim() !== suggestedOwnerByPhone.name.trim() && (
+                  <div
+                    onClick={() => handleSelectSuggestedOwner(suggestedOwnerByPhone)}
+                    className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 cursor-pointer font-medium"
+                  >
+                    <Link className="w-3.5 h-3.5 shrink-0" />
+                    <span>SĐT khớp khách: {suggestedOwnerByPhone.name} — chạm để liên kết</span>
+                  </div>
+              )}
             </div>
           </div>
         </div>
