@@ -4,8 +4,6 @@ import {
   Settings,
   RefreshCw,
   History,
-  Trash2,
-  CheckCircle2,
   Database,
   ChevronRight,
   FileArchive,
@@ -13,7 +11,6 @@ import {
   TrendingDown,
   AlertTriangle,
   Map as MapIcon,
-  Sliders,
   Code2,
   Image,
   Layers,
@@ -25,7 +22,6 @@ import {
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { CustomerPropertyRole, PropertyType, PropertyStatus } from "../../core/models/enums";
-import { syncManager } from "../../data/sync/sync-manager";
 import {
   exportDatabaseToZip,
   importPhotosFromZip,
@@ -138,9 +134,6 @@ export const SettingsPage: React.FC = () => {
 
   // Settings State
   const [settings, setSettings] = useState(() => settingsManager.getSettings());
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<string | null>(null);
-  const [purging, setPurging] = useState(false);
   const [backupProgress, setBackupProgress] = useState<string | null>(null);
   const [issueCount, setIssueCount] = useState<number>(0);
 
@@ -232,23 +225,6 @@ export const SettingsPage: React.FC = () => {
     };
   }, []);
 
-  const handleSyncNow = async () => {
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const ok = await syncManager.syncNow();
-      if (ok) {
-        setSyncResult("Đồng bộ dữ liệu thành công!");
-      } else {
-        setSyncResult("Đồng bộ gặp lỗi hoặc thiết bị đang ngoại tuyến.");
-      }
-    } catch (e: any) {
-      setSyncResult(`Lỗi: ${e.message}`);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   // ZIP EXPORT
   const handleBackupZip = async () => {
     try {
@@ -304,39 +280,6 @@ export const SettingsPage: React.FC = () => {
     } finally {
       if (textInputRef.current) textInputRef.current.value = "";
     }
-  };
-
-  const handlePurgeDeleted = async () => {
-    if (!window.confirm("Bạn có chắc muốn dọn dẹp vĩnh viễn các bản ghi đã xóa quá 30 ngày?")) return;
-    setPurging(true);
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const count = await db.purgeDeletedOlderThan(thirtyDaysAgo);
-    setPurging(false);
-    alert(`Đã xóa vĩnh viễn ${count} bản ghi cũ.`);
-  };
-
-  const handleSeedDemoData = async () => {
-    if (!window.confirm("Nạp 5 BĐS và 3 khách hàng mẫu vào CSDL? Dữ liệu hiện có sẽ được cập nhật.")) return;
-    const { seedInitialData } = await import("../../data/local/seed");
-    const result = await seedInitialData(db);
-    alert(`Đã nạp thành công: ${result.propertiesCount} BĐS, ${result.customersCount} khách hàng mẫu.`);
-    window.location.reload();
-  };
-
-  const handleClearAllData = async () => {
-    if (
-      !window.confirm(
-        "CẢNH BÁO: Hành động này sẽ xóa sạch toàn bộ BĐS, Tin chờ, Khách hàng và liên kết trong IndexedDB. Bạn có chắc chắn muốn xóa?"
-      )
-    ) {
-      return;
-    }
-    await db.properties.clear();
-    await db.customers.clear();
-    await db.customer_property_links.clear();
-    await db.sync_outbox.clear();
-    alert("Đã xóa sạch toàn bộ dữ liệu trong trình duyệt!");
-    window.location.reload();
   };
 
   // FILTER MODAL ACTIONS
@@ -470,38 +413,8 @@ export const SettingsPage: React.FC = () => {
           <span>Cài Đặt Hệ Thống</span>
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Quản lý đồng bộ, hiển thị, bản đồ và sao lưu cơ sở dữ liệu
+          Sao lưu, hiển thị, công cụ và nâng cao
         </p>
-      </div>
-
-      {/* Sync Card */}
-      <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <RefreshCw className={`w-5 h-5 ${syncing ? "animate-spin" : ""}`} />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-800 text-sm md:text-base">Đồng Bộ Ngay</h3>
-              <p className="text-xs text-slate-500">Đẩy và kéo dữ liệu tức thời với Supabase</p>
-            </div>
-          </div>
-
-          <button
-            onClick={handleSyncNow}
-            disabled={syncing}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            {syncing ? "Đang đồng bộ..." : "Đồng bộ ngay"}
-          </button>
-        </div>
-
-        {syncResult && (
-          <div className="p-3 bg-slate-50 rounded-xl text-xs flex items-center gap-2 text-slate-700">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{syncResult}</span>
-          </div>
-        )}
       </div>
 
       {backupProgress && (
@@ -593,18 +506,23 @@ export const SettingsPage: React.FC = () => {
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
 
-          {/* Sắp xếp nút chức năng */}
-          <div className="w-full p-4 flex items-center justify-between text-left opacity-60">
+
+          {/* Bản đồ */}
+          <button
+            onClick={handleOpenMapModal}
+            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
+          >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
-                <Sliders className="w-4 h-4" />
+              <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
+                <MapIcon className="w-4 h-4" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-slate-800">Sắp xếp nút chức năng</div>
-                <div className="text-xs text-slate-500">Thứ tự nút thao tác nhanh</div>
+                <div className="text-sm font-semibold text-slate-800">Bản đồ</div>
+                <div className="text-xs text-slate-500">{currentMapSubtitle}</div>
               </div>
             </div>
-          </div>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
         </div>
       </div>
 
@@ -667,23 +585,13 @@ export const SettingsPage: React.FC = () => {
             </button>
           )}
 
-          {/* Bản đồ */}
-          <button
-            onClick={handleOpenMapModal}
-            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center">
-                <MapIcon className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Bản đồ</div>
-                <div className="text-xs text-slate-500">{currentMapSubtitle}</div>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </button>
+        </div>
+      </div>
 
+      {/* 4. NHÓM NÂNG CAO */}
+      <div className="space-y-1.5">
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Nâng cao</div>
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs divide-y divide-slate-100 overflow-hidden">
           {/* Bộ regex bóc tách */}
           <button
             onClick={handleOpenRegexModal}
@@ -700,13 +608,7 @@ export const SettingsPage: React.FC = () => {
             </div>
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
-        </div>
-      </div>
 
-      {/* 4. NHÓM NÂNG CAO */}
-      <div className="space-y-1.5">
-        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Nâng cao</div>
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs divide-y divide-slate-100 overflow-hidden">
           <button
             onClick={() => navigate("/settings/sync-history")}
             className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
@@ -722,54 +624,6 @@ export const SettingsPage: React.FC = () => {
             <ChevronRight className="w-4 h-4 text-slate-400" />
           </button>
 
-          <button
-            onClick={handlePurgeDeleted}
-            disabled={purging}
-            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                <Trash2 className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Dọn dẹp dữ liệu</div>
-                <div className="text-xs text-slate-500">Xóa vĩnh viễn các bản ghi đã xóa quá 30 ngày</div>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </button>
-
-          <button
-            onClick={handleSeedDemoData}
-            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Database className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-slate-800">Nạp dữ liệu mẫu</div>
-                <div className="text-xs text-slate-500">5 BĐS và 3 khách hàng mẫu</div>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </button>
-
-          <button
-            onClick={handleClearAllData}
-            className="w-full p-4 flex items-center justify-between hover:bg-red-50 transition-colors text-left cursor-pointer"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
-                <Trash2 className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold text-red-600">Xóa sạch toàn bộ dữ liệu</div>
-                <div className="text-xs text-red-400">Reset CSDL trình duyệt về rỗng</div>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </button>
         </div>
       </div>
 
