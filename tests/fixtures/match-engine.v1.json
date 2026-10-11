@@ -1,0 +1,119 @@
+{
+  "version": "1.0",
+  "contract": "match-engine",
+  "cases": [
+    {
+      "id": "exact-flexible-location-direction",
+      "description": "Matching type and price with unrestricted area and direction scores 100.",
+      "customer": {
+        "id": "customer-exact",
+        "propertyType": "Nhà",
+        "demandAreas": "",
+        "demandDirections": "",
+        "priceMin": 10.0,
+        "priceMax": 20.0,
+        "status": "ACTIVE"
+      },
+      "property": {
+        "id": "property-exact",
+        "area": "",
+        "price": 15.0,
+        "status": "Đang bán",
+        "direction": "",
+        "propertyType": "Nhà"
+      },
+      "expected": {
+        "score": 100,
+        "matchingReasons": [
+          "Khớp loại hình (Nhà)",
+          "Khớp khoảng giá",
+          "Khu vực bất kỳ",
+          "Hướng bất kỳ"
+        ],
+        "warnings": []
+      }
+    },
+    {
+      "id": "closed-customer-is-excluded",
+      "description": "A closed customer is rejected before scoring.",
+      "customer": {
+        "id": "customer-closed",
+        "propertyType": "Nhà",
+        "demandAreas": "",
+        "demandDirections": "",
+        "priceMin": 0.0,
+        "priceMax": 0.0,
+        "status": "CLOSED"
+      },
+      "property": {
+        "id": "property-active",
+        "area": "",
+        "price": 5.0,
+        "status": "Đang bán",
+        "direction": "",
+        "propertyType": "Nhà"
+      },
+      "expected": {
+        "score": 0,
+        "matchingReasons": [],
+        "warnings": ["Khách hàng đã đóng"]
+      }
+    },
+    {
+      "id": "different-property-type-is-excluded",
+      "description": "A property-type mismatch is a hard exclusion.",
+      "customer": {
+        "id": "customer-house",
+        "propertyType": "Nhà",
+        "demandAreas": "",
+        "demandDirections": "",
+        "priceMin": 0.0,
+        "priceMax": 0.0,
+        "status": "ACTIVE"
+      },
+      "property": {
+        "id": "property-land",
+        "area": "",
+        "price": 5.0,
+        "status": "Đang bán",
+        "direction": "",
+        "propertyType": "Đất"
+      },
+      "expected": {
+        "score": 0,
+        "matchingReasons": [],
+        "warnings": ["Khác loại hình: khách cần Nhà, BĐS là Đất"]
+      }
+    },
+    {
+      "id": "price-over-budget-by-25-percent",
+      "description": "A price more than 20 percent over budget keeps non-price matching points.",
+      "customer": {
+        "id": "customer-budget",
+        "propertyType": "Nhà",
+        "demandAreas": "",
+        "demandDirections": "",
+        "priceMin": 10.0,
+        "priceMax": 20.0,
+        "status": "ACTIVE"
+      },
+      "property": {
+        "id": "property-expensive",
+        "area": "",
+        "price": 25.0,
+        "status": "Đang bán",
+        "direction": "",
+        "propertyType": "Nhà"
+      },
+      "expected": {
+        "score": 70,
+        "matchingReasons": [
+          "Khớp loại hình (Nhà)",
+          "Khu vực bất kỳ",
+          "Hướng bất kỳ"
+        ],
+        "warnings": ["Vượt ngân sách quá nhiều (+25%)"]
+      }
+    }
+  ]
+}

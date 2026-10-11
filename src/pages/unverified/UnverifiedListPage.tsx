@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -19,11 +19,12 @@ import { Property } from "../../core/models/property";
 import { PropertyStatus } from "../../core/models/enums";
 import { syncManager } from "../../data/sync/sync-manager";
 import { createDefaultProperty } from "../../core/models/property";
-import { canonicalizeVietnamesePhone, toTitleCase, normalizeVietnamese } from "../../core/utils/vietnamese";
+import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
 import { parseVietnamCoordinates, calculateDistanceKm, isInVietnam } from "../../core/utils/coordinates";
 import { nowTimestamp } from "../../core/utils/date";
 import { PropertyCard } from "../../components/properties/PropertyCard";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
+import { PropertyFilter } from "../../core/engine/property-filter";
 
 export interface PropertyCluster {
   center: Property;
@@ -130,26 +131,24 @@ export const UnverifiedListPage: React.FC = () => {
       .sortBy("updatedAt");
   }, []);
 
-  // Lọc theo tìm kiếm từ khóa
-  const filteredList = useMemo(() => {
-    if (!rawUnverifiedList) return [];
-    if (!searchQuery.trim()) return rawUnverifiedList;
-
-    const queryNorm = normalizeVietnamese(searchQuery.trim());
-    return rawUnverifiedList.filter((p) => {
-      const areaNorm = normalizeVietnamese(p.area || "");
-      const ownerNorm = normalizeVietnamese(p.ownerName || "");
-      const phoneNorm = p.ownerPhone ? p.ownerPhone.replace(/\D/g, "") : "";
-      const textNorm = normalizeVietnamese(p.rawText || "");
-
-      return (
-        areaNorm.includes(queryNorm) ||
-        ownerNorm.includes(queryNorm) ||
-        phoneNorm.includes(searchQuery.trim().replace(/\D/g, "")) ||
-        textNorm.includes(queryNorm)
-      );
-    });
+  // Lọc và xếp hạng theo chuẩn tìm kiếm Android
+  const rankedResult = useMemo(() => {
+    if (!rawUnverifiedList) return { items: [], ownerMatchStart: -1 };
+    const matched = rawUnverifiedList.filter((p) =>
+      PropertyFilter.matchesQuery(p, searchQuery, true)
+    );
+    return PropertyFilter.rankSearchResults(matched, searchQuery, true);
   }, [rawUnverifiedList, searchQuery]);
+
+  const filteredList = rankedResult.items;
+  const ownerMatchStart = rankedResult.ownerMatchStart;
+
+  // Cuộn về đầu trang khi đổi từ khóa tìm kiếm
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    }
+  }, [searchQuery]);
 
   // Tính toán cụm vị trí (Geo & Area) khi ở chế độ xem gom cụm (PARITY-UNVER-002)
   const { geoClusters, areaClusters, withoutCoords } = useMemo(() => {
@@ -295,7 +294,7 @@ export const UnverifiedListPage: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm khu vực, chủ nhà, SĐT, nội dung..."
+              placeholder="Khu vực, chủ, SĐT, giá..."
               className="w-full pl-9 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden shadow-2xs transition-all"
             />
             {searchQuery && (
@@ -539,24 +538,30 @@ export const UnverifiedListPage: React.FC = () => {
       ) : (
         /* Chế độ danh sách phẳng mặc định - Container space-y-3 đảm bảo 100% selector E2E test .space-y-3 > div */
         <div className="space-y-3">
-          {filteredList.map((p) => {
+          {filteredList.map((p, index) => {
             const isSelected = selectedIds.has(p.id);
             return (
-              <div
-                key={p.id}
-                className="bg-white border border-slate-200 hover:border-amber-300 rounded-xl shadow-2xs overflow-hidden transition-all"
-              >
-                <PropertyCard
-                  property={p}
-                  mode="unverified"
-                  onClick={() => navigate(`/properties/${p.id}`)}
-                  onVerify={() => handleVerify(p)}
-                  onDelete={() => setSingleDeleteProperty(p)}
-                  isMultiSelectMode={isMultiSelect}
-                  isSelected={isSelected}
-                  onToggleSelect={() => handleToggleSelect(p.id)}
-                />
-              </div>
+              <React.Fragment key={p.id}>
+                {index === ownerMatchStart && (
+                  <div className="w-full px-4 py-2 bg-amber-50/70 text-amber-800 text-xs font-semibold rounded-xl">
+                    Khớp tên chủ ({filteredList.length - ownerMatchStart})
+                  </div>
+                )}
+                <div
+                  className="bg-white border border-slate-200 hover:border-amber-300 rounded-xl shadow-2xs overflow-hidden transition-all"
+                >
+                  <PropertyCard
+                    property={p}
+                    mode="unverified"
+                    onClick={() => navigate(`/properties/${p.id}`)}
+                    onVerify={() => handleVerify(p)}
+                    onDelete={() => setSingleDeleteProperty(p)}
+                    isMultiSelectMode={isMultiSelect}
+                    isSelected={isSelected}
+                    onToggleSelect={() => handleToggleSelect(p.id)}
+                  />
+                </div>
+              </React.Fragment>
             );
           })}
         </div>

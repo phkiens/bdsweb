@@ -5,7 +5,12 @@ import {
   PropertySortType,
   PropertyListMode
 } from "../models/enums";
-import { normalizeVietnamese } from "../utils/vietnamese";
+import { containsWholeWords, normalizeSearch, normalizeVietnamese } from "../utils/vietnamese";
+import {
+  isPhoneQuery,
+  normalizePhone,
+  normalizePhoneQuery
+} from "./customer-filter";
 
 export interface RangeBucket {
   label: string;
@@ -72,60 +77,147 @@ export interface FilterState {
   scope?: FilterScope;
 }
 
-export function matchesQuery(p: Property, query: string): boolean {
+// "2 tỷ", "2.5ty" → tìm theo giá như "2", "2.5"
+export const PRICE_UNIT_SUFFIX_REGEX = /\s*(tỷ|tỉ|ty|ti)$/i;
+
+/** Chuỗi số bắt đầu bằng "0<số>" (>= 3 chữ số) hoặc "+" là SĐT, không phải giá ("0905" ≠ 0,905 tỷ; "0.95" vẫn là giá). */
+export function isOwnerPhoneQuery(query: string): boolean {
+  if (!isPhoneQuery(query)) return false;
+  if (query.startsWith("+")) return true;
+  return (
+    query.length >= 2 &&
+    query[0] === "0" &&
+    query[1] >= "0" &&
+    query[1] <= "9" &&
+    (query.match(/\d/g) || []).length >= 3
+  );
+}
+
+export function isPriceQuery(trimmedQuery: string): boolean {
+  const cleanedQuery = trimmedQuery.replace(PRICE_UNIT_SUFFIX_REGEX, "").replace(/,/g, ".");
+  const doubleValue = Number(cleanedQuery);
+  const isNumber = !isNaN(doubleValue) && cleanedQuery.trim() !== "";
+  const digitsOnly = trimmedQuery.replace(/\D/g, "");
+  return (
+    isNumber &&
+    !(trimmedQuery.startsWith("0") && trimmedQuery.length >= 9) &&
+    digitsOnly.length <= 5
+  );
+}
+
+function matchesPhoneQuery(p: Property, query: string): boolean {
+  const normQuery = normalizePhoneQuery(query);
+  if (!normQuery) return true; // đang gõ dở "+84" → chưa lọc
+  return normalizePhone(p.ownerPhone || "").includes(normQuery);
+}
+
+function searchFields(p: Property, allowOwnerIdentityMatch: boolean): string[] {
+  const fields = [p.area || ""];
+  if (allowOwnerIdentityMatch) {
+    if (p.ownerName) fields.push(p.ownerName);
+    if (p.ownerPhone) fields.push(p.ownerPhone);
+  }
+  return fields;
+}
+
+function accentFold(text: string): string {
+  return (text || "").normalize("NFC").toLowerCase();
+}
+
+export interface RankedResults {
+  items: Property[];
+  ownerMatchStart: number;
+}
+
+/**
+ * Xếp kết quả tìm (đã lọc bằng matchesQuery): tin khớp KHU VỰC lên trước, tin chỉ khớp nhờ chủ xuống
+ * sau (tên người hay có "Văn", "Thị"… nên gõ "văn" dễ lẫn chủ). Trong mỗi nhóm, khớp ĐÚNG DẤU lên trước
+ * ("văn" → "Văn" trước "Vân"). Sắp xếp ổn định → giữ thứ tự đã sắp trong từng nhóm. SĐT / giá → giữ nguyên.
+ */
+export function rankSearchResults(
+  properties: Property[],
+  query: string,
+  allowOwnerIdentityMatch: boolean = true
+): RankedResults {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length === 0 || isOwnerPhoneQuery(trimmedQuery) || isPriceQuery(trimmedQuery)) {
+    return { items: properties, ownerMatchStart: -1 };
+  }
+  const plain = normalizeSearch(trimmedQuery);
+  const plainWords = plain.split(" ").filter((it) => it.length > 0);
+  const folded = accentFold(trimmedQuery);
+  const accentWords = folded === plain ? [] : folded.split(" ").filter((it) => it.length > 0);
+
+  function group(p: Property): number {
+    const area = normalizeSearch(p.area || "");
+    const areaMatch = plainWords.every((it) => area.includes(it));
+    const fields = areaMatch ? [p.area || ""] : searchFields(p, allowOwnerIdentityMatch);
+    const haystack = fields.map(accentFold).join("\n");
+    const exactAccent = accentWords.length > 0 && accentWords.every((it) => haystack.includes(it));
+    return (areaMatch ? 0 : 2) + (exactAccent ? 0 : 1);
+  }
+
+  const ranked = properties
+    .map((p, idx) => ({ p, g: group(p), idx }))
+    .sort((a, b) => a.g - b.g || a.idx - b.idx);
+
+  const ownerMatchStart = ranked.findIndex((r) => r.g >= 2);
+  return {
+    items: ranked.map((r) => r.p),
+    ownerMatchStart
+  };
+}
+
+export function matchesQuery(
+  p: Property,
+  query: string,
+  allowOwnerIdentityMatch: boolean = true
+): boolean {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) return true;
 
-  const cleanedQuery = trimmedQuery.replace(/,/g, ".");
-  const doubleValue = Number(cleanedQuery);
-  const isNumber = !isNaN(doubleValue) && cleanedQuery !== "";
-  const digitsOnly = trimmedQuery.replace(/\D/g, "");
-  const isPriceQuery =
-    isNumber &&
-    !(trimmedQuery.startsWith("0") && trimmedQuery.length >= 9) &&
-    digitsOnly.length <= 5;
+  if (isOwnerPhoneQuery(trimmedQuery)) {
+    return allowOwnerIdentityMatch && matchesPhoneQuery(p, trimmedQuery);
+  }
 
-  if (isPriceQuery) {
+  if (isPriceQuery(trimmedQuery)) {
+    const cleanedQuery = trimmedQuery.replace(PRICE_UNIT_SUFFIX_REGEX, "").replace(/,/g, ".");
+    const doubleValue = Number(cleanedQuery);
     const normalized = Math.round(p.price * 100).toString();
     const normalizedDirect = p.price.toString().replace(/[.,]/g, "").replace(/^0+/, "");
-    const qDigits = trimmedQuery.replace(/[.,]/g, "").replace(/^0+/, "");
+    const qDigits = cleanedQuery.replace(/[.]/g, "").replace(/^0+/, "");
     const matchDigits =
       normalized.startsWith(qDigits) ||
       normalized.replace(/^0+/, "").startsWith(qDigits) ||
       normalizedDirect.startsWith(qDigits);
 
     let matchValue = false;
-    if (isNumber) {
-      const diff = Math.abs(p.price - doubleValue);
-      if (cleanedQuery.includes(".")) {
-        const decimalPlaces = cleanedQuery.split(".")[1]?.length ?? 0;
-        if (decimalPlaces === 1) {
-          matchValue = p.price >= doubleValue && p.price < doubleValue + 0.1;
-        } else {
-          matchValue = diff < 0.015;
-        }
+    const diff = Math.abs(p.price - doubleValue);
+    if (cleanedQuery.includes(".")) {
+      const decimalPlaces = cleanedQuery.split(".")[1]?.length ?? 0;
+      if (decimalPlaces === 1) {
+        matchValue = p.price >= doubleValue && p.price < doubleValue + 0.1;
       } else {
-        if (doubleValue >= 100) {
-          const valInBillion = doubleValue / 1000.0;
-          matchValue = Math.abs(p.price - valInBillion) < 0.015;
-        } else if (doubleValue >= 10) {
-          const valInBillion = doubleValue / 10.0;
-          matchValue = p.price >= valInBillion && p.price < valInBillion + 0.1;
-        } else {
-          matchValue = p.price >= doubleValue && p.price < doubleValue + 1.0;
-        }
+        matchValue = diff < 0.015;
+      }
+    } else {
+      if (doubleValue >= 100) {
+        const valInBillion = doubleValue / 1000.0;
+        matchValue = Math.abs(p.price - valInBillion) < 0.015;
+      } else if (doubleValue >= 10) {
+        const valInBillion = doubleValue / 10.0;
+        matchValue = p.price >= valInBillion && p.price < valInBillion + 0.1;
+      } else {
+        matchValue = p.price >= doubleValue && p.price < doubleValue + 1.0;
       }
     }
     return matchDigits || matchValue;
   } else {
-    const q = normalizeVietnamese(trimmedQuery);
-    return (
-      normalizeVietnamese(p.area || "").includes(q) ||
-      normalizeVietnamese(p.description || "").includes(q) ||
-      normalizeVietnamese(p.rawText || "").includes(q) ||
-      normalizeVietnamese(p.ownerName || "").includes(q) ||
-      (p.ownerPhone || "").includes(trimmedQuery)
-    );
+    // Bỏ dấu ("hoa xuan" = "Hòa Xuân" = "Hoà Xuân") và mỗi từ chỉ cần có ở một ô, không cần đúng thứ tự.
+    // Chỉ tìm trong KHU VỰC + tên/SĐT chủ — KHÔNG tìm trong mô tả/tin gốc/tiêu đề.
+    const queryWords = normalizeSearch(trimmedQuery).split(" ").filter((it) => it.length > 0);
+    const haystack = searchFields(p, allowOwnerIdentityMatch).map(normalizeSearch).join("\n");
+    return queryWords.every((it) => haystack.includes(it));
   }
 }
 
@@ -156,7 +248,8 @@ export const PropertyFilter = {
     filter: FilterState,
     query: string = "",
     todayOnly: boolean = false,
-    screenMode: PropertyListMode = PropertyListMode.VERIFIED
+    screenMode: PropertyListMode = PropertyListMode.VERIFIED,
+    allowOwnerIdentityMatch: boolean = true
   ): boolean {
     // 0. Scope resolution
     const scope = filter.scope ?? FilterScope.CURRENT_TAB;
@@ -200,10 +293,11 @@ export const PropertyFilter = {
       if (!matchesAnyBucket(p.areaSize, filter.selectedSizes, SIZE_BUCKETS)) return false;
     }
 
-    // 5. Area
+    // 5. Area — bỏ dấu ("Hòa" = "Hoà") và khớp nguyên từ ("Quận 1" không khớp "Quận 10")
     if (filter.areas && filter.areas.size > 0) {
+      const area = normalizeSearch(p.area || "");
       const matchArea = Array.from(filter.areas).some((a) =>
-        normalizeVietnamese(p.area || "").includes(normalizeVietnamese(a))
+        containsWholeWords(area, normalizeSearch(a))
       );
       if (!matchArea) return false;
     }
@@ -229,11 +323,14 @@ export const PropertyFilter = {
     // 7. Today only
     if (todayOnly && !p.needToViewToday) return false;
 
-    // 8. Search query / Price query
-    if (!matchesQuery(p, query)) return false;
+    // 8. Search query / Price query / Phone query
+    if (!matchesQuery(p, query, allowOwnerIdentityMatch)) return false;
 
     return true;
-  }
+  },
+
+  matchesQuery,
+  rankSearchResults
 };
 
 export function sortProperties(

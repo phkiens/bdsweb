@@ -88,20 +88,32 @@ export const PropertyListPage: React.FC = () => {
       .toArray();
   }, [filterState.scope]);
 
-  // Derived filtered & sorted properties
-  const filteredProperties = useMemo(() => {
-    if (!properties) return [];
+  // Derived filtered & sorted properties (ranked with Owner Match parity)
+  const rankedResults = useMemo(() => {
+    if (!properties) return { items: [], ownerMatchStart: -1 };
     const matched = properties.filter((p) =>
       PropertyFilter.matches(
         p,
         filterState,
         searchQuery,
         viewTodayOnly,
-        PropertyListMode.VERIFIED
+        PropertyListMode.VERIFIED,
+        true
       )
     );
-    return sortProperties(matched, filterState.sortBy);
+    const sorted = sortProperties(matched, filterState.sortBy);
+    return PropertyFilter.rankSearchResults(sorted, searchQuery, true);
   }, [properties, filterState, searchQuery, viewTodayOnly]);
+
+  const filteredProperties = rankedResults.items;
+  const ownerMatchStart = rankedResults.ownerMatchStart;
+
+  // Cuộn về đầu trang khi đổi từ khóa tìm kiếm
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    }
+  }, [searchQuery]);
 
   // Batch preload media metadata for properties in current view (up to 100) to avoid N+1 RPC queries
   useEffect(() => {
@@ -232,7 +244,7 @@ export const PropertyListPage: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm khu vực, chủ nhà, SĐT..."
+              placeholder="Khu vực, chủ, SĐT, giá..."
               className="w-full pl-9 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden shadow-2xs transition-all"
             />
             {searchQuery && (
@@ -393,19 +405,25 @@ export const PropertyListPage: React.FC = () => {
       ) : (
         /* Danh sách phẳng có đường phân cách mỏng (Continuous Flat List matching Native) */
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden divide-y divide-slate-100">
-          {filteredProperties.map((p) => {
+          {filteredProperties.map((p, index) => {
             const isSelected = selectedIds.has(p.id);
             return (
-              <PropertyCard
-                key={p.id}
-                property={p}
-                onClick={() => navigate(`/properties/${p.id}`)}
-                isMultiSelectMode={isMultiSelect}
-                isSelected={isSelected}
-                onToggleSelect={() => handleToggleSelect(p.id)}
-                onToggleNeedToViewToday={(e) => handleToggleNeedToViewToday(e, p)}
-                onToggleStatus={(e) => handleToggleStatus(e, p)}
-              />
+              <React.Fragment key={p.id}>
+                {index === ownerMatchStart && (
+                  <div className="w-full px-4 py-2 bg-blue-50/70 text-blue-700 text-xs font-semibold">
+                    Khớp tên chủ ({filteredProperties.length - ownerMatchStart})
+                  </div>
+                )}
+                <PropertyCard
+                  property={p}
+                  onClick={() => navigate(`/properties/${p.id}`)}
+                  isMultiSelectMode={isMultiSelect}
+                  isSelected={isSelected}
+                  onToggleSelect={() => handleToggleSelect(p.id)}
+                  onToggleNeedToViewToday={(e) => handleToggleNeedToViewToday(e, p)}
+                  onToggleStatus={(e) => handleToggleStatus(e, p)}
+                />
+              </React.Fragment>
             );
           })}
         </div>

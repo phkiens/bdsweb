@@ -66,13 +66,53 @@ export function toTitleCase(input: string): string {
 }
 
 /**
- * Kiểm tra xem BĐS có khớp với một trong các khu vực được chọn trong bộ lọc không
+ * Chuẩn hóa tìm kiếm: bỏ dấu tiếng Việt, chuyển đ/Đ -> d/D, chữ thường, bỏ khoảng trắng thừa
+ * Khớp 100% với normalizeSearch trong Customer.kt (Android Native)
+ */
+export function normalizeSearch(text: string): string {
+  if (!text) return "";
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+const AREA_WORD_SEPARATOR_REGEX = /[^\p{L}\p{N}]+/u;
+
+/**
+ * [needle] nằm trong [haystack] dưới dạng dãy TỪ liền nhau (cả hai đã chuẩn hoá) — không khớp nửa từ/nửa số:
+ * "quan 1" không nằm trong "quan 10", "an" không nằm trong "thanh khe".
+ * Khớp 100% với containsWholeWords trong MatchingUtils.kt (Android Native)
+ */
+export function containsWholeWords(haystack: string, needle: string): boolean {
+  if (!haystack || !needle) return false;
+  const needleWords = needle.split(AREA_WORD_SEPARATOR_REGEX).filter((w) => w.length > 0);
+  if (needleWords.length === 0) return false;
+  const haystackWords = haystack.split(AREA_WORD_SEPARATOR_REGEX).filter((w) => w.length > 0);
+  if (needleWords.length > haystackWords.length) return false;
+  const size = needleWords.length;
+  for (let i = 0; i <= haystackWords.length - size; i++) {
+    let match = true;
+    for (let j = 0; j < size; j++) {
+      if (haystackWords[i + j] !== needleWords[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return true;
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra xem BĐS có khớp với một trong các khu vực được chọn trong bộ lọc không (B8: bỏ dấu và khớp nguyên từ)
  */
 export function matchesArea(itemArea: string, filterAreas: string[]): boolean {
   if (!filterAreas || filterAreas.length === 0) return true;
-  const normItem = normalizeVietnamese(itemArea);
-  return filterAreas.some((area) => {
-    const normFilter = normalizeVietnamese(area);
-    return normItem.includes(normFilter) || normFilter.includes(normItem);
-  });
+  const normItem = normalizeSearch(itemArea || "");
+  return filterAreas.some((area) => containsWholeWords(normItem, normalizeSearch(area)));
 }

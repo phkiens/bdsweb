@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate } from "react-router-dom";
 import {
@@ -72,6 +72,13 @@ export const CustomerListPage: React.FC = () => {
       ownerPropertySort
     );
   }, [customers, customerFilter, ownerPropertyStats, searchQuery, ownerStockFilter, ownerPropertySort]);
+
+  // Cuộn về đầu trang khi đổi từ khóa tìm kiếm
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+    }
+  }, [searchQuery]);
 
   const handleConfirmDelete = async () => {
     if (!customerToDelete) return;
