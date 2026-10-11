@@ -58,6 +58,7 @@ import { useLivestream } from "../../core/live/use-livestream";
 import { maskOwnerName, maskOwnerPhone } from "../../core/live/privacy";
 import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import { LiveHideItem } from "../../core/live/live-hide";
+import { LiveTag, useLiveHighlight } from "../../components/live/LiveTag";
 
 export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: number }> = ({
   latitude,
@@ -261,6 +262,8 @@ export const PropertyDetailPage: React.FC = () => {
     });
     return ids;
   }, [mainOwnerCustomerId, propertyLinks]);
+
+  const { isHighlighted, isFresh, color } = useLiveHighlight(id || "");
 
   if (!property) {
     return (
@@ -561,7 +564,16 @@ export const PropertyDetailPage: React.FC = () => {
       )}
 
       {/* Header Info Card */}
-      <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3 mb-4">
+      <div
+        style={
+          isHighlighted && color
+            ? ({ "--live-highlight-color": color } as React.CSSProperties)
+            : undefined
+        }
+        className={`p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3 mb-4 ${
+          isHighlighted ? "animate-live-pulse-border" : ""
+        } ${isFresh ? "animate-live-shake" : ""}`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
@@ -596,6 +608,9 @@ export const PropertyDetailPage: React.FC = () => {
                 {formatPropertyPrice(property.price) || "Thương lượng"}
               </div>
             </button>
+            <div className="mt-1 flex justify-end">
+              <LiveTag propertyId={property.id} />
+            </div>
             {property.areaSize && (
               <div className="text-xs text-slate-500 font-medium">{property.areaSize} m²</div>
             )}

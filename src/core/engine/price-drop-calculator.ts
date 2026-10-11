@@ -289,3 +289,54 @@ export class PriceDropCalculator {
   static calculatePricePerM2Fallback = calculatePricePerM2Fallback;
   static formatRelativeDropTime = formatRelativeDropTime;
 }
+
+export interface PriceDropLeaders {
+  topAmountId?: string | null;
+  topPercentId?: string | null;
+}
+
+/**
+ * Tính danh sách BĐS giảm giá mặc định (chuẩn Native Android PriceDropViewModel.kt).
+ * Lọc căn active, nhóm history, sắp xếp RECENT, áp dụng bộ lọc mặc định.
+ */
+export function computeDefaultPriceDrops(
+  properties: Property[],
+  histories: PropertyPriceHistory[],
+  now: number,
+  window: PriceDropWindow
+): PriceDropItem[] {
+  const activeProperties = properties.filter((it) => !it.isDeleted);
+  const historiesByProp = new Map<string, PropertyPriceHistory[]>();
+  for (const h of histories) {
+    const list = historiesByProp.get(h.propertyId);
+    if (list) {
+      list.push(h);
+    } else {
+      historiesByProp.set(h.propertyId, [h]);
+    }
+  }
+  const calculatedDrops = PriceDropCalculator.calculate(
+    activeProperties,
+    historiesByProp,
+    now,
+    window,
+    PriceDropSort.RECENT
+  );
+  const defaultFilter: FilterState = {};
+  return calculatedDrops.filter((it) => priceDropMatchesFilter(it.property, defaultFilter));
+}
+
+/**
+ * Tìm 2 căn dẫn đầu về số tiền giảm nhiều nhất và tỷ lệ % giảm sâu nhất (chuẩn Android).
+ * Nếu danh sách < 2 căn thì không có hiệu ứng căn dẫn đầu.
+ */
+export function computePriceDropLeaders(items: PriceDropItem[]): PriceDropLeaders {
+  if (items.length < 2) return { topAmountId: null, topPercentId: null };
+  const sortedAmount = [...items].sort(AMOUNT_DESC_ORDER);
+  const sortedPercent = [...items].sort(PERCENT_DESC_ORDER);
+  return {
+    topAmountId: sortedAmount[0]?.property?.id ?? null,
+    topPercentId: sortedPercent[0]?.property?.id ?? null,
+  };
+}
+

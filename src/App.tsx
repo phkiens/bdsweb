@@ -26,6 +26,8 @@ import { syncManager } from "./data/sync/sync-manager";
 import { useLivestream } from "./core/live/use-livestream";
 import { LiveControlPanel } from "./components/live/LiveControlPanel";
 import { LiveHotlineBadge } from "./components/live/LiveHotlineBadge";
+import { LiveOverlayHost } from "./components/live/LiveOverlayHost";
+import { LiveFeedPage } from "./pages/live/LiveFeedPage";
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -119,6 +121,8 @@ const AppContent: React.FC = () => {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/sync-history" element={<SyncHistoryPage />} />
 
+          {/* Livestream Feed */}
+          <Route path="/live-feed" element={<LiveFeedPage />} />
 
           <Route path="*" element={<Navigate to="/properties" replace />} />
         </Routes>
@@ -133,6 +137,7 @@ const AppContent: React.FC = () => {
 
       <LiveHotlineBadge />
       <LiveControlPanel />
+      <LiveOverlayHost />
     </div>
   );
 };

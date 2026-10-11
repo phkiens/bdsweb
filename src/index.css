@@ -71,3 +71,70 @@ html.live .bg-white {
 html.live [class*="bg-white/"]:not([data-testid="livestream_badge"]) {
   background-color: rgba(15, 23, 42, 0.9) !important;
 }
+
+/* Livestream Keyframe Animations (L2) */
+@keyframes live-shake {
+  0% { transform: translateY(-20px) scale(0.95); }
+  25% { transform: translateY(0) scale(1) translateX(-8px); }
+  40% { transform: translateX(8px); }
+  55% { transform: translateX(-6px); }
+  70% { transform: translateX(5px); }
+  85% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes live-pulse-border {
+  0%, 100% {
+    box-shadow: 0 0 0 2px var(--live-highlight-color, #E53935);
+  }
+  50% {
+    box-shadow: 0 0 0 3.5px var(--live-highlight-color, #E53935), 0 0 12px var(--live-highlight-color, #E53935);
+  }
+}
+
+@keyframes live-flash {
+  0% { opacity: 0.35; }
+  100% { opacity: 0; }
+}
+
+@keyframes live-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+
+@keyframes live-shine {
+  0% { transform: translateX(-150%); }
+  100% { transform: translateX(200%); }
+}
+
+.animate-live-shake {
+  animation: live-shake 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.animate-live-pulse-border {
+  animation: live-pulse-border 0.9s ease-in-out infinite;
+}
+
+.animate-live-flash {
+  animation: live-flash 1.2s ease-out forwards;
+}
+
+.animate-live-breathe {
+  animation: live-breathe 1.2s ease-in-out infinite;
+  display: inline-block;
+}
+
+.animate-live-shine {
+  animation: live-shine 2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-live-shake,
+  .animate-live-pulse-border,
+  .animate-live-breathe,
+  .animate-live-shine {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+

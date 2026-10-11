@@ -12,7 +12,8 @@ import {
   Trash2,
   X,
   CheckSquare,
-  Square
+  Square,
+  Bell
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { syncManager } from "../../data/sync/sync-manager";
@@ -20,8 +21,14 @@ import { Property } from "../../core/models/property";
 import {
   PropertyStatus,
   FilterScope,
-  PropertyListMode
+  PropertyListMode,
+  PropertySortType
 } from "../../core/models/enums";
+import { liveFeedPrefs } from "../../core/live/live-feed-prefs";
+import { liveEventBus } from "../../core/live/live-event-bus";
+import { LiveListScroll } from "../../core/live/live-list-scroll";
+import { LiveFeedBuilder } from "../../core/live/live-feed";
+import { getVisibleHistories } from "../../data/local/price-history-queries";
 import {
   FilterState,
   PropertyFilter,
@@ -146,6 +153,36 @@ export const PropertyListPage: React.FC = () => {
       mediaService.preloadPropertiesMedia(filteredProperties.slice(0, 100));
     }
   }, [filteredProperties]);
+
+  // Livestream: tính số tin chưa ẩn trên chuông thông báo
+  const liveFeedData = useLiveQuery(async () => {
+    if (!isLive) return 0;
+    const allProps = await db.properties.filter((p) => !p.isDeleted).toArray();
+    const allHist = await getVisibleHistories();
+    const hidden = liveFeedPrefs.hiddenKeys();
+    const feed = LiveFeedBuilder.build(allProps, allHist, Date.now(), hidden);
+    return feed.length;
+  }, [isLive]);
+  const liveFeedCount = liveFeedData ?? 0;
+
+  // Livestream: tự cuộn lên đầu khi có sự kiện lúc ở sát đầu và không tìm kiếm
+  useEffect(() => {
+    if (!isLive) return;
+    let lastSeq = liveEventBus.latestSeq();
+    return liveEventBus.subscribe((hist) => {
+      const newest = hist[hist.length - 1];
+      if (!newest || (newest.seq ?? 0) <= lastSeq) return;
+      lastSeq = newest.seq ?? 0;
+
+      const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+      const canAuto = LiveListScroll.shouldAutoScroll(scrollTop, searchQuery);
+      const isDefaultSort =
+        !filterState.sortBy || filterState.sortBy === PropertySortType.NEWEST;
+      if (canAuto && isDefaultSort) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    });
+  }, [isLive, searchQuery, filterState.sortBy]);
 
   const distinctAreas = useMemo(() => {
     if (!properties) return [];
@@ -397,6 +434,22 @@ export const PropertyListPage: React.FC = () => {
             {filterState.scope === FilterScope.ALL ? "(Tất cả)" : "chính thức"}
           </span>
           <LivestreamBadge />
+          {isLive && (
+            <button
+              type="button"
+              data-testid="live_feed_button"
+              onClick={() => navigate("/live-feed")}
+              className="relative p-1.5 rounded-full text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Tin mới"
+            >
+              <Bell className="w-4 h-4" />
+              {liveFeedCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                  {liveFeedCount > 9 ? "9+" : liveFeedCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {viewTodayOnly && (
@@ -465,7 +518,12 @@ export const PropertyListPage: React.FC = () => {
                 )}
                 <PropertyCard
                   property={p}
-                  onClick={() => navigate(`/properties/${p.id}`)}
+                  onClick={() => {
+                    if (isLive) {
+                      liveFeedPrefs.hide(`new:${p.id}`, p.createdAt);
+                    }
+                    navigate(`/properties/${p.id}`);
+                  }}
                   isMultiSelectMode={isMultiSelect}
                   isSelected={isSelected}
                   onToggleSelect={() => handleToggleSelect(p.id)}

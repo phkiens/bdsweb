@@ -18,6 +18,7 @@ import { PropertyThumbnail } from "./PropertyThumbnail";
 import { formatPropertyPrice } from "../../core/utils/property-price";
 import { useLivestream } from "../../core/live/use-livestream";
 import { maskOwnerName } from "../../core/live/privacy";
+import { LiveTag, useLiveHighlight } from "../live/LiveTag";
 
 export enum SyncState {
   NOT_SYNCED = "NOT_SYNCED",
@@ -133,6 +134,8 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
     ? property.direction.split("|||").map((s) => s.trim()).filter(Boolean)[0] || null
     : null;
 
+  const { isHighlighted, isFresh, color } = useLiveHighlight(property.id);
+
   const handleClick = () => {
     if (isMultiSelectMode) {
       if (onToggleSelect) onToggleSelect();
@@ -145,12 +148,22 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
     <div
       onClick={handleClick}
       data-testid={isUnverified ? `unverified_card_${property.id}` : `property_card_${property.id}`}
+      style={
+        isHighlighted && color
+          ? ({ "--live-highlight-color": color } as React.CSSProperties)
+          : undefined
+      }
       className={`flex items-center px-3 sm:px-4 py-2 sm:py-2.5 transition-colors cursor-pointer select-none group relative ${
         isSelected
           ? "bg-blue-50/70 hover:bg-blue-50"
           : "bg-white hover:bg-slate-50/90 active:bg-slate-100"
+      } ${isHighlighted ? "animate-live-pulse-border" : ""} ${
+        isFresh ? "animate-live-shake" : ""
       } ${className}`}
     >
+      {/* Live Tag in top right */}
+      <LiveTag propertyId={property.id} className="absolute top-2 right-2 z-10" />
+
       {/* 1. Multi-Select Checkbox */}
       {isMultiSelectMode && (
         <div className="pr-2.5 shrink-0 flex items-center" onClick={(e) => e.stopPropagation()}>

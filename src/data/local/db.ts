@@ -3,6 +3,8 @@ import { Customer, CustomerPropertyLink } from "../../core/models/customer";
 import { SyncStatus, SyncType } from "../../core/models/enums";
 import { Property } from "../../core/models/property";
 import { PropertyPriceHistory } from "../../core/models/price-history";
+import { LiveEventDetector } from "../../core/live/live-event";
+import { liveEventBus } from "../../core/live/live-event-bus";
 
 export interface SyncLog {
   id?: number;
@@ -76,6 +78,54 @@ export class AppDatabase extends Dexie {
     this.version(4).stores({
       price_histories:
         "id, revision, propertyId"
+    });
+
+    this.setupLiveEventHooks();
+  }
+
+  /**
+   * Hook Dexie phát sự kiện livestream khi ghi căn BĐS (chuẩn Android)
+   */
+  private setupLiveEventHooks(): void {
+    this.properties.hook("creating", (primKey, obj, transaction) => {
+      const after = { ...obj } as Property;
+      const now = Date.now();
+      const schedulePublish = () => {
+        try {
+          const events = LiveEventDetector.detect(null, after, now);
+          if (events.length > 0) {
+            liveEventBus.publish(events, now);
+          }
+        } catch (e) {
+          console.error("[LiveEvent] Lỗi phát sự kiện creating:", e);
+        }
+      };
+      if (transaction && typeof (transaction as any).on === "function") {
+        (transaction as any).on("complete", schedulePublish);
+      } else {
+        queueMicrotask(schedulePublish);
+      }
+    });
+
+    this.properties.hook("updating", (modifications, primKey, obj, transaction) => {
+      const before = { ...obj } as Property;
+      const after = { ...obj, ...modifications } as Property;
+      const now = Date.now();
+      const schedulePublish = () => {
+        try {
+          const events = LiveEventDetector.detect(before, after, now);
+          if (events.length > 0) {
+            liveEventBus.publish(events, now);
+          }
+        } catch (e) {
+          console.error("[LiveEvent] Lỗi phát sự kiện updating:", e);
+        }
+      };
+      if (transaction && typeof (transaction as any).on === "function") {
+        (transaction as any).on("complete", schedulePublish);
+      } else {
+        queueMicrotask(schedulePublish);
+      }
     });
   }
 
