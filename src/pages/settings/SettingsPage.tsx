@@ -20,7 +20,8 @@ import {
   Check,
   AlertCircle,
   Video,
-  Phone
+  Phone,
+  LayoutGrid
 } from "lucide-react";
 import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import { LiveHotlineLayout } from "../../core/live/hotline-layout";
@@ -512,6 +513,29 @@ export const SettingsPage: React.FC = () => {
                 checked={settings.livestreamMode}
                 onChange={(e) => {
                   settingsManager.setLivestreamMode(e.target.checked);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* Giao diện thẻ ảnh khi live */}
+          <div className="w-full p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                <LayoutGrid className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Giao diện thẻ ảnh khi live</div>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.liveShowcaseList}
+                onChange={(e) => {
+                  settingsManager.setLiveShowcaseList(e.target.checked);
                 }}
                 className="sr-only peer"
               />

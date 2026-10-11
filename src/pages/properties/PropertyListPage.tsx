@@ -28,6 +28,11 @@ import { liveFeedPrefs } from "../../core/live/live-feed-prefs";
 import { liveEventBus } from "../../core/live/live-event-bus";
 import { LiveListScroll } from "../../core/live/live-list-scroll";
 import { LiveFeedBuilder } from "../../core/live/live-feed";
+import { LiveGrid } from "../../core/live/live-grid";
+import { LiveSpotlight } from "../../core/live/live-spotlight";
+import { LiveCardBadges } from "../../core/live/live-card-badges";
+import { LiveShowcaseCard } from "../../components/live/LiveShowcaseCard";
+import { settingsManager } from "../../data/local/settings-manager";
 import { getVisibleHistories } from "../../data/local/price-history-queries";
 import {
   FilterState,
@@ -196,6 +201,89 @@ export const PropertyListPage: React.FC = () => {
   const activeFilterCount = useMemo(() => {
     return PropertyFilter.activeFilterCount(filterState);
   }, [filterState]);
+
+  // Live L3: Settings & Showcase layout
+  const [settings, setSettings] = useState(() => settingsManager.getSettings());
+  useEffect(() => {
+    return settingsManager.subscribe((s) => setSettings(s));
+  }, []);
+
+  const isLiveShowcase = isLive && (settings.liveShowcaseList ?? true);
+
+  const [windowWidth, setWindowWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const liveColumns = useMemo(() => LiveGrid.listColumns(windowWidth), [windowWidth]);
+
+  // Live L3: Badges tính 1 lần ở trang
+  const priceHistories = useLiveQuery(async () => {
+    if (!isLiveShowcase) return [];
+    return await getVisibleHistories();
+  }, [isLiveShowcase]);
+
+  const liveCardBadges = useMemo(() => {
+    if (!isLiveShowcase || !properties || properties.length === 0) {
+      return new Map();
+    }
+    const hidden = liveFeedPrefs.hiddenKeys();
+    const allItems = LiveFeedBuilder.build(properties, priceHistories ?? [], Date.now(), new Set());
+    return LiveCardBadges.build(allItems, hidden);
+  }, [isLiveShowcase, properties, priceHistories]);
+
+  // Live L3: Chia hàng theo LiveGrid.rows (ngắt tại nhóm trùng chủ ownerMatchStart)
+  const gridRows = useMemo(() => {
+    if (!isLiveShowcase) return [];
+    return LiveGrid.rows(filteredProperties.length, liveColumns, ownerMatchStart);
+  }, [isLiveShowcase, filteredProperties.length, liveColumns, ownerMatchStart]);
+
+  // Live L3: Cuộn "Tâm điểm" theo từng hàng (chỉ đổi transform/opacity trong requestAnimationFrame, không re-render React)
+  useEffect(() => {
+    if (!isLiveShowcase || gridRows.length === 0) return;
+
+    let rafId: number | null = null;
+    const updateSpotlight = () => {
+      const rows = document.querySelectorAll<HTMLElement>("[data-live-spotlight-row]");
+      const vStart = 0;
+      const vEnd = window.innerHeight;
+
+      rows.forEach((row) => {
+        const rect = row.getBoundingClientRect();
+        const d = LiveSpotlight.distanceFactor(rect.top, rect.height, vStart, vEnd);
+        const s = LiveSpotlight.calculateScale(d);
+        const a = LiveSpotlight.calculateAlpha(d);
+
+        row.style.transform = `scale(${s.toFixed(4)})`;
+        row.style.opacity = a.toFixed(4);
+        row.style.transformOrigin = "center center";
+      });
+    };
+
+    const onScroll = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateSpotlight);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+    onScroll();
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      const rows = document.querySelectorAll<HTMLElement>("[data-live-spotlight-row]");
+      rows.forEach((row) => {
+        row.style.transform = "";
+        row.style.opacity = "";
+      });
+    };
+  }, [isLiveShowcase, gridRows]);
 
   const handleResetFilter = () => {
     setFilterState(createDefaultFilterState());
@@ -503,6 +591,59 @@ export const PropertyListPage: React.FC = () => {
               <span>Thêm BĐS mới</span>
             </button>
           )}
+        </div>
+      ) : isLiveShowcase ? (
+        /* Giao diện lưới thẻ ảnh khi live (Live Showcase Grid) */
+        <div className="flex flex-col gap-3">
+          {gridRows.map((range) => {
+            const showHeader = range.first === ownerMatchStart;
+            const rowKey = liveColumns === 1
+              ? (filteredProperties[range.first]?.id ?? `live_row_${range.first}`)
+              : `live_row_${range.first}`;
+            const emptySpacers = liveColumns - range.count;
+
+            return (
+              <React.Fragment key={rowKey}>
+                {showHeader && (
+                  <div className="w-full px-4 py-2 bg-blue-50/70 text-blue-700 text-xs font-semibold rounded-xl">
+                    Khớp tên chủ ({filteredProperties.length - ownerMatchStart})
+                  </div>
+                )}
+                <div
+                  data-live-spotlight-row="true"
+                  className="w-full grid gap-3"
+                  style={{
+                    gridTemplateColumns: `repeat(${liveColumns}, minmax(0, 1fr))`
+                  }}
+                >
+                  {range.indices.map((idx) => {
+                    const p = filteredProperties[idx];
+                    if (!p) return null;
+                    const isSelected = selectedIds.has(p.id);
+                    return (
+                      <div key={p.id} className="w-full">
+                        <LiveShowcaseCard
+                          property={p}
+                          liveBadge={liveCardBadges.get(p.id)}
+                          onClick={() => {
+                            liveFeedPrefs.hide(`new:${p.id}`, p.createdAt);
+                            navigate(`/properties/${p.id}`);
+                          }}
+                          isMultiSelectMode={isMultiSelect}
+                          isSelected={isSelected}
+                          onToggleSelect={() => handleToggleSelect(p.id)}
+                        />
+                      </div>
+                    );
+                  })}
+                  {emptySpacers > 0 &&
+                    Array.from({ length: emptySpacers }).map((_, sIdx) => (
+                      <div key={`spacer_${sIdx}`} className="invisible" />
+                    ))}
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
       ) : (
         /* Danh sách phẳng có đường phân cách mỏng (Continuous Flat List matching Native) */

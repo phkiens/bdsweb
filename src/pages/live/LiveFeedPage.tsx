@@ -23,10 +23,31 @@ import {
 } from "../../core/engine/price-drop-calculator";
 import { formatPropertyPrice } from "../../core/utils/property-price";
 import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
+import { LiveGrid } from "../../core/live/live-grid";
+import { LiveShowcaseCard } from "../../components/live/LiveShowcaseCard";
+import { settingsManager } from "../../data/local/settings-manager";
 
 export const LiveFeedPage: React.FC = () => {
   const navigate = useNavigate();
   const { isLive } = useLivestream();
+
+  const [settings, setSettings] = useState(() => settingsManager.getSettings());
+  useEffect(() => {
+    return settingsManager.subscribe((s) => setSettings(s));
+  }, []);
+
+  const isLiveShowcase = isLive && (settings.liveShowcaseList ?? true);
+
+  const [windowWidth, setWindowWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const feedColumns = useMemo(() => LiveGrid.feedColumns(windowWidth), [windowWidth]);
 
   const [filter, setFilter] = useState<LiveEventType | null>(null);
   const [dropWindow, setDropWindow] = useState<PriceDropWindow>(PriceDropWindow.DAYS_30);
@@ -279,128 +300,170 @@ export const LiveFeedPage: React.FC = () => {
                   {dayLabel}
                 </div>
 
-                <div className="space-y-2.5">
-                  {dayItems.map((item) => {
-                    const typeColor = LiveEventStyle.color(item.type);
-                    const titleText = LiveEventStyle.text(
-                      new (class {
-                        type = item.type;
-                        before = null;
-                        after = item.property;
-                      })()
-                    ).title;
+                {isLiveShowcase ? (
+                  <div
+                    className="grid gap-3"
+                    style={{
+                      gridTemplateColumns: `repeat(${feedColumns}, minmax(0, 1fr))`
+                    }}
+                  >
+                    {dayItems.map((item) => {
+                      const titleText = LiveEventStyle.text({
+                        type: item.type,
+                        before: null,
+                        after: item.property
+                      } as any).title;
 
-                    const subtitle = LiveEventStyle.text(
-                      new (class {
-                        type = item.type;
-                        before = null;
-                        after = item.property;
-                      })()
-                    ).subtitle;
+                      let liveBadge: any = null;
+                      if (item.type === LiveEventType.NEW_LISTING) {
+                        liveBadge = { isNew: true, dropPercent: null, oldPrice: null };
+                      } else if (item.type === LiveEventType.PRICE_DROP) {
+                        const oldP = item.oldPrice ?? 0;
+                        const newP = item.newPrice ?? 0;
+                        const drop = oldP > 0 && newP > 0 ? Math.round(((oldP - newP) / oldP) * 100) : null;
+                        liveBadge = { isNew: false, dropPercent: drop, oldPrice: item.oldPrice ?? null };
+                      } else if (item.type === LiveEventType.PRICE_RISE) {
+                        liveBadge = { isNew: false, dropPercent: null, oldPrice: item.oldPrice ?? null };
+                      }
 
-                    const isDropLeaderAmount =
-                      filter === LiveEventType.PRICE_DROP &&
-                      item.property.id === dropLeaders.topAmountId;
-                    const isDropLeaderPercent =
-                      filter === LiveEventType.PRICE_DROP &&
-                      item.property.id === dropLeaders.topPercentId;
-
-                    const hasPriceChange =
-                      (item.type === LiveEventType.PRICE_DROP ||
-                        item.type === LiveEventType.PRICE_RISE) &&
-                      item.oldPrice != null &&
-                      item.oldPrice > 0 &&
-                      item.newPrice != null;
-
-                    const pLabel = hasPriceChange
-                      ? LiveEventStyle.percentLabel({
-                          type: item.type,
-                          before: { ...item.property, price: item.oldPrice! },
-                          after: { ...item.property, price: item.newPrice! },
-                        } as any)
-                      : null;
-
-                    return (
-                      <div
-                        key={item.key}
-                        onClick={() => handleOpenItem(item)}
-                        style={{ borderColor: typeColor }}
-                        className={`bg-white border rounded-2xl p-3 flex items-center gap-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer relative overflow-hidden select-none active:scale-[0.99]`}
-                      >
-                        {/* Thumbnail */}
-                        <div className="shrink-0">
-                          <PropertyThumbnail property={item.property} size={72} />
+                      return (
+                        <div key={item.key} className="w-full">
+                          <LiveShowcaseCard
+                            property={item.property}
+                            liveBadge={liveBadge}
+                            feedTitle={titleText}
+                            feedTime={formatItemTime(item.at)}
+                            feedType={item.type}
+                            onClick={() => handleOpenItem(item)}
+                          />
                         </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {dayItems.map((item) => {
+                      const typeColor = LiveEventStyle.color(item.type);
+                      const titleText = LiveEventStyle.text(
+                        new (class {
+                          type = item.type;
+                          before = null;
+                          after = item.property;
+                        })()
+                      ).title;
 
-                        {/* Content */}
-                        <div className="flex-1 min-w-0 pr-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span
-                              style={{ backgroundColor: typeColor }}
-                              className="px-2 py-0.5 rounded-md text-[10px] font-black text-white uppercase tracking-wider"
-                            >
-                              {LiveEventStyle.emoji(item.type)} {titleText}
-                            </span>
-                            <span className="text-[11px] font-medium text-slate-400">
-                              {formatItemTime(item.at)}
-                            </span>
+                      const subtitle = LiveEventStyle.text(
+                        new (class {
+                          type = item.type;
+                          before = null;
+                          after = item.property;
+                        })()
+                      ).subtitle;
+
+                      const isDropLeaderAmount =
+                        filter === LiveEventType.PRICE_DROP &&
+                        item.property.id === dropLeaders.topAmountId;
+                      const isDropLeaderPercent =
+                        filter === LiveEventType.PRICE_DROP &&
+                        item.property.id === dropLeaders.topPercentId;
+
+                      const hasPriceChange =
+                        (item.type === LiveEventType.PRICE_DROP ||
+                          item.type === LiveEventType.PRICE_RISE) &&
+                        item.oldPrice != null &&
+                        item.oldPrice > 0 &&
+                        item.newPrice != null;
+
+                      const pLabel = hasPriceChange
+                        ? LiveEventStyle.percentLabel({
+                            type: item.type,
+                            before: { ...item.property, price: item.oldPrice! },
+                            after: { ...item.property, price: item.newPrice! },
+                          } as any)
+                        : null;
+
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => handleOpenItem(item)}
+                          style={{ borderColor: typeColor }}
+                          className={`bg-white border rounded-2xl p-3 flex items-center gap-3 shadow-2xs hover:shadow-xs transition-all cursor-pointer relative overflow-hidden select-none active:scale-[0.99]`}
+                        >
+                          {/* Thumbnail */}
+                          <div className="shrink-0">
+                            <PropertyThumbnail property={item.property} size={72} />
                           </div>
 
-                          <div className="text-sm font-bold text-slate-900 truncate mt-1">
-                            {subtitle}
-                          </div>
+                          {/* Content */}
+                          <div className="flex-1 min-w-0 pr-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span
+                                style={{ backgroundColor: typeColor }}
+                                className="px-2 py-0.5 rounded-md text-[10px] font-black text-white uppercase tracking-wider"
+                              >
+                                {LiveEventStyle.emoji(item.type)} {titleText}
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-400">
+                                {formatItemTime(item.at)}
+                              </span>
+                            </div>
 
-                          {/* Price Line with Animations for Leaders */}
-                          <div className="mt-1 flex items-center gap-1.5 text-xs sm:text-sm">
-                            {hasPriceChange ? (
-                              <>
-                                <span className="line-through text-slate-400 font-medium">
-                                  {formatPropertyPrice(item.oldPrice!)}
-                                </span>
-                                <span className="text-slate-400">→</span>
-                                <span
-                                  className={`font-black text-sm sm:text-base text-slate-900 ${
-                                    isDropLeaderAmount
-                                      ? "animate-live-breathe text-red-600 font-extrabold"
-                                      : ""
-                                  }`}
-                                >
-                                  {formatPropertyPrice(item.newPrice!)}
-                                </span>
-                                {pLabel && (
+                            <div className="text-sm font-bold text-slate-900 truncate mt-1">
+                              {subtitle}
+                            </div>
+
+                            {/* Price Line with Animations for Leaders */}
+                            <div className="mt-1 flex items-center gap-1.5 text-xs sm:text-sm">
+                              {hasPriceChange ? (
+                                <>
+                                  <span className="line-through text-slate-400 font-medium">
+                                    {formatPropertyPrice(item.oldPrice!)}
+                                  </span>
+                                  <span className="text-slate-400">→</span>
                                   <span
-                                    style={{ color: typeColor }}
-                                    className={`font-black ${
-                                      isDropLeaderPercent ? "animate-live-breathe font-black" : ""
+                                    className={`font-black text-sm sm:text-base text-slate-900 ${
+                                      isDropLeaderAmount
+                                        ? "animate-live-breathe text-red-600 font-extrabold"
+                                        : ""
                                     }`}
                                   >
-                                    ({pLabel})
+                                    {formatPropertyPrice(item.newPrice!)}
                                   </span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="font-extrabold text-sm sm:text-base text-blue-600">
-                                {formatPropertyPrice(item.property.price) || "Thương lượng"}
-                              </span>
-                            )}
+                                  {pLabel && (
+                                    <span
+                                      style={{ color: typeColor }}
+                                      className={`font-black ${
+                                        isDropLeaderPercent ? "animate-live-breathe font-black" : ""
+                                      }`}
+                                    >
+                                      ({pLabel})
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="font-extrabold text-sm sm:text-base text-blue-600">
+                                  {formatPropertyPrice(item.property.price) || "Thương lượng"}
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Dismiss Button (for non-drops feed items) */}
-                        {filter !== LiveEventType.PRICE_DROP && (
-                          <button
-                            type="button"
-                            onClick={(e) => handleDismissItem(e, item)}
-                            className="p-2 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
-                            title="Bỏ tin"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          {/* Dismiss Button (for non-drops feed items) */}
+                          {filter !== LiveEventType.PRICE_DROP && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDismissItem(e, item)}
+                              className="p-2 rounded-xl text-slate-300 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
+                              title="Bỏ tin"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

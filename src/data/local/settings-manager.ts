@@ -118,6 +118,7 @@ export interface SettingsState {
   lastZipExportTime: string | null;
   lastZipImportTime: string | null;
   livestreamMode: boolean;
+  liveShowcaseList: boolean;
   liveHotlineText: string;
   liveHiddenItems: string[] | null;
   liveHotlineFx: number;
@@ -148,6 +149,7 @@ const defaultSettings: SettingsState = {
   lastZipExportTime: null,
   lastZipImportTime: null,
   livestreamMode: false,
+  liveShowcaseList: true,
   liveHotlineText: "",
   liveHiddenItems: null,
   liveHotlineFx: 1,
@@ -325,6 +327,10 @@ export class SettingsManager {
 
   public setLivestreamMode(enabled: boolean): void {
     this.update({ livestreamMode: enabled });
+  }
+
+  public setLiveShowcaseList(enabled: boolean): void {
+    this.update({ liveShowcaseList: enabled });
   }
 
   public setLiveHotlineText(text: string): void {
