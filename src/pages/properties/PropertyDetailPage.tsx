@@ -34,6 +34,13 @@ import { AddViewingModal } from "./AddViewingModal";
 import { PropertyMediaGallery } from "../../components/properties/PropertyMediaGallery";
 import { formatPropertyPrice } from "../../core/utils/property-price";
 import { decodeListingTexts, buildPropertyShareBody } from "../../core/utils/listing-text";
+import { getVisibleHistories } from "../../data/local/price-history-queries";
+import {
+  applyQuickPriceEdit,
+  applyClearPriceHistory
+} from "../../core/utils/price-history-ops";
+import { PropertyPriceHistorySection } from "../../components/properties/PropertyPriceHistorySection";
+import { QuickPriceModal } from "../../components/properties/QuickPriceModal";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -45,8 +52,23 @@ export const PropertyDetailPage: React.FC = () => {
   const [showAddViewingModal, setShowAddViewingModal] = useState(false);
   const [activityFilter, setActivityFilter] = useState<"ALL" | "DIARY" | "VIEWING">("ALL");
   const [activeTab, setActiveTab] = useState<"detail" | "diary" | "matches">("detail");
+  const [showQuickPriceModal, setShowQuickPriceModal] = useState(false);
+  const [isPriceSaving, setIsPriceSaving] = useState(false);
 
   const property = useLiveQuery(() => (id ? db.properties.get(id) : undefined), [id]);
+  const rawHistories = useLiveQuery(
+    () => (id ? getVisibleHistories(id) : []),
+    [id]
+  );
+  const priceHistories = useMemo(
+    () =>
+      rawHistories
+        ? [...rawHistories].sort(
+            (a, b) => b.revision - a.revision || b.recordedAt - a.recordedAt
+          )
+        : [],
+    [rawHistories]
+  );
   const activeCustomers = useLiveQuery(() =>
     db.customers
       .filter((c) => !c.isDeleted)
@@ -160,6 +182,73 @@ export const PropertyDetailPage: React.FC = () => {
 
   const handleVerify = () => {
     navigate(`/properties/edit/${property.id}?openForVerify=true`);
+  };
+
+  const handleQuickPriceConfirm = async (newPrice: number) => {
+    if (!property) return;
+    setIsPriceSaving(true);
+    try {
+      const currentProp = await db.properties.get(property.id);
+      if (!currentProp) {
+        alert("Không tìm thấy bất động sản.");
+        setIsPriceSaving(false);
+        return;
+      }
+      const result = applyQuickPriceEdit(
+        currentProp,
+        currentProp.price,
+        newPrice,
+        Date.now()
+      );
+      switch (result.kind) {
+        case "INVALID":
+          alert("Giá không hợp lệ");
+          break;
+        case "UNCHANGED":
+          alert("Giá không thay đổi");
+          setShowQuickPriceModal(false);
+          break;
+        case "CONFLICT":
+          alert("Giá BĐS vừa thay đổi, vui lòng mở lại để sửa.");
+          break;
+        case "OK": {
+          await db.properties.put(result.updated);
+          await db.enqueueOutbox("PROPERTY", result.updated.id, "UPSERT");
+          syncManager.pushChanges();
+          const oldStr =
+            formatPropertyPrice(currentProp.price) ?? `${currentProp.price} tỷ`;
+          const newStr =
+            formatPropertyPrice(result.updated.price) ??
+            `${result.updated.price} tỷ`;
+          alert(`Đã cập nhật giá: ${oldStr} → ${newStr}`);
+          setShowQuickPriceModal(false);
+          break;
+        }
+      }
+    } catch (error) {
+      console.error("Lỗi khi cập nhật giá BĐS:", error);
+      alert("Lỗi khi cập nhật giá");
+    } finally {
+      setIsPriceSaving(false);
+    }
+  };
+
+  const handleClearPriceHistory = async () => {
+    if (!property || priceHistories.length === 0) return;
+    const upTo = Math.max(...priceHistories.map((h) => h.revision));
+    if (!Number.isFinite(upTo)) return;
+    try {
+      const updatedProperty = applyClearPriceHistory(property, upTo, Date.now());
+      if (updatedProperty) {
+        await db.properties.put(updatedProperty);
+        await db.enqueueOutbox("PROPERTY", updatedProperty.id, "UPSERT");
+        syncManager.pushChanges();
+        alert("Đã xoá lịch sử giá căn này");
+      }
+    } catch (error) {
+      console.error("Lỗi xoá lịch sử giá:", error);
+      alert("Không xoá được lịch sử giá, thử lại sau");
+    }
   };
 
   const handleAddDiary = async () => {
@@ -335,9 +424,16 @@ export const PropertyDetailPage: React.FC = () => {
           </div>
 
           <div className="text-right">
-            <div className="text-xl md:text-2xl font-black text-blue-700">
-              {formatPropertyPrice(property.price) || "Thương lượng"}
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowQuickPriceModal(true)}
+              className="text-right group cursor-pointer rounded-lg hover:bg-blue-50/60 px-1.5 py-0.5 -mr-1.5 transition-colors block ml-auto"
+              title="Bấm để sửa giá nhanh"
+            >
+              <div className="text-xl md:text-2xl font-black text-blue-700 group-hover:text-blue-800 transition-colors">
+                {formatPropertyPrice(property.price) || "Thương lượng"}
+              </div>
+            </button>
             {property.areaSize && (
               <div className="text-xs text-slate-500 font-medium">{property.areaSize} m²</div>
             )}
@@ -438,32 +534,42 @@ export const PropertyDetailPage: React.FC = () => {
       {/* Tab 1: Detail Info */}
       {activeTab === "detail" && (
         <div className="space-y-4">
-          <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
-            <h4 className="font-semibold text-slate-800 text-sm">Đặc điểm bất động sản</h4>
-            <div className="grid grid-cols-2 gap-3 text-xs md:text-sm">
-              <div>
-                <span className="text-slate-500">Hướng nhà:</span>{" "}
-                <span className="font-medium text-slate-800">
-                  {property.direction || "Chưa xác định"}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500">Ngày khảo sát:</span>{" "}
-                <span className="font-medium text-slate-800">
-                  {property.surveyDate || "Chưa khảo sát"}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500">Tọa độ:</span>{" "}
-                <span className="font-mono text-slate-800">
-                  {property.latitude ? `${property.latitude}, ${property.longitude}` : "Chưa có"}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500">Chủ nhà:</span>{" "}
-                <span className="font-medium text-slate-800">
-                  {property.ownerName || "Chưa rõ"} ({property.ownerPhone || "Chưa có SĐT"})
-                </span>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
+            <PropertyPriceHistorySection
+              propertyId={property.id}
+              histories={priceHistories}
+              onClearHistory={handleClearPriceHistory}
+            />
+            {priceHistories.length > 0 && (
+              <div className="border-t border-slate-100" />
+            )}
+            <div className="p-4 space-y-3">
+              <h4 className="font-semibold text-slate-800 text-sm">Đặc điểm bất động sản</h4>
+              <div className="grid grid-cols-2 gap-3 text-xs md:text-sm">
+                <div>
+                  <span className="text-slate-500">Hướng nhà:</span>{" "}
+                  <span className="font-medium text-slate-800">
+                    {property.direction || "Chưa xác định"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Ngày khảo sát:</span>{" "}
+                  <span className="font-medium text-slate-800">
+                    {property.surveyDate || "Chưa khảo sát"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Tọa độ:</span>{" "}
+                  <span className="font-mono text-slate-800">
+                    {property.latitude ? `${property.latitude}, ${property.longitude}` : "Chưa có"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Chủ nhà:</span>{" "}
+                  <span className="font-medium text-slate-800">
+                    {property.ownerName || "Chưa rõ"} ({property.ownerPhone || "Chưa có SĐT"})
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -947,6 +1053,17 @@ export const PropertyDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Quick Price Modal */}
+      {showQuickPriceModal && (
+      <QuickPriceModal
+        isOpen={showQuickPriceModal}
+        currentPrice={property.price}
+        isSaving={isPriceSaving}
+        onDismiss={() => setShowQuickPriceModal(false)}
+        onConfirm={handleQuickPriceConfirm}
+      />
       )}
     </div>
   );
