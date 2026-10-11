@@ -43,6 +43,7 @@ import {
   formatDiaryEntry
 } from "../../core/engine/activity-timeline-engine";
 import { AddViewingModal } from "./AddViewingModal";
+import { confirmDialog } from "../../components/common/confirm-dialog";
 import { PropertyMediaGallery } from "../../components/properties/PropertyMediaGallery";
 import { formatPropertyPrice } from "../../core/utils/property-price";
 import { decodeListingTexts, buildPropertyShareBody } from "../../core/utils/listing-text";
@@ -324,7 +325,7 @@ export const PropertyDetailPage: React.FC = () => {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm("Bạn có chắc muốn xóa bất động sản này?")) return;
+    if (!(await confirmDialog("Bạn có chắc muốn xóa bất động sản này?", "Xóa"))) return;
     const now = Date.now();
     const ownerLinks = await getActiveOwnerAndCoOwnerLinksForProperty(db, property.id);
     await db.properties.update(property.id, {
@@ -429,7 +430,7 @@ export const PropertyDetailPage: React.FC = () => {
   };
 
   const handleDeleteViewing = async (customerId: string, customerName: string) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa lượt xem nhà của ${customerName}?`)) return;
+    if (!(await confirmDialog(`Bạn có chắc muốn xóa lượt xem nhà của ${customerName}?`, "Xóa"))) return;
     const now = Date.now();
     await db.customer_property_links.update([customerId, property.id], {
       isDeleted: true,

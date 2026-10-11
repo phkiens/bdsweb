@@ -4,6 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowLeft, CheckCircle2, AlertTriangle, Trash2 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { LivestreamBadge } from "../../components/live/LivestreamBadge";
+import { confirmDialog } from "../../components/common/confirm-dialog";
 
 export const SyncHistoryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export const SyncHistoryPage: React.FC = () => {
   }, []);
 
   const handleClearLogs = async () => {
-    if (!window.confirm("Bạn có chắc muốn xóa sạch lịch sử nhật ký đồng bộ?")) return;
+    if (!(await confirmDialog("Bạn có chắc muốn xóa sạch lịch sử nhật ký đồng bộ?", "Xóa"))) return;
     await db.sync_logs.clear();
   };
 

@@ -28,6 +28,7 @@ import { LiveControlPanel } from "./components/live/LiveControlPanel";
 import { LiveHotlineBadge } from "./components/live/LiveHotlineBadge";
 import { LiveOverlayHost } from "./components/live/LiveOverlayHost";
 import { LiveFeedPage } from "./pages/live/LiveFeedPage";
+import { ConfirmHost } from "./components/common/ConfirmHost";
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -138,6 +139,7 @@ const AppContent: React.FC = () => {
       <LiveHotlineBadge />
       <LiveControlPanel />
       <LiveOverlayHost />
+      <ConfirmHost />
     </div>
   );
 };

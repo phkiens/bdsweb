@@ -46,6 +46,7 @@ import {
   formatZoomDisplayLabel
 } from "../../data/local/settings-manager";
 import { parseRawText, getDistinctAreas } from "../../core/engine/property-text-extractor";
+import { confirmDialog } from "../../components/common/confirm-dialog";
 
 interface SingleChoiceOption<T> {
   value: T;
@@ -340,8 +341,8 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleResetDefaultRegex = () => {
-    if (window.confirm("Khôi phục bộ regex bóc tách về cấu hình mặc định ban đầu?")) {
+  const handleResetDefaultRegex = async () => {
+    if (await confirmDialog("Khôi phục bộ regex bóc tách về cấu hình mặc định ban đầu?", "Khôi phục")) {
       const def = settingsManager.restoreDefaultRegex();
       setDraftRegexText(def);
       setRegexValidationMsg({ ok: true, text: "Đã khôi phục về bộ regex mặc định." });

@@ -15,6 +15,7 @@ import {
 import { Property } from "../../core/models/property";
 import { MediaItem } from "../../core/models/media";
 import { mediaService } from "../../data/media/media-service";
+import { confirmDialog } from "../common/confirm-dialog";
 
 interface PropertyMediaGalleryProps {
   property: Property;
@@ -142,7 +143,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
 
   // Xử lý xóa media (Phase F)
   const handleDeleteMedia = async (item: MediaItem) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa file ${item.fileName} khỏi BĐS?`)) {
+    if (!(await confirmDialog(`Bạn có chắc chắn muốn xóa file ${item.fileName} khỏi BĐS?`, "Xóa"))) {
       return;
     }
 
