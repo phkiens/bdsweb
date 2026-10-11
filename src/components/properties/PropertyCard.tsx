@@ -16,6 +16,8 @@ import { toTitleCase } from "../../core/utils/vietnamese";
 import { parseR2MediaKeys } from "../../data/remote/r2-media-client";
 import { PropertyThumbnail } from "./PropertyThumbnail";
 import { formatPropertyPrice } from "../../core/utils/property-price";
+import { useLivestream } from "../../core/live/use-livestream";
+import { maskOwnerName } from "../../core/live/privacy";
 
 export enum SyncState {
   NOT_SYNCED = "NOT_SYNCED",
@@ -121,6 +123,8 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
 }) => {
   const isUnverified = !property.isVerified || mode === "unverified";
   const syncState = getPropertySyncState(property);
+  const { isLive } = useLivestream();
+  const displayOwnerName = maskOwnerName(property.ownerName, isLive);
 
   const formattedPrice = formatPropertyPrice(property.price);
 
@@ -181,9 +185,9 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
           </div>
 
           <div className="shrink-0 flex items-center gap-1 text-slate-500 text-xs max-w-[130px] sm:max-w-[180px]">
-            {property.ownerName ? (
-              <span className="truncate text-slate-600 font-medium" title={property.ownerName}>
-                {property.ownerName}
+            {displayOwnerName ? (
+              <span className="truncate text-slate-600 font-medium" title={isLive ? undefined : property.ownerName}>
+                {displayOwnerName}
               </span>
             ) : (
               <span title="Chưa có thông tin chủ nhà" className="inline-flex">

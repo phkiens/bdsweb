@@ -10,6 +10,8 @@ import {
   Plus
 } from "lucide-react";
 import { subscribeBottomNavHidden } from "../common/bottom-nav-visibility";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LiveHideItem, shouldShowBottomNav } from "../../core/live/live-hide";
 
 interface NavbarProps {
   onOpenDuplicateCheck: () => void;
@@ -18,19 +20,24 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
   const location = useLocation();
   const [navHiddenBySelection, setNavHiddenBySelection] = useState(false);
+  const { hidden } = useLivestream();
 
   useEffect(() => {
     return subscribeBottomNavHidden((hidden) => setNavHiddenBySelection(hidden));
   }, []);
 
-
-  const navItems = [
+  const allNavItems = [
     { to: "/properties", label: "Kho BĐS", icon: Home },
-    { to: "/unverified", label: "Tin chờ", icon: Inbox },
-    { to: "/customers", label: "Khách hàng", icon: Users },
-    { to: "/map", label: "Bản đồ", icon: MapPin },
-    { to: "/settings", label: "Cài đặt", icon: Settings },
+    { to: "/unverified", label: "Tin chờ", icon: Inbox, hideKey: LiveHideItem.TAB_UNVERIFIED },
+    { to: "/customers", label: "Khách hàng", icon: Users, hideKey: LiveHideItem.TAB_CUSTOMERS },
+    { to: "/map", label: "Bản đồ", icon: MapPin, hideKey: LiveHideItem.TAB_MAP },
+    { to: "/settings", label: "Cài đặt", icon: Settings, hideKey: LiveHideItem.SETTINGS_BUTTON },
   ];
+
+  const navItems = allNavItems.filter((item) => {
+    if (!item.hideKey) return true;
+    return !hidden.has(item.hideKey);
+  });
 
   // PARITY-NAV-001: Chỉ hiển thị Bottom Navigation trên các màn hình tab chính trên mobile.
   // Khi vào màn hình chi tiết, biểu mẫu thêm/sửa, hoặc cài đặt con, tự động ẩn thanh điều hướng đáy
@@ -45,7 +52,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
     "/statistics"
   ];
   const showMobileBottomNav =
-    topLevelRoutes.includes(location.pathname) && !navHiddenBySelection;
+    topLevelRoutes.includes(location.pathname) &&
+    !navHiddenBySelection &&
+    shouldShowBottomNav(navItems.map((n) => n.to));
 
   return (
     <>

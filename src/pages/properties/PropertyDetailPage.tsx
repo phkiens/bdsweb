@@ -54,11 +54,16 @@ import {
 import { PropertyPriceHistorySection } from "../../components/properties/PropertyPriceHistorySection";
 import { QuickPriceModal } from "../../components/properties/QuickPriceModal";
 import { buildLocationUrl, buildCoordinateText } from "../../core/utils/maps";
+import { useLivestream } from "../../core/live/use-livestream";
+import { maskOwnerName, maskOwnerPhone } from "../../core/live/privacy";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
+import { LiveHideItem } from "../../core/live/live-hide";
 
 export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: number }> = ({
   latitude,
   longitude
 }) => {
+  const { isLive } = useLivestream();
   const [open, setOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
@@ -75,6 +80,8 @@ export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: numbe
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [open]);
+
+  if (isLive) return null;
 
   const handleCopyLink = async () => {
     setOpen(false);
@@ -135,6 +142,7 @@ export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: numbe
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isLive, hidden } = useLivestream();
 
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
   const [diaryInput, setDiaryInput] = useState("");
@@ -232,10 +240,10 @@ export const PropertyDetailPage: React.FC = () => {
   const shareTin1 = useMemo(() => {
     if (!property) return "";
     if (!property.description || property.description.trim() === "") {
-      return property.rawText || "";
+      return isLive ? "" : property.rawText || "";
     }
     return decodedDesc.first;
-  }, [property, decodedDesc.first]);
+  }, [property, decodedDesc.first, isLive]);
 
   const [showAddCoOwnerModal, setShowAddCoOwnerModal] = useState(false);
   const coOwners = useLiveQuery(
@@ -440,10 +448,12 @@ export const PropertyDetailPage: React.FC = () => {
     property.longitude !== 0
   );
 
-  const canShowOwner = Boolean(
-    (property?.ownerName && property.ownerName.trim().length > 0) ||
-    (property?.ownerPhone && property.ownerPhone.trim().length > 0)
-  );
+  const canShowOwner =
+    !isLive &&
+    Boolean(
+      (property?.ownerName && property.ownerName.trim().length > 0) ||
+      (property?.ownerPhone && property.ownerPhone.trim().length > 0)
+    );
 
   const handleShare = () => {
     setIncludeBasic(true);
@@ -492,13 +502,16 @@ export const PropertyDetailPage: React.FC = () => {
     <div className="max-w-3xl mx-auto px-4 py-4 md:py-6 pb-24 md:pb-12">
       {/* Top Bar */}
       <div className="flex items-center justify-between mb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-sm font-medium transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Quay lại</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-sm font-medium transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Quay lại</span>
+          </button>
+          <LivestreamBadge />
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -590,27 +603,31 @@ export const PropertyDetailPage: React.FC = () => {
         </div>
 
         {/* Action Buttons Row */}
-        <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-100">
-          <button
-            onClick={() => property.ownerPhone && setPhoneModalNumber(property.ownerPhone)}
-            disabled={!property.ownerPhone}
-            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 transition-colors disabled:opacity-40"
-          >
-            <Phone className="w-4 h-4 mb-1 text-emerald-600" />
-            <span className="text-[11px] font-semibold">Gọi điện</span>
-          </button>
+        <div className={`grid ${isLive ? "grid-cols-2" : "grid-cols-4"} gap-2 pt-2 border-t border-slate-100`}>
+          {!isLive && (
+            <button
+              onClick={() => property.ownerPhone && setPhoneModalNumber(property.ownerPhone)}
+              disabled={!property.ownerPhone}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 transition-colors disabled:opacity-40"
+            >
+              <Phone className="w-4 h-4 mb-1 text-emerald-600" />
+              <span className="text-[11px] font-semibold">Gọi điện</span>
+            </button>
+          )}
 
-          <button
-            onClick={() =>
-              property.ownerPhone &&
-              window.open(`https://zalo.me/${property.ownerPhone}`, "_blank")
-            }
-            disabled={!property.ownerPhone}
-            className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-700 transition-colors disabled:opacity-40"
-          >
-            <ExternalLink className="w-4 h-4 mb-1 text-sky-600" />
-            <span className="text-[11px] font-semibold">Mở Zalo</span>
-          </button>
+          {!isLive && (
+            <button
+              onClick={() =>
+                property.ownerPhone &&
+                window.open(`https://zalo.me/${property.ownerPhone}`, "_blank")
+              }
+              disabled={!property.ownerPhone}
+              className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 hover:bg-blue-50 hover:text-blue-700 text-slate-700 transition-colors disabled:opacity-40"
+            >
+              <ExternalLink className="w-4 h-4 mb-1 text-sky-600" />
+              <span className="text-[11px] font-semibold">Mở Zalo</span>
+            </button>
+          )}
 
           <button
             onClick={() =>
@@ -650,23 +667,25 @@ export const PropertyDetailPage: React.FC = () => {
         >
           Chi tiết
         </button>
-        <button
-          onClick={() => setActiveTab("diary")}
-          className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
-            activeTab === "diary"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          <span>Nhật ký & Xem nhà</span>
-          <span
-            className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-              activeTab === "diary" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+        {!hidden.has(LiveHideItem.DIARY_VIEWINGS) && (
+          <button
+            onClick={() => setActiveTab("diary")}
+            className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
+              activeTab === "diary"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
-            {mergedActivityItems.length}
-          </span>
-        </button>
+            <span>Nhật ký & Xem nhà</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                activeTab === "diary" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {mergedActivityItems.length}
+            </span>
+          </button>
+        )}
         <button
           onClick={() => setActiveTab("matches")}
           className={`flex-1 py-2.5 text-xs md:text-sm font-semibold border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
@@ -711,7 +730,7 @@ export const PropertyDetailPage: React.FC = () => {
                   <span className="text-slate-500">Tọa độ:</span>{" "}
                   <div className="inline-flex items-center gap-1">
                     <span className="font-mono text-slate-800">
-                      {property.latitude ? `${property.latitude}, ${property.longitude}` : "Chưa có"}
+                      {property.latitude ? (isLive ? "Đã định vị" : `${property.latitude}, ${property.longitude}`) : "Chưa có"}
                     </span>
                     {hasCoords && (
                       <CoordinateCopyButton
@@ -724,7 +743,9 @@ export const PropertyDetailPage: React.FC = () => {
                 <div>
                   <span className="text-slate-500">Chủ nhà:</span>{" "}
                   <span className="font-medium text-slate-800">
-                    {property.ownerName || "Chưa rõ"} ({property.ownerPhone || "Chưa có SĐT"})
+                    {isLive
+                      ? maskOwnerName(property.ownerName, true)
+                      : `${property.ownerName || "Chưa rõ"} (${property.ownerPhone || "Chưa có SĐT"})`}
                   </span>
                 </div>
               </div>
@@ -732,13 +753,15 @@ export const PropertyDetailPage: React.FC = () => {
           </div>
 
           {/* Co-Owners Section */}
-          <PropertyCoOwnersSection
-            coOwners={coOwners || []}
-            onOpenCustomer={(customerId) => navigate(`/customers/${customerId}`)}
-            onPhoneClick={(phone) => setPhoneModalNumber(phone)}
-            onRemoveCoOwner={handleRemoveCoOwner}
-            onAddClick={() => setShowAddCoOwnerModal(true)}
-          />
+          {!isLive && (
+            <PropertyCoOwnersSection
+              coOwners={coOwners || []}
+              onOpenCustomer={(customerId) => navigate(`/customers/${customerId}`)}
+              onPhoneClick={(phone) => setPhoneModalNumber(phone)}
+              onRemoveCoOwner={handleRemoveCoOwner}
+              onAddClick={() => setShowAddCoOwnerModal(true)}
+            />
+          )}
 
           {(hasDetailTin1 || hasDetailTin2) && (
             <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2">
@@ -778,47 +801,49 @@ export const PropertyDetailPage: React.FC = () => {
           )}
 
           {/* Activity Preview Card */}
-          <div
-            onClick={() => setActiveTab("diary")}
-            className="p-3.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl cursor-pointer transition-colors flex items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                <Clock className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                  <span>Nhật ký & Xem nhà</span>
-                  <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">
-                    {mergedActivityItems.length}
-                  </span>
+          {!hidden.has(LiveHideItem.DIARY_VIEWINGS) && (
+            <div
+              onClick={() => setActiveTab("diary")}
+              className="p-3.5 bg-slate-50 hover:bg-slate-100/80 border border-slate-200 rounded-2xl cursor-pointer transition-colors flex items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Clock className="w-4 h-4" />
                 </div>
-                <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                  {mergedActivityItems.length > 0 ? (
-                    mergedActivityItems[0].type === "DIARY" ? (
-                      <span>
-                        {mergedActivityItems[0].displayDate && `${mergedActivityItems[0].displayDate} · `}
-                        {mergedActivityItems[0].text}
-                      </span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                    <span>Nhật ký & Xem nhà</span>
+                    <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">
+                      {mergedActivityItems.length}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                    {mergedActivityItems.length > 0 ? (
+                      mergedActivityItems[0].type === "DIARY" ? (
+                        <span>
+                          {mergedActivityItems[0].displayDate && `${mergedActivityItems[0].displayDate} · `}
+                          {mergedActivityItems[0].text}
+                        </span>
+                      ) : (
+                        <span>
+                          {mergedActivityItems[0].displayDate && `${mergedActivityItems[0].displayDate} · `}
+                          Khách {mergedActivityItems[0].customerName} xem nhà
+                        </span>
+                      )
                     ) : (
-                      <span>
-                        {mergedActivityItems[0].displayDate && `${mergedActivityItems[0].displayDate} · `}
-                        Khách {mergedActivityItems[0].customerName} xem nhà
-                      </span>
-                    )
-                  ) : (
-                    "Chưa có ghi chép nhật ký hoặc lượt dẫn khách"
-                  )}
+                      "Chưa có ghi chép nhật ký hoặc lượt dẫn khách"
+                    )}
+                  </div>
                 </div>
               </div>
+              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
             </div>
-            <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-          </div>
+          )}
         </div>
       )}
 
       {/* Tab 2: Merged Activity (Diary + Customer Viewings) */}
-      {activeTab === "diary" && (
+      {!hidden.has(LiveHideItem.DIARY_VIEWINGS) && activeTab === "diary" && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -995,7 +1020,7 @@ export const PropertyDetailPage: React.FC = () => {
                             {item.customerName}
                           </button>
                           {item.customerPhone && (
-                            <span className="text-[11px] text-slate-400">({item.customerPhone})</span>
+                            <span className="text-[11px] text-slate-400">({maskOwnerPhone(item.customerPhone, isLive)})</span>
                           )}
                         </div>
                         {item.note && (
@@ -1042,10 +1067,10 @@ export const PropertyDetailPage: React.FC = () => {
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-slate-800 text-sm truncate">
-                        {customer.name}
+                        {customer.role === CustomerRole.OWNER ? maskOwnerName(customer.name, isLive) : customer.name}
                       </span>
                       <span className="text-xs text-slate-500 font-mono">
-                        {customer.phone}
+                        {maskOwnerPhone(customer.phone, isLive)}
                       </span>
                     </div>
 

@@ -25,9 +25,12 @@ import {
 import { CustomerCard } from "../../components/customers/CustomerCard";
 import { EditCustomerModal } from "../../components/customers/EditCustomerModal";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 export const CustomerListPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
   const [searchQuery, setSearchQuery] = useState("");
   const [customerFilter, setCustomerFilter] = useState<CustomerFilter>(CustomerFilter.ALL);
   const [ownerStockFilter, setOwnerStockFilter] = useState<OwnerStockFilter>(OwnerStockFilter.ALL);
@@ -69,9 +72,11 @@ export const CustomerListPage: React.FC = () => {
       ownerPropertyStats,
       searchQuery,
       ownerStockFilter,
-      ownerPropertySort
+      ownerPropertySort,
+      !isLive,
+      !isLive
     );
-  }, [customers, customerFilter, ownerPropertyStats, searchQuery, ownerStockFilter, ownerPropertySort]);
+  }, [customers, customerFilter, ownerPropertyStats, searchQuery, ownerStockFilter, ownerPropertySort, isLive]);
 
   // Cuộn về đầu trang khi đổi từ khóa tìm kiếm
   useEffect(() => {
@@ -109,6 +114,7 @@ export const CustomerListPage: React.FC = () => {
           <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <Users className="w-6 h-6 text-blue-600" />
             <span>Quản Lý Khách Hàng (CRM)</span>
+            <LivestreamBadge />
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Danh sách khách mua, chủ nhà và tự động ghép nối BĐS ({filteredCustomers.length})

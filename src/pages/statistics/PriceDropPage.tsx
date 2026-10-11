@@ -23,6 +23,7 @@ import { FilterTopRow } from "../../core/models/enums";
 import { MultiSelectBottomBar } from "../../components/common/MultiSelectBottomBar";
 import { useHideBottomNavWhile } from "../../components/common/bottom-nav-visibility";
 import { PropertyPickerModal } from "../../components/properties/PropertyPickerModal";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import {
   buildMapSurveyRoute,
   syncPriceDropSelection,
@@ -244,6 +245,7 @@ export const PriceDropPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <h1 className="text-lg md:text-xl font-bold text-slate-900">Giá vừa giảm</h1>
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <LivestreamBadge />
             </div>
             <p className="text-xs text-slate-500">
               {isLoading

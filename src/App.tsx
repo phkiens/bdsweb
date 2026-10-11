@@ -23,11 +23,28 @@ import { PermissionOnboardingPage } from "./pages/onboarding/PermissionOnboardin
 import { ScrollRestoration } from "./components/layout/ScrollRestoration";
 import { settingsManager } from "./data/local/settings-manager";
 import { syncManager } from "./data/sync/sync-manager";
+import { useLivestream } from "./core/live/use-livestream";
+import { LiveControlPanel } from "./components/live/LiveControlPanel";
+import { LiveHotlineBadge } from "./components/live/LiveHotlineBadge";
 
 const AppContent: React.FC = () => {
   const location = useLocation();
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
   const isOnboarding = location.pathname === "/onboarding";
+  const { isLive } = useLivestream();
+
+  // Handle dark mode theme class & theme-color meta tag when live
+  useEffect(() => {
+    if (isLive) {
+      document.documentElement.classList.add("live");
+    } else {
+      document.documentElement.classList.remove("live");
+    }
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute("content", isLive ? "#0f172a" : "#2563eb");
+    }
+  }, [isLive]);
 
   // Check URL query action=check_duplicate (tương ứng App Shortcut check_duplicate)
   useEffect(() => {
@@ -113,6 +130,9 @@ const AppContent: React.FC = () => {
         isOpen={duplicateModalOpen}
         onClose={() => setDuplicateModalOpen(false)}
       />
+
+      <LiveHotlineBadge />
+      <LiveControlPanel />
     </div>
   );
 };

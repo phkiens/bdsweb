@@ -40,9 +40,13 @@ import {
   CONTACT_LINE
 } from "../../core/utils/listing-text";
 import { determinePriceEditFields } from "../../core/utils/price-history-helper";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
+import { maskOwnerName, maskOwnerPhone } from "../../core/live/privacy";
 
 export const PropertyFormPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
 
@@ -361,7 +365,7 @@ export const PropertyFormPage: React.FC = () => {
       await syncManager.pushChanges();
 
       if (notice) {
-        alert(ownerSaveNoticeText(notice));
+        alert(ownerSaveNoticeText(notice, isLive));
       }
 
       // Nếu có ảnh mới chọn, tiến hành upload lên R2
@@ -406,14 +410,17 @@ export const PropertyFormPage: React.FC = () => {
           <span>Quay lại</span>
         </button>
 
-        <h2 className="font-bold text-slate-800 text-base md:text-lg">
-          {isOpenForVerify
-            ? "Phê duyệt BĐS chính"
-            : isEditMode
-            ? "Chỉnh sửa BĐS"
-            : formData.isVerified
-            ? "Thêm BĐS mới"
-            : "Thêm tin chờ duyệt"}
+        <h2 className="font-bold text-slate-800 text-base md:text-lg flex items-center gap-2">
+          <span>
+            {isOpenForVerify
+              ? "Phê duyệt BĐS chính"
+              : isEditMode
+              ? "Chỉnh sửa BĐS"
+              : formData.isVerified
+              ? "Thêm BĐS mới"
+              : "Thêm tin chờ duyệt"}
+          </span>
+          <LivestreamBadge />
         </h2>
 
         <button
@@ -463,11 +470,12 @@ export const PropertyFormPage: React.FC = () => {
       )}
 
       {/* Quick Parse Input Box */}
-      <div className="mb-6 p-4 bg-blue-50/60 border border-blue-100 rounded-2xl">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">
-          <Sparkles className="w-4 h-4 text-blue-600" />
-          <span>Trích xuất nhanh từ văn bản Zalo / Facebook</span>
-        </div>
+      {!isLive && (
+        <div className="mb-6 p-4 bg-blue-50/60 border border-blue-100 rounded-2xl">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-blue-800 uppercase tracking-wider mb-2">
+            <Sparkles className="w-4 h-4 text-blue-600" />
+            <span>Trích xuất nhanh từ văn bản Zalo / Facebook</span>
+          </div>
         <textarea
           rows={2}
           value={quickText}
@@ -485,6 +493,7 @@ export const PropertyFormPage: React.FC = () => {
           </button>
         </div>
       </div>
+    )}
 
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -671,12 +680,14 @@ export const PropertyFormPage: React.FC = () => {
               <div className="relative">
                 <input
                   type="text"
-                  value={formData.ownerName}
-                  onChange={(e) => handleOwnerNameChange(e.target.value)}
+                  disabled={isLive}
+                  readOnly={isLive}
+                  value={isLive ? maskOwnerName(formData.ownerName, true) : formData.ownerName}
+                  onChange={(e) => !isLive && handleOwnerNameChange(e.target.value)}
                   placeholder="Ví dụ: Anh Tuấn"
                   className={`w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden focus:bg-white focus:ring-2 focus:ring-blue-500 ${
                     formData.linkedCustomerId ? "pl-8" : ""
-                  }`}
+                  } ${isLive ? "opacity-75 cursor-not-allowed bg-slate-100" : ""}`}
                 />
                 {formData.linkedCustomerId && (
                   <Link
@@ -685,6 +696,9 @@ export const PropertyFormPage: React.FC = () => {
                   />
                 )}
               </div>
+              {isLive && (
+                <p className="text-[11px] text-red-500 mt-1">Không thể chỉnh sửa khi đang bật Livestream</p>
+              )}
 
               {suggestedOwnersByName.length > 0 && (
                 <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden divide-y divide-slate-100">
@@ -692,13 +706,18 @@ export const PropertyFormPage: React.FC = () => {
                     <button
                       key={owner.id}
                       type="button"
-                      onClick={() => handleSelectSuggestedOwner(owner)}
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center justify-between transition-colors cursor-pointer"
+                      disabled={isLive}
+                      onClick={() => !isLive && handleSelectSuggestedOwner(owner)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center justify-between transition-colors cursor-pointer disabled:cursor-not-allowed"
                     >
                       <div className="truncate mr-2">
-                        <span className="font-semibold text-slate-800">{owner.name}</span>
+                        <span className="font-semibold text-slate-800">
+                          {isLive ? maskOwnerName(owner.name, true) : owner.name}
+                        </span>
                         {owner.phone && (
-                          <span className="ml-2 text-slate-400 font-mono text-[11px]">{owner.phone}</span>
+                          <span className="ml-2 text-slate-400 font-mono text-[11px]">
+                            {isLive ? maskOwnerPhone(owner.phone, true) : owner.phone}
+                          </span>
                         )}
                       </div>
                       <span
@@ -720,21 +739,32 @@ export const PropertyFormPage: React.FC = () => {
               <label className="block text-xs font-medium text-slate-600 mb-1">Số điện thoại</label>
               <input
                 type="tel"
-                value={formData.ownerPhone}
-                onChange={(e) => handleOwnerPhoneChange(e.target.value)}
+                disabled={isLive}
+                readOnly={isLive}
+                value={isLive ? maskOwnerPhone(formData.ownerPhone, true) : formData.ownerPhone}
+                onChange={(e) => !isLive && handleOwnerPhoneChange(e.target.value)}
                 placeholder="0901234567"
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden focus:bg-white focus:ring-2 focus:ring-blue-500"
+                className={`w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-hidden focus:bg-white focus:ring-2 focus:ring-blue-500 ${
+                  isLive ? "opacity-75 cursor-not-allowed bg-slate-100" : ""
+                }`}
               />
+              {isLive && (
+                <p className="text-[11px] text-red-500 mt-1">Không thể chỉnh sửa khi đang bật Livestream</p>
+              )}
 
               {suggestedOwnerByPhone &&
                 formData.linkedCustomerId == null &&
                 formData.ownerName.trim() !== suggestedOwnerByPhone.name.trim() && (
                   <div
-                    onClick={() => handleSelectSuggestedOwner(suggestedOwnerByPhone)}
-                    className="mt-1.5 flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 cursor-pointer font-medium"
+                    onClick={() => !isLive && handleSelectSuggestedOwner(suggestedOwnerByPhone)}
+                    className={`mt-1.5 flex items-center gap-1.5 text-xs text-blue-600 font-medium ${
+                      isLive ? "opacity-75 cursor-not-allowed" : "hover:text-blue-800 cursor-pointer"
+                    }`}
                   >
                     <Link className="w-3.5 h-3.5 shrink-0" />
-                    <span>SĐT khớp khách: {suggestedOwnerByPhone.name} — chạm để liên kết</span>
+                    <span>
+                      SĐT khớp khách: {isLive ? maskOwnerName(suggestedOwnerByPhone.name, true) : suggestedOwnerByPhone.name} — chạm để liên kết
+                    </span>
                   </div>
               )}
             </div>

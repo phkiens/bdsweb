@@ -5,6 +5,8 @@ import { COORD_DELTA, parseVietnamCoordinates } from "../../core/utils/coordinat
 import { db } from "../../data/local/db";
 import { Property } from "../../core/models/property";
 import { formatPropertyPrice } from "../../core/utils/property-price";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../live/LivestreamBadge";
 
 interface DuplicateCheckModalProps {
   isOpen: boolean;
@@ -18,6 +20,7 @@ export const DuplicateCheckModal: React.FC<DuplicateCheckModalProps> = ({
   initialText = ""
 }) => {
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
   const [inputText, setInputText] = useState(initialText);
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [matches, setMatches] = useState<Property[]>([]);
@@ -78,6 +81,7 @@ export const DuplicateCheckModal: React.FC<DuplicateCheckModalProps> = ({
           <div className="flex items-center gap-2">
             <Search className="w-5 h-5 text-blue-600" />
             <h3 className="font-semibold text-slate-800 text-base">Kiểm tra trùng BĐS</h3>
+            <LivestreamBadge />
           </div>
           <button
             onClick={onClose}
@@ -157,7 +161,9 @@ export const DuplicateCheckModal: React.FC<DuplicateCheckModalProps> = ({
                     <div>
                       <span className="font-semibold">Vị trí chưa có trong hệ thống!</span>
                       <p className="text-emerald-700 mt-0.5">
-                        Tọa độ: {coords[0].toFixed(5)}, {coords[1].toFixed(5)}. Bạn có thể tạo sản phẩm mới ngay tại vị trí này.
+                        {isLive
+                          ? "📍 Đã có định vị hợp lệ. Bạn có thể tạo sản phẩm mới ngay tại vị trí này."
+                          : `Tọa độ: ${coords[0].toFixed(5)}, ${coords[1].toFixed(5)}. Bạn có thể tạo sản phẩm mới ngay tại vị trí này.`}
                       </p>
                     </div>
                   </div>

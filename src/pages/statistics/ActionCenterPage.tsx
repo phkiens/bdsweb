@@ -14,6 +14,7 @@ import {
 } from "../../core/statistics/statistics-filter";
 import { DrillDownFilter } from "../../core/statistics/drill-down-filter";
 import { createDrillDownUrl } from "../../core/statistics/drill-down-query";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 function formatActionItemLabel(item: ActionItem): string {
   const count = item.count;
@@ -109,7 +110,10 @@ export const ActionCenterPage: React.FC = () => {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-bold text-slate-900 truncate">Cần xử lý</h1>
+          <h1 className="text-lg font-bold text-slate-900 truncate flex items-center gap-2">
+            <span>Cần xử lý</span>
+            <LivestreamBadge />
+          </h1>
         </div>
       </div>
 

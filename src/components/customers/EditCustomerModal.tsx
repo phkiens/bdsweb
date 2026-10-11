@@ -7,6 +7,9 @@ import { prepareCustomerForWrite } from "../../core/services/customer-validator"
 import { db } from "../../data/local/db";
 import { syncManager } from "../../data/sync/sync-manager";
 import { nowTimestamp } from "../../core/utils/date";
+import { useLivestream } from "../../core/live/use-livestream";
+import { maskOwnerName, maskOwnerPhone } from "../../core/live/privacy";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 export interface EditCustomerModalProps {
   isOpen: boolean;
@@ -21,6 +24,7 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
   onClose,
   onSaved
 }) => {
+  const { isLive } = useLivestream();
   const isEditing = Boolean(customer);
 
   const [formData, setFormData] = useState({
@@ -152,6 +156,7 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
               <UserPlus className="w-5 h-5 text-blue-600" />
             )}
             <span>{isEditing ? "Chỉnh Sửa Khách Hàng" : "Thêm Khách Hàng Mới"}</span>
+            <LivestreamBadge />
           </h3>
           <button
             type="button"
@@ -169,34 +174,55 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {/* Tên */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Họ tên khách hàng <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Ví dụ: Anh Hoàng"
-              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-hidden"
-            />
-          </div>
+        {(() => {
+          const isEditingExistingOwner = Boolean(customer && customer.role === CustomerRole.OWNER);
+          const isNameLocked = isLive && isEditingExistingOwner;
+          const isPhoneLocked = isLive && isEditing;
+          const isCreatingNewOwner = !customer && formData.role === CustomerRole.OWNER;
 
-          {/* SĐT & Vai trò */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Số điện thoại</label>
-              <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="0901234567"
-                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-hidden font-mono"
-              />
-            </div>
+          return (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              {/* Tên */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Họ tên khách hàng <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type={isLive && isCreatingNewOwner ? "password" : "text"}
+                  required
+                  disabled={isNameLocked}
+                  readOnly={isNameLocked}
+                  value={isNameLocked ? maskOwnerName(formData.name, isLive) : formData.name}
+                  onChange={(e) => !isNameLocked && setFormData({ ...formData, name: e.target.value })}
+                  placeholder="Ví dụ: Anh Hoàng"
+                  className={`w-full text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-hidden ${
+                    isNameLocked ? "opacity-75 cursor-not-allowed bg-slate-100" : ""
+                  }`}
+                />
+                {isNameLocked && (
+                  <p className="text-[11px] text-slate-400 mt-1">Đang bật Livestream — Đã khóa tên chủ nhà</p>
+                )}
+              </div>
+
+              {/* SĐT & Vai trò */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Số điện thoại</label>
+                  <input
+                    type={isPhoneLocked ? "password" : "tel"}
+                    disabled={isPhoneLocked}
+                    readOnly={isPhoneLocked}
+                    value={isPhoneLocked ? maskOwnerPhone(formData.phone, isLive) : formData.phone}
+                    onChange={(e) => !isPhoneLocked && setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="0901234567"
+                    className={`w-full text-sm p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-hidden font-mono ${
+                      isPhoneLocked ? "opacity-75 cursor-not-allowed bg-slate-100" : ""
+                    }`}
+                  />
+                  {isPhoneLocked && (
+                    <p className="text-[11px] text-slate-400 mt-1">Đang bật Livestream — Đã khóa SĐT</p>
+                  )}
+                </div>
 
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Phân loại vai trò</label>
@@ -338,6 +364,8 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
             </button>
           </div>
         </form>
+      );
+    })()}
       </div>
     </div>
   );

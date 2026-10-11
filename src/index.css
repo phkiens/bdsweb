@@ -43,3 +43,31 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Livestream Dark Mode */
+html.live {
+  color-scheme: dark;
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-600: #94a3b8;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #f1f5f9;
+  --color-slate-950: #f8fafc;
+
+  --surface: #0f172a;
+  --surface-variant: #1e293b;
+  --on-surface: #f8fafc;
+}
+
+html.live .bg-white {
+  background-color: #0f172a !important;
+}
+
+html.live [class*="bg-white/"]:not([data-testid="livestream_badge"]) {
+  background-color: rgba(15, 23, 42, 0.9) !important;
+}

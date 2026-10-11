@@ -16,6 +16,7 @@ import {
 } from "../../core/statistics/statistics-filter";
 import { PriceUtils } from "../../core/statistics/price-utils";
 import { toTitleCase } from "../../core/utils/vietnamese";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 function getValuationBadgeClass(label: ValuationLabel): string {
   switch (label.code) {
@@ -237,8 +238,9 @@ export const RadarAreaDetailPage: React.FC = () => {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-bold text-slate-900 truncate">
-            {titleText}
+          <h1 className="text-lg font-bold text-slate-900 truncate flex items-center gap-2">
+            <span>{titleText}</span>
+            <LivestreamBadge />
           </h1>
         </div>
       </div>

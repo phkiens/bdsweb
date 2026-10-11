@@ -45,10 +45,13 @@ import {
 import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
 import { FilterTopRow } from "../../core/models/enums";
 import { settingsManager, ZOOM_KEEP_CURRENT } from "../../data/local/settings-manager";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 
 export const MapSurveyPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
   const [searchParams] = useSearchParams();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -661,6 +664,7 @@ export const MapSurveyPage: React.FC = () => {
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-[calc(100vw-32px)] sm:max-w-md">
         {/* Row 1: Action Buttons & Route Mode Indicator */}
         <div className="flex flex-wrap items-center gap-2">
+          <LivestreamBadge isOverlay />
           {isRouteMode && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-xs font-semibold shadow-xs">
               <Route className="w-3.5 h-3.5 text-blue-600" />
@@ -970,7 +974,7 @@ export const MapSurveyPage: React.FC = () => {
               <span>Chỉ đường</span>
             </a>
 
-            {selectedProperty.ownerPhone && (
+            {!isLive && selectedProperty.ownerPhone && (
               <a
                 href={`tel:${selectedProperty.ownerPhone}`}
                 className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors"

@@ -20,9 +20,12 @@ import { getVisibleHistories } from "../../core/statistics/drill-down-applier";
 import { OverviewTab } from "../../components/statistics/OverviewTab";
 import { MarketTab } from "../../components/statistics/MarketTab";
 import { StatisticsFilterModal } from "../../components/statistics/StatisticsFilterModal";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 export const StatisticsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
 
   const [selectedTabIndex, setSelectedTabIndex] = useState<number>(0);
   const [filter, setFilter] = useState<StatisticsFilter>(() => new StatisticsFilter());
@@ -107,7 +110,7 @@ export const StatisticsPage: React.FC = () => {
       const summary = StatisticsSummaryExporter.export(
         uiState,
         uiState.snapshotTimeMillis,
-        false
+        isLive
       );
 
       if (navigator.share) {
@@ -166,7 +169,10 @@ export const StatisticsPage: React.FC = () => {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-bold text-slate-900 truncate">Báo cáo thống kê</h1>
+          <h1 className="text-lg font-bold text-slate-900 truncate flex items-center gap-2">
+            <span>Báo cáo thống kê</span>
+            <LivestreamBadge />
+          </h1>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">

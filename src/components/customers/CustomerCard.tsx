@@ -5,11 +5,14 @@ import {
   Trash2,
   ChevronRight,
   CheckCircle2,
-  Building2
+  Building2,
+  Lock
 } from "lucide-react";
 import { Customer } from "../../core/models/customer";
 import { CustomerRole, CustomerStatus } from "../../core/models/enums";
 import { CustomerAvatar } from "./CustomerAvatar";
+import { useLivestream } from "../../core/live/use-livestream";
+import { maskOwnerName } from "../../core/live/privacy";
 
 export interface CustomerCardProps {
   customer: Customer;
@@ -35,9 +38,11 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
   onDelete,
   className = ""
 }) => {
+  const { isLive } = useLivestream();
   const isOwner = customer.role === CustomerRole.OWNER;
   const isClosed = customer.status === CustomerStatus.CLOSED;
   const hasPhone = Boolean(customer.phone && customer.phone.trim());
+  const displayedName = isOwner ? maskOwnerName(customer.name, isLive) : customer.name;
 
   // Thống kê BĐS cho Chủ nhà
   const totalHouses = ownerStats?.totalCount ?? 0;
@@ -59,7 +64,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
     >
       {/* 1. Avatar 44px tròn với màu pastel chuẩn Native Android */}
       <CustomerAvatar
-        name={customer.name}
+        name={displayedName}
         avatarPath={customer.avatarPath}
         avatarDriveUrl={customer.avatarDriveUrl}
         size={44}
@@ -73,9 +78,9 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <h3
               className="font-bold text-sm text-slate-900 truncate"
-              title={customer.name}
+              title={isLive && isOwner ? undefined : customer.name}
             >
-              {customer.name}
+              {displayedName}
             </h3>
 
             {isClosed && (
@@ -119,7 +124,16 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
         {/* Row 3: SĐT + Khu vực */}
         <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
           <div className="flex items-center gap-2 truncate">
-            {hasPhone ? (
+            {isLive ? (
+              hasPhone ? (
+                <span className="flex items-center gap-1 text-slate-500">
+                  <Lock className="w-3 h-3 text-slate-400" />
+                  <span>Đã ẩn SĐT</span>
+                </span>
+              ) : (
+                <span className="text-slate-400 italic">Chưa có SĐT</span>
+              )
+            ) : hasPhone ? (
               <span
                 onClick={(e) => {
                   if (onPhoneClick) {
@@ -154,7 +168,7 @@ export const CustomerCard: React.FC<CustomerCardProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Nút Gọi */}
-        {hasPhone && onPhoneClick && (
+        {!isLive && hasPhone && onPhoneClick && (
           <button
             type="button"
             onClick={() => onPhoneClick(customer.phone)}

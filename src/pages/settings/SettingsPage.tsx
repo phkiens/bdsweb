@@ -18,8 +18,12 @@ import {
   Play,
   RotateCcw,
   Check,
-  AlertCircle
+  AlertCircle,
+  Video,
+  Phone
 } from "lucide-react";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
+import { LiveHotlineLayout } from "../../core/live/hotline-layout";
 import { db } from "../../data/local/db";
 import { CustomerPropertyRole, PropertyType, PropertyStatus } from "../../core/models/enums";
 import {
@@ -141,6 +145,8 @@ export const SettingsPage: React.FC = () => {
   const [filterModalOpen, setFilterModalOpen] = useState(false);
   const [mapModalOpen, setMapModalOpen] = useState(false);
   const [regexModalOpen, setRegexModalOpen] = useState(false);
+  const [showHotlineDialog, setShowHotlineDialog] = useState(false);
+  const [draftHotlineText, setDraftHotlineText] = useState(settings.liveHotlineText || "");
 
   // Map SingleChoiceDialog states
   const [showMapZoomDialog, setShowMapZoomDialog] = useState(false);
@@ -411,6 +417,7 @@ export const SettingsPage: React.FC = () => {
         <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
           <Settings className="w-6 h-6 text-slate-700" />
           <span>Cài Đặt Hệ Thống</span>
+          <LivestreamBadge />
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
           Sao lưu, hiển thị, công cụ và nâng cao
@@ -489,6 +496,51 @@ export const SettingsPage: React.FC = () => {
       <div className="space-y-1.5">
         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Hiển thị</div>
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs divide-y divide-slate-100 overflow-hidden">
+          {/* Chế độ Livestream */}
+          <div className="w-full p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+                <Video className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Chế độ Livestream</div>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.livestreamMode}
+                onChange={(e) => {
+                  settingsManager.setLivestreamMode(e.target.checked);
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {/* Nhãn hotline khi live */}
+          <button
+            onClick={() => {
+              setDraftHotlineText(settings.liveHotlineText || "");
+              setShowHotlineDialog(true);
+            }}
+            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Phone className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Nhãn hotline khi live</div>
+                <div className="text-xs text-slate-500">
+                  {settings.liveHotlineText?.trim() ? settings.liveHotlineText : "Chưa đặt"}
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
+
           {/* Bộ lọc khi mở danh sách */}
           <button
             onClick={handleOpenFilterModal}
@@ -1060,6 +1112,57 @@ export const SettingsPage: React.FC = () => {
                 className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors cursor-pointer"
               >
                 Lưu regex
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showHotlineDialog && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <h3 className="font-bold text-slate-800 text-base">Nhãn hotline khi live</h3>
+              <button
+                onClick={() => setShowHotlineDialog(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={draftHotlineText}
+                maxLength={LiveHotlineLayout.MAX_LEN}
+                onChange={(e) => setDraftHotlineText(e.target.value.slice(0, LiveHotlineLayout.MAX_LEN))}
+                placeholder="VD: 0901 234 567 · Anh K"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
+                autoFocus
+              />
+              <p className="text-xs text-slate-500">
+                Để trống = không hiện nhãn (tối đa {LiveHotlineLayout.MAX_LEN} ký tự)
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowHotlineDialog(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  settingsManager.setLiveHotlineText(draftHotlineText);
+                  setShowHotlineDialog(false);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors cursor-pointer"
+              >
+                Lưu
               </button>
             </div>
           </div>

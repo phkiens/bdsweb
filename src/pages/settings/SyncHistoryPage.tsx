@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowLeft, CheckCircle2, AlertTriangle, Trash2 } from "lucide-react";
 import { db } from "../../data/local/db";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 export const SyncHistoryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -27,7 +28,10 @@ export const SyncHistoryPage: React.FC = () => {
           <span>Quay lại Cài đặt</span>
         </button>
 
-        <h1 className="font-bold text-slate-800 text-base">Lịch sử đồng bộ</h1>
+        <h1 className="font-bold text-slate-800 text-base flex items-center gap-2">
+          <span>Lịch sử đồng bộ</span>
+          <LivestreamBadge />
+        </h1>
 
         <button
           onClick={handleClearLogs}

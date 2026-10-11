@@ -11,9 +11,12 @@ import {
 import { StatisticsFilter } from "../../core/statistics/statistics-filter";
 import { DrillDownFilter } from "../../core/statistics/drill-down-filter";
 import { createDrillDownUrl } from "../../core/statistics/drill-down-query";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 export const OwnerPerformancePage: React.FC = () => {
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
 
   // Query Dexie reactively, capturing "now" inside the query function
   const queryData = useLiveQuery(async () => {
@@ -58,8 +61,9 @@ export const OwnerPerformancePage: React.FC = () => {
     };
   }, []);
 
-  const handleDrillDown = (filter: DrillDownFilter) => {
-    navigate(createDrillDownUrl("/properties", filter));
+  const handleDrillDown = (filter: DrillDownFilter, alias?: string) => {
+    const updatedFilter = isLive && alias ? filter.copy({ contextLabel: alias }) : filter;
+    navigate(createDrillDownUrl("/properties", updatedFilter));
   };
 
   const isLoading = queryData === undefined;
@@ -78,8 +82,9 @@ export const OwnerPerformancePage: React.FC = () => {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-bold text-slate-900 truncate">
-            Nguồn hàng theo chủ
+          <h1 className="text-lg font-bold text-slate-900 truncate flex items-center gap-2">
+            <span>Nguồn hàng theo chủ</span>
+            <LivestreamBadge />
           </h1>
         </div>
       </div>
@@ -117,6 +122,8 @@ export const OwnerPerformancePage: React.FC = () => {
           <div className="space-y-3">
             {items.map((item, idx) => {
               const index = idx + 1;
+              const alias = `Chủ nhà #${index}`;
+              const displayedName = isLive ? alias : `#${index} ${item.ownerName}`;
               return (
                 <div
                   key={item.ownerId}
@@ -124,7 +131,7 @@ export const OwnerPerformancePage: React.FC = () => {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-bold text-slate-900">
-                      #{index} {item.ownerName}
+                      {displayedName}
                     </span>
 
                     {item.displaySoldRatioPercent != null && (
@@ -141,7 +148,7 @@ export const OwnerPerformancePage: React.FC = () => {
                   <div className="flex justify-end pt-1">
                     <button
                       type="button"
-                      onClick={() => handleDrillDown(item.drillDownFilter)}
+                      onClick={() => handleDrillDown(item.drillDownFilter, alias)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                     >
                       <span>Xem {item.totalPropertiesListed} căn</span>

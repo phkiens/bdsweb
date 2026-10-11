@@ -117,6 +117,11 @@ export interface SettingsState {
   fabOnLeft: boolean;
   lastZipExportTime: string | null;
   lastZipImportTime: string | null;
+  livestreamMode: boolean;
+  liveHotlineText: string;
+  liveHiddenItems: string[] | null;
+  liveHotlineFx: number;
+  liveHotlineFy: number;
 }
 
 const STORAGE_KEY = "bds_web_settings";
@@ -141,7 +146,12 @@ const defaultSettings: SettingsState = {
   customExtractionRegex: null,
   fabOnLeft: false,
   lastZipExportTime: null,
-  lastZipImportTime: null
+  lastZipImportTime: null,
+  livestreamMode: false,
+  liveHotlineText: "",
+  liveHiddenItems: null,
+  liveHotlineFx: 1,
+  liveHotlineFy: 0.25
 };
 
 export class SettingsManager {
@@ -311,6 +321,22 @@ export class SettingsManager {
   public updateLastZipImportTime(time: Date | string = new Date()): void {
     const formatted = time instanceof Date ? time.toISOString() : String(time);
     this.update({ lastZipImportTime: formatted });
+  }
+
+  public setLivestreamMode(enabled: boolean): void {
+    this.update({ livestreamMode: enabled });
+  }
+
+  public setLiveHotlineText(text: string): void {
+    this.update({ liveHotlineText: text.slice(0, 40) });
+  }
+
+  public setLiveHidden(items: string[]): void {
+    this.update({ liveHiddenItems: items });
+  }
+
+  public setLiveHotlinePosition(fx: number, fy: number): void {
+    this.update({ liveHotlineFx: fx, liveHotlineFy: fy });
   }
 }
 

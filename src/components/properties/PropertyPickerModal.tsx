@@ -9,6 +9,7 @@ import {
   PickerCandidate
 } from "../../core/engine/map-survey-route";
 import { PropertyThumbnail } from "./PropertyThumbnail";
+import { useLivestream } from "../../core/live/use-livestream";
 
 export interface PropertyPickerRow {
   property: Property;
@@ -53,6 +54,7 @@ export const PropertyPickerModal: React.FC<PropertyPickerModalProps> = ({
   searchPlaceholder = "Tìm khu vực, giá, SĐT…"
 }) => {
   const [internalQuery, setInternalQuery] = useState("");
+  const { isLive } = useLivestream();
 
   const currentQuery = externalQuery !== undefined ? externalQuery : internalQuery;
   const handleQueryChange = (val: string) => {
@@ -65,8 +67,8 @@ export const PropertyPickerModal: React.FC<PropertyPickerModalProps> = ({
 
   const candidates: PickerCandidate[] = useMemo(() => {
     if (!pool) return [];
-    return buildPickerCandidates(pool, anchors, currentQuery, true);
-  }, [pool, anchors, currentQuery]);
+    return buildPickerCandidates(pool, anchors, currentQuery, !isLive);
+  }, [pool, anchors, currentQuery, isLive]);
 
   const displayRows: PropertyPickerRow[] = useMemo(() => {
     if (rows) return rows;

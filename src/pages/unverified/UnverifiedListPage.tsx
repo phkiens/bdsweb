@@ -32,6 +32,8 @@ import { ConfirmModal } from "../../components/common/ConfirmModal";
 import { PropertyFilter } from "../../core/engine/property-filter";
 import { MultiSelectBottomBar } from "../../components/common/MultiSelectBottomBar";
 import { useHideBottomNavWhile } from "../../components/common/bottom-nav-visibility";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import {
   MapSurveyRoute,
   getMapNavigationMessage
@@ -156,17 +158,20 @@ export const UnverifiedListPage: React.FC = () => {
     return await getDistinctAreas(db);
   }, []) || [];
 
+  const { isLive } = useLivestream();
+
   // Lọc và xếp hạng theo chuẩn tìm kiếm Android
   const rankedResult = useMemo(() => {
     if (!rawUnverifiedList) return { items: [], ownerMatchStart: -1 };
+    const allowOwner = !isLive;
     let matched = rawUnverifiedList.filter((p) =>
-      PropertyFilter.matchesQuery(p, searchQuery, true)
+      PropertyFilter.matchesQuery(p, searchQuery, allowOwner)
     );
     if (drillDownFilter) {
       matched = applyDrillDownFilter(matched, drillDownFilter);
     }
-    return PropertyFilter.rankSearchResults(matched, searchQuery, true);
-  }, [rawUnverifiedList, searchQuery, drillDownFilter]);
+    return PropertyFilter.rankSearchResults(matched, searchQuery, allowOwner);
+  }, [rawUnverifiedList, searchQuery, drillDownFilter, isLive]);
 
   const filteredList = rankedResult.items;
   const ownerMatchStart = rankedResult.ownerMatchStart;
@@ -319,6 +324,7 @@ export const UnverifiedListPage: React.FC = () => {
             <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <Inbox className="w-6 h-6 text-amber-600" />
               <span>Tin Chờ Khảo Sát</span>
+              <LivestreamBadge />
             </h1>
             <p className="text-xs text-slate-500 mt-0.5">
               Bất động sản bóc tách từ Zalo/FB hoặc chưa qua khảo sát thực địa ({rawUnverifiedList.length})

@@ -10,7 +10,8 @@ import {
   Sparkles,
   Plus,
   Building2,
-  Pencil
+  Pencil,
+  Lock
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { CustomerPropertyLink, isEligibleForMatching } from "../../core/models/customer";
@@ -23,10 +24,14 @@ import { CustomerAvatar } from "../../components/customers/CustomerAvatar";
 import { EditCustomerModal } from "../../components/customers/EditCustomerModal";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
 import { formatPropertyPrice } from "../../core/utils/property-price";
+import { useLivestream } from "../../core/live/use-livestream";
+import { maskOwnerName } from "../../core/live/privacy";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 
 export const CustomerDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { isLive } = useLivestream();
 
   const [phoneModalNumber, setPhoneModalNumber] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<"matches" | "linked" | null>(null);
@@ -117,17 +122,22 @@ export const CustomerDetailPage: React.FC = () => {
     navigate("/customers");
   };
 
+  const displayedCustomerName = isOwner ? maskOwnerName(customer.name, isLive) : customer.name;
+
   return (
     <div className="max-w-3xl mx-auto px-3 sm:px-4 py-3 sm:py-4 pb-24 md:pb-12">
       {/* Top Bar - Bổ sung nút Edit theo PARITY-CUST-001 */}
       <div className="flex items-center justify-between mb-3">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-xs sm:text-sm font-medium transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Quay lại</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-1 text-slate-600 hover:text-slate-900 text-xs sm:text-sm font-medium transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Quay lại</span>
+          </button>
+          <LivestreamBadge />
+        </div>
 
         <div className="flex items-center gap-1.5">
           {/* Nút sửa thông tin khách hàng (PARITY-CUST-001) */}
@@ -155,7 +165,7 @@ export const CustomerDetailPage: React.FC = () => {
         <div className="flex items-start gap-3.5">
           {/* Customer Avatar */}
           <CustomerAvatar
-            name={customer.name}
+            name={displayedCustomerName}
             avatarPath={customer.avatarPath}
             avatarDriveUrl={customer.avatarDriveUrl}
             size={56}
@@ -172,7 +182,16 @@ export const CustomerDetailPage: React.FC = () => {
                 >
                   {isOwner ? "Chủ nhà ký gửi" : customer.demandType || "Khách tìm mua"}
                 </span>
-                <span className="text-xs font-mono text-slate-500 font-medium">{customer.phone}</span>
+                <span className="text-xs font-mono text-slate-500 font-medium">
+                  {isLive ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-slate-400" />
+                      <span>Đã ẩn SĐT</span>
+                    </span>
+                  ) : (
+                    customer.phone
+                  )}
+                </span>
               </div>
 
               {/* Status or Metric */}
@@ -195,7 +214,9 @@ export const CustomerDetailPage: React.FC = () => {
               </div>
             </div>
 
-            <h1 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 truncate">{customer.name}</h1>
+            <h1 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 truncate">
+              {displayedCustomerName}
+            </h1>
           </div>
         </div>
 
@@ -222,35 +243,37 @@ export const CustomerDetailPage: React.FC = () => {
         )}
 
         {/* Contact Buttons */}
-        <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
-          <button
-            onClick={() => customer.phone && setPhoneModalNumber(customer.phone)}
-            disabled={!customer.phone}
-            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 cursor-pointer"
-          >
-            <Phone className="w-4 h-4 text-emerald-600" />
-            <span>Gọi điện</span>
-          </button>
+        {!isLive && (
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+            <button
+              onClick={() => customer.phone && setPhoneModalNumber(customer.phone)}
+              disabled={!customer.phone}
+              className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <Phone className="w-4 h-4 text-emerald-600" />
+              <span>Gọi điện</span>
+            </button>
 
-          <button
-            onClick={() =>
-              customer.phone && window.open(`https://zalo.me/${customer.phone}`, "_blank")
-            }
-            disabled={!customer.phone}
-            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-sky-50 text-slate-700 hover:text-sky-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 cursor-pointer"
-          >
-            <ExternalLink className="w-4 h-4 text-sky-600" />
-            <span>Mở Zalo</span>
-          </button>
+            <button
+              onClick={() =>
+                customer.phone && window.open(`https://zalo.me/${customer.phone}`, "_blank")
+              }
+              disabled={!customer.phone}
+              className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-sky-50 text-slate-700 hover:text-sky-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-40 cursor-pointer"
+            >
+              <ExternalLink className="w-4 h-4 text-sky-600" />
+              <span>Mở Zalo</span>
+            </button>
 
-          <a
-            href={`sms:${customer.phone}`}
-            className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-xl text-xs font-semibold transition-colors"
-          >
-            <MessageSquare className="w-4 h-4 text-blue-600" />
-            <span>Gửi SMS</span>
-          </a>
-        </div>
+            <a
+              href={`sms:${customer.phone}`}
+              className="flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-xl text-xs font-semibold transition-colors"
+            >
+              <MessageSquare className="w-4 h-4 text-blue-600" />
+              <span>Gửi SMS</span>
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}

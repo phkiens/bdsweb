@@ -32,6 +32,8 @@ import { PropertyFilterBottomSheet } from "../../components/properties/PropertyF
 import { ConfirmModal } from "../../components/common/ConfirmModal";
 import { MultiSelectBottomBar } from "../../components/common/MultiSelectBottomBar";
 import { useHideBottomNavWhile } from "../../components/common/bottom-nav-visibility";
+import { useLivestream } from "../../core/live/use-livestream";
+import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import {
   MapSurveyRoute,
   getMapNavigationMessage
@@ -105,9 +107,12 @@ export const PropertyListPage: React.FC = () => {
       .toArray();
   }, [filterState.scope]);
 
+  const { isLive } = useLivestream();
+
   // Derived filtered & sorted properties (ranked with Owner Match parity)
   const rankedResults = useMemo(() => {
     if (!properties) return { items: [], ownerMatchStart: -1 };
+    const allowOwner = !isLive;
     let matched = properties.filter((p) =>
       PropertyFilter.matches(
         p,
@@ -115,15 +120,15 @@ export const PropertyListPage: React.FC = () => {
         searchQuery,
         viewTodayOnly,
         PropertyListMode.VERIFIED,
-        true
+        allowOwner
       )
     );
     if (drillDownFilter) {
       matched = applyDrillDownFilter(matched, drillDownFilter);
     }
     const sorted = sortProperties(matched, filterState.sortBy);
-    return PropertyFilter.rankSearchResults(sorted, searchQuery, true);
-  }, [properties, filterState, searchQuery, viewTodayOnly, drillDownFilter]);
+    return PropertyFilter.rankSearchResults(sorted, searchQuery, allowOwner);
+  }, [properties, filterState, searchQuery, viewTodayOnly, drillDownFilter, isLive]);
 
   const filteredProperties = rankedResults.items;
   const ownerMatchStart = rankedResults.ownerMatchStart;
@@ -386,10 +391,13 @@ export const PropertyListPage: React.FC = () => {
 
       {/* Counter Summary */}
       <div className="flex items-center justify-between text-xs text-slate-500 mb-2 px-1">
-        <span>
-          Hiển thị <strong>{filteredProperties.length}</strong> / {properties.length} BĐS{" "}
-          {filterState.scope === FilterScope.ALL ? "(Tất cả)" : "chính thức"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span>
+            Hiển thị <strong>{filteredProperties.length}</strong> / {properties.length} BĐS{" "}
+            {filterState.scope === FilterScope.ALL ? "(Tất cả)" : "chính thức"}
+          </span>
+          <LivestreamBadge />
+        </div>
         <div className="flex items-center gap-2">
           {viewTodayOnly && (
             <span className="text-blue-600 font-medium">Đang lọc xem hôm nay</span>

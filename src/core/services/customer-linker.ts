@@ -10,15 +10,21 @@ export type OwnerSaveNotice =
   | { type: "NewOwnerCreated"; name: string }
   | { type: "OwnerRenamed"; newName: string; otherPropertyCount: number };
 
-export function ownerSaveNoticeText(notice: OwnerSaveNotice): string {
+export function ownerSaveNoticeText(notice: OwnerSaveNotice, isLivestream: boolean = false): string {
   switch (notice.type) {
     case "NewOwnerCreated":
-      return `Đã thêm khách chủ nhà mới: ${notice.name}`;
+      return isLivestream
+        ? "Đã thêm khách chủ nhà mới"
+        : `Đã thêm khách chủ nhà mới: ${notice.name}`;
     case "OwnerRenamed":
       if (notice.otherPropertyCount > 0) {
-        return `Đã đổi tên chủ thành ${notice.newName} ở cả ${notice.otherPropertyCount} căn khác`;
+        return isLivestream
+          ? `Đã đổi tên chủ ở cả ${notice.otherPropertyCount} căn khác`
+          : `Đã đổi tên chủ thành ${notice.newName} ở cả ${notice.otherPropertyCount} căn khác`;
       }
-      return `Đã đổi tên khách thành ${notice.newName}`;
+      return isLivestream
+        ? "Đã đổi tên khách"
+        : `Đã đổi tên khách thành ${notice.newName}`;
   }
 }
 
