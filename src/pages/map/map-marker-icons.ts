@@ -3,19 +3,24 @@ import { MarkerColorType } from "../../core/engine/map-survey-engine";
 
 export function createMapPinIcon(
   colorType: MarkerColorType,
-  isSelected: boolean = false
+  isSelected: boolean = false,
+  orderNumber?: number | null
 ): L.DivIcon {
   const isBlue = colorType === "blue";
   const isOrange = colorType === "orange";
+  const isRed = colorType === "red";
 
-  const pinColor = isBlue ? "#2563eb" : isOrange ? "#ea580c" : "#10b981";
+  const pinColor = isRed ? "#dc2626" : isBlue ? "#2563eb" : isOrange ? "#ea580c" : "#10b981";
   const ringColor = isSelected ? "#ef4444" : "rgba(0, 0, 0, 0.2)";
   const ringWidth = isSelected ? 3 : 1;
   const size = isSelected ? 36 : 30;
 
-  const innerContent = isBlue
-    ? "<path d=\"M16 11L11 15H13V19H19V15H21L16 11Z\" fill=\"" + pinColor + "\"/>"
-    : "<circle cx=\"16\" cy=\"15\" r=\"3.5\" fill=\"" + pinColor + "\"/>";
+  const innerContent =
+    orderNumber != null
+      ? `<text x="16" y="15.5" font-size="11" font-weight="bold" fill="#dc2626" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif">${orderNumber}</text>`
+      : isBlue
+      ? '<path d="M16 11L11 15H13V19H19V15H21L16 11Z" fill="' + pinColor + '"/>'
+      : '<circle cx="16" cy="15" r="3.5" fill="' + pinColor + '"/>';
 
   const html =
     "<div style=\"position: relative; width: " +

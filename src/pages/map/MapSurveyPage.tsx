@@ -24,9 +24,17 @@ import {
   filterMapProperties,
   getMarkerColorType,
   MapScanCenter,
-  MapPropertyItem
+  MapPropertyItem,
+  MarkerColorType,
+  ROUTE_NEARBY_DEFAULT_RADIUS_KM,
+  NORMAL_NEARBY_DEFAULT_RADIUS_KM,
+  ROUTE_RADII_OPTIONS,
+  getPropertyKey,
+  computeRouteCandidateProperties,
+  computeRouteNearbyProperties,
+  combineRouteAndNearbyProperties,
+  toggleRouteSelection
 } from "../../core/engine/map-survey-engine";
-import { isValidCoordinate } from "../../core/engine/map-survey-route";
 import { isInVietnam } from "../../core/utils/coordinates";
 import { createMapPinIcon, createGpsUserIcon } from "./map-marker-icons";
 import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
@@ -68,6 +76,18 @@ export const MapSurveyPage: React.FC = () => {
       : [];
   }, [selectedKeysParam]);
   const isRouteMode = routeKeys.length > 0;
+
+  // Selected keys for route mode (supports adding nearby properties to route)
+  const [selectedRouteKeys, setSelectedRouteKeys] = useState<string[]>(routeKeys);
+  const [pendingMapPoint, setPendingMapPoint] = useState<{ latitude: number; longitude: number } | null>(null);
+  const pendingMarkerRef = useRef<L.Marker | null>(null);
+
+  // routeKeys đổi (mở bản đồ với danh sách mới) ⇒ đặt lại lựa chọn ngay khi vẽ (mẫu "điều chỉnh state khi prop đổi" của React)
+  const [prevRouteKeys, setPrevRouteKeys] = useState(routeKeys);
+  if (prevRouteKeys !== routeKeys) {
+    setPrevRouteKeys(routeKeys);
+    setSelectedRouteKeys(routeKeys);
+  }
 
   // GPS & Radius survey state (MAP-SURVEY-GPS-001)
   const [userScanCenter, setUserScanCenter] = useState<MapScanCenter | null>(null);
@@ -115,7 +135,7 @@ export const MapSurveyPage: React.FC = () => {
     return null;
   }, [userScanCenter, searchParams, properties]);
 
-  const radiusKm = userRadiusKm !== null ? userRadiusKm : scanCenter ? 2.0 : null;
+  const radiusKm = userRadiusKm !== null ? userRadiusKm : scanCenter ? (isRouteMode ? ROUTE_NEARBY_DEFAULT_RADIUS_KM : 2.0) : null;
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -166,34 +186,95 @@ export const MapSurveyPage: React.FC = () => {
     gpsLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
+    // Long press and context menu handling for finding nearby properties
+    let pressTimer: ReturnType<typeof setTimeout> | null = null;
+    let pressStartPos: L.Point | null = null;
+
+    map.on("mousedown", (e: L.LeafletMouseEvent) => {
+      if (e.originalEvent.button !== 0) return;
+      pressStartPos = e.containerPoint;
+      pressTimer = setTimeout(() => {
+        setPendingMapPoint({ latitude: e.latlng.lat, longitude: e.latlng.lng });
+      }, 500);
+    });
+
+    map.on("mousemove", (e: L.LeafletMouseEvent) => {
+      if (pressStartPos && pressTimer) {
+        if (pressStartPos.distanceTo(e.containerPoint) > 10) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      }
+    });
+
+    map.on("mouseup", () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    });
+
+    map.on("contextmenu", (e: L.LeafletMouseEvent) => {
+      L.DomEvent.preventDefault(e.originalEvent);
+      setPendingMapPoint({ latitude: e.latlng.lat, longitude: e.latlng.lng });
+    });
+
     const invalidateTimer = setTimeout(() => {
       map.invalidateSize();
     }, 150);
 
     return () => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+      }
       clearTimeout(invalidateTimer);
       map.remove();
       mapRef.current = null;
     };
   }, [searchParams]);
 
-  // Danh sách căn cho chế độ lộ trình theo thứ tự routeKeys
-  const routeProperties = useMemo(() => {
+  // Synchronize temporary marker for pending long-press / contextmenu point
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (pendingMarkerRef.current) {
+      pendingMarkerRef.current.remove();
+      pendingMarkerRef.current = null;
+    }
+    if (pendingMapPoint) {
+      const icon = createMapPinIcon("orange", true);
+      const marker = L.marker([pendingMapPoint.latitude, pendingMapPoint.longitude], {
+        icon,
+        title: "Điểm đã chọn"
+      }).addTo(mapRef.current);
+      pendingMarkerRef.current = marker;
+    }
+  }, [pendingMapPoint]);
+
+  // Danh sách căn cho chế độ lộ trình theo thứ tự routeKeys + selectedRouteKeys
+  const routeCandidateProperties = useMemo(() => {
     if (!isRouteMode || !properties) return [];
-    const propMap = new Map<string, Property>();
-    properties.forEach((p) => {
-      propMap.set((p.isVerified ? "official_" : "unverified_") + p.id, p);
-      propMap.set(p.id, p);
-    });
-    return routeKeys
-      .map((k) => propMap.get(k))
-      .filter((p): p is Property => p !== undefined && isValidCoordinate(p.latitude, p.longitude));
-  }, [isRouteMode, properties, routeKeys]);
+    return computeRouteCandidateProperties(properties, routeKeys, selectedRouteKeys);
+  }, [isRouteMode, properties, routeKeys, selectedRouteKeys]);
+
+  // Căn quanh đây ở chế độ lộ trình (MAP_POINT scanCenter)
+  const routeNearbyProperties = useMemo(() => {
+    if (!isRouteMode || !properties || userScanCenter?.type !== "MAP_POINT") return [];
+    return computeRouteNearbyProperties(
+      properties,
+      routeCandidateProperties,
+      userScanCenter,
+      radiusKm ?? ROUTE_NEARBY_DEFAULT_RADIUS_KM
+    );
+  }, [isRouteMode, properties, userScanCenter, routeCandidateProperties, radiusKm]);
 
   // Filtered properties based on Route Mode or GPS/Center and Radius
   const filteredProperties = useMemo<MapPropertyItem[]>(() => {
     if (isRouteMode) {
-      return routeProperties;
+      return combineRouteAndNearbyProperties(
+        routeCandidateProperties,
+        routeNearbyProperties,
+        userGps
+      );
     }
     if (!properties) return [];
     const sources = filterState.sources ?? new Set(["OFFICIAL", "UNVERIFIED"]);
@@ -211,13 +292,23 @@ export const MapSurveyPage: React.FC = () => {
       );
     });
     return filterMapProperties(candidateProps, scanCenter, radiusKm, false);
-  }, [isRouteMode, routeProperties, properties, scanCenter, radiusKm, viewTodayOnly, filterState]);
+  }, [
+    isRouteMode,
+    routeCandidateProperties,
+    routeNearbyProperties,
+    userGps,
+    properties,
+    scanCenter,
+    radiusKm,
+    viewTodayOnly,
+    filterState
+  ]);
 
   // Tự động dựng lộ trình khi vào bản đồ từ nút "Xem trên bản đồ"
   useEffect(() => {
-    if (!isRouteMode || routeProperties.length === 0 || !mapRef.current) return;
+    if (!isRouteMode || routeCandidateProperties.length === 0 || !mapRef.current) return;
 
-    const points = routeProperties.map((p) => ({
+    const points = routeCandidateProperties.map((p) => ({
       id: p.id,
       latitude: p.latitude!,
       longitude: p.longitude!,
@@ -240,13 +331,19 @@ export const MapSurveyPage: React.FC = () => {
       }).addTo(mapRef.current);
 
       polylineLayerRef.current = polyline;
-      mapRef.current.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+      if (!hasInitialFitRef.current) {
+        mapRef.current.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+        hasInitialFitRef.current = true;
+      }
       setRouteInfo(`Lộ trình qua ${result.optimizedPoints.length} BĐS đã chọn.`);
     } else if (points.length === 1) {
-      mapRef.current.setView([points[0].latitude, points[0].longitude], 16);
+      if (!hasInitialFitRef.current) {
+        mapRef.current.setView([points[0].latitude, points[0].longitude], 16);
+        hasInitialFitRef.current = true;
+      }
       setRouteInfo("1 BĐS trên bản đồ.");
     }
-  }, [isRouteMode, routeProperties]);
+  }, [isRouteMode, routeCandidateProperties]);
 
   // Derived selected index and property
   const selectedIndex = useMemo(() => {
@@ -309,8 +406,14 @@ export const MapSurveyPage: React.FC = () => {
 
     filteredProperties.forEach((p) => {
       const isSelected = selectedPropertyId === p.id;
-      const colorType = getMarkerColorType(p);
-      const icon = createMapPinIcon(colorType, isSelected);
+      const key = getPropertyKey(p);
+      const selectIdx = isRouteMode ? selectedRouteKeys.indexOf(key) : -1;
+      const isSelectedInRoute = selectIdx !== -1;
+      const orderNumber = isSelectedInRoute ? selectIdx + 1 : null;
+      const colorType: MarkerColorType = isSelectedInRoute
+        ? "red"
+        : getMarkerColorType(p);
+      const icon = createMapPinIcon(colorType, isSelected, orderNumber);
 
       const marker = L.marker([p.latitude!, p.longitude!], { icon });
       marker.on("click", () => {
@@ -334,7 +437,7 @@ export const MapSurveyPage: React.FC = () => {
         hasInitialFitRef.current = true;
       }
     }
-  }, [filteredProperties, selectedPropertyId, searchParams, userScanCenter]);
+  }, [filteredProperties, selectedPropertyId, searchParams, userScanCenter, isRouteMode, selectedRouteKeys]);
 
   // Draw or update radius circle around scanCenter
   useEffect(() => {
@@ -432,10 +535,31 @@ export const MapSurveyPage: React.FC = () => {
     }
   };
 
-  const handleOptimizeRoute = () => {
-    if (!filteredProperties || !mapRef.current) return;
+  const handleSetMapPointCenter = (lat: number, lng: number) => {
+    setUserScanCenter({
+      type: "MAP_POINT",
+      latitude: lat,
+      longitude: lng,
+      label: "Điểm đã chọn"
+    });
+    setUserRadiusKm(isRouteMode ? ROUTE_NEARBY_DEFAULT_RADIUS_KM : NORMAL_NEARBY_DEFAULT_RADIUS_KM);
+    mapRef.current?.panTo([lat, lng], { animate: true });
+  };
 
-    const points = filteredProperties
+  const handleClearRouteNearby = () => {
+    setUserScanCenter(null);
+    setUserRadiusKm(null);
+  };
+
+  const handleToggleRouteSelection = (p: Property) => {
+    setSelectedRouteKeys((prev) => toggleRouteSelection(prev, p));
+  };
+
+  const handleOptimizeRoute = () => {
+    const candidateList = isRouteMode ? routeCandidateProperties : filteredProperties;
+    if (!candidateList || !mapRef.current) return;
+
+    const points = candidateList
       .filter((p) => p.latitude !== null && p.longitude !== null)
       .map((p) => ({
         id: p.id,
@@ -488,7 +612,7 @@ export const MapSurveyPage: React.FC = () => {
           {isRouteMode && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-xs font-semibold shadow-xs">
               <Route className="w-3.5 h-3.5 text-blue-600" />
-              <span>Lộ trình ({filteredProperties.length} BĐS)</span>
+              <span>Lộ trình ({routeCandidateProperties.length} BĐS)</span>
               <button
                 onClick={() => navigate("/map")}
                 className="text-slate-400 hover:text-slate-600 ml-1 p-0.5 cursor-pointer"
@@ -497,6 +621,18 @@ export const MapSurveyPage: React.FC = () => {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+          )}
+
+          {isRouteMode && userScanCenter?.type === "MAP_POINT" && (
+            <button
+              onClick={handleClearRouteNearby}
+              data-testid="route_nearby_chip"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-800 rounded-full text-xs font-semibold shadow-md border border-slate-200 cursor-pointer transition-all active:scale-95"
+              title="Tắt các căn quanh đây"
+            >
+              <span>Quanh đây: {routeNearbyProperties.length} căn</span>
+              <X className="w-3.5 h-3.5 text-slate-400 hover:text-slate-700" />
+            </button>
           )}
 
           {!isRouteMode && (
@@ -541,8 +677,8 @@ export const MapSurveyPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Row 2: Radius Filter Bar (MAP-SURVEY-GPS-001) - Ẩn khi đang ở chế độ lộ trình */}
-        {!isRouteMode && (
+        {/* Row 2: Radius Filter Bar (MAP-SURVEY-GPS-001) - Hiện khi không ở lộ trình HOẶC khi đang bật MAP_POINT */}
+        {(!isRouteMode || userScanCenter?.type === "MAP_POINT") && (
           <div className="p-2.5 bg-white/95 backdrop-blur-xs rounded-2xl shadow-lg border border-slate-200 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700">
             <span className="flex items-center gap-1 text-slate-500">
@@ -552,12 +688,12 @@ export const MapSurveyPage: React.FC = () => {
 
             <div className="flex items-center gap-1.5">
               <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[10px]">
-                {filteredProperties.length} BĐS
+                {isRouteMode ? `${routeNearbyProperties.length} căn quanh đây` : `${filteredProperties.length} BĐS`}
               </span>
               {scanCenter && (
                 <button
-                  onClick={handleClearScanCenter}
-                  className="text-slate-400 hover:text-red-600 p-0.5"
+                  onClick={isRouteMode ? handleClearRouteNearby : handleClearScanCenter}
+                  className="text-slate-400 hover:text-red-600 p-0.5 cursor-pointer"
                   title="Hủy tâm quét"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -567,20 +703,20 @@ export const MapSurveyPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-            {[
+            {(isRouteMode ? ROUTE_RADII_OPTIONS : [
               { val: null, label: "Tất cả" },
               { val: 0.5, label: "500m" },
               { val: 1.0, label: "1 km" },
               { val: 2.0, label: "2 km" },
               { val: 5.0, label: "5 km" }
-            ].map((b) => {
+            ]).map((b) => {
               const isSelected = radiusKm === b.val;
               return (
                 <button
                   key={String(b.val)}
                   onClick={() => {
                     setUserRadiusKm(b.val);
-                    if (b.val !== null && scanCenter === null && userGps !== null) {
+                    if (!isRouteMode && b.val !== null && scanCenter === null && userGps !== null) {
                       setUserScanCenter({
                         type: "GPS",
                         latitude: userGps.latitude,
@@ -603,6 +739,12 @@ export const MapSurveyPage: React.FC = () => {
 
           {/* Color Legend (Parity with MapMarkerFactory.kt) */}
           <div className="flex items-center gap-3 pt-1 border-t border-slate-100 text-[11px] text-slate-500">
+            {isRouteMode && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-600"></span>
+                <span>Đã chọn lộ trình</span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
               <span>BĐS chính thức</span>
@@ -734,14 +876,37 @@ export const MapSurveyPage: React.FC = () => {
 
           {/* Footer Actions */}
           <div className="flex gap-2 mt-3 pt-2.5 border-t border-slate-100">
-            <button
-              onClick={() => handleSelectPropertyAsCenter(selectedProperty)}
-              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
-              title="Đặt làm tâm quét bán kính"
-            >
-              <Target className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Tâm quét</span>
-            </button>
+            {isRouteMode ? (
+              <button
+                onClick={() => handleToggleRouteSelection(selectedProperty)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  selectedRouteKeys.includes(getPropertyKey(selectedProperty)) || selectedRouteKeys.includes(selectedProperty.id)
+                    ? "bg-red-50 hover:bg-red-100 text-red-700 border border-red-200"
+                    : "bg-blue-600 hover:bg-blue-700 text-white shadow-xs"
+                }`}
+                title={
+                  selectedRouteKeys.includes(getPropertyKey(selectedProperty)) || selectedRouteKeys.includes(selectedProperty.id)
+                    ? "Bỏ khỏi lộ trình"
+                    : "Chọn lộ trình"
+                }
+              >
+                <Route className="w-3.5 h-3.5" />
+                <span>
+                  {selectedRouteKeys.includes(getPropertyKey(selectedProperty)) || selectedRouteKeys.includes(selectedProperty.id)
+                    ? "Bỏ khỏi lộ trình"
+                    : "Chọn lộ trình"}
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSelectPropertyAsCenter(selectedProperty)}
+                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                title="Đặt làm tâm quét bán kính"
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Tâm quét</span>
+              </button>
+            )}
 
             <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${selectedProperty.latitude},${selectedProperty.longitude}`}
@@ -805,6 +970,37 @@ export const MapSurveyPage: React.FC = () => {
           setFilterState({ sources: new Set(["OFFICIAL", "UNVERIFIED"]) })
         }
       />
+
+      {/* Confirm Map Point Dialog (Triggered by Long-press or Right-click on Map) */}
+      {pendingMapPoint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="font-bold text-slate-900 text-base">Tìm quanh điểm này?</h3>
+            <p className="text-sm text-slate-600">
+              {isRouteMode
+                ? "Hiện các căn trong bán kính 1 km quanh điểm này, lộ trình vẫn giữ nguyên."
+                : "Dùng vị trí đã chọn làm tâm tìm kiếm trong bán kính 5 km."}
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setPendingMapPoint(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => {
+                  handleSetMapPointCenter(pendingMapPoint.latitude, pendingMapPoint.longitude);
+                  setPendingMapPoint(null);
+                }}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-xs cursor-pointer"
+              >
+                Tìm quanh đây
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
