@@ -12,6 +12,7 @@ import { MapSurveyPage } from "./pages/map/MapSurveyPage";
 import { CustomerListPage } from "./pages/customers/CustomerListPage";
 import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { StatisticsPage } from "./pages/statistics/StatisticsPage";
+import { PriceDropPage } from "./pages/statistics/PriceDropPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 import { ApiConfigPage } from "./pages/settings/ApiConfigPage";
 import { SyncHistoryPage } from "./pages/settings/SyncHistoryPage";
@@ -87,6 +88,7 @@ const AppContent: React.FC = () => {
 
           {/* Statistics */}
           <Route path="/statistics" element={<StatisticsPage />} />
+          <Route path="/price-drops" element={<PriceDropPage />} />
 
           {/* Settings */}
           <Route path="/settings" element={<SettingsPage />} />

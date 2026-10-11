@@ -11,7 +11,9 @@ import {
   CheckCircle2,
   Database,
   ChevronRight,
-  FileArchive
+  FileArchive,
+  BarChart3,
+  TrendingDown
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { syncManager } from "../../data/sync/sync-manager";
@@ -202,6 +204,41 @@ export const SettingsPage: React.FC = () => {
             <span>{syncResult}</span>
           </div>
         )}
+      </div>
+
+      {/* Tools Section (Nhóm Công cụ giống Android) */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs divide-y divide-slate-100 overflow-hidden">
+        <button
+          onClick={() => navigate("/statistics")}
+          className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-800">Thống kê</div>
+              <div className="text-xs text-slate-500">Tổng quan và phân tích dữ liệu BĐS</div>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </button>
+
+        <button
+          onClick={() => navigate("/price-drops")}
+          className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <TrendingDown className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-800">Giá vừa giảm</div>
+              <div className="text-xs text-slate-500">Danh sách BĐS vừa điều chỉnh giảm giá</div>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400" />
+        </button>
       </div>
 
       {/* Navigation Settings Options */}
