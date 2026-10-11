@@ -24,9 +24,13 @@ export enum CustomerStatus {
 
 export enum CustomerPropertyRole {
   OWNER = "OWNER",
+  CO_OWNER = "CO_OWNER",
   VIEWER = "VIEWER",
   VIEWED = "VIEWED"
 }
+
+export const LinkRole = CustomerPropertyRole;
+export type LinkRole = CustomerPropertyRole;
 
 export enum Direction {
   EAST = "Đông",

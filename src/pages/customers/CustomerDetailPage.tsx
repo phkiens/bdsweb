@@ -15,7 +15,7 @@ import {
 import { db } from "../../data/local/db";
 import { CustomerPropertyLink, isEligibleForMatching } from "../../core/models/customer";
 import { Property } from "../../core/models/property";
-import { CustomerRole } from "../../core/models/enums";
+import { CustomerRole, CustomerPropertyRole } from "../../core/models/enums";
 import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
@@ -87,7 +87,9 @@ export const CustomerDetailPage: React.FC = () => {
   // Owner property statistics
   const ownerStats = useMemo(() => {
     if (!linkedItems) return { totalCount: 0, forSaleCount: 0, soldCount: 0 };
-    const ownerItems = linkedItems.filter((i) => i.link.role === "OWNER");
+    const ownerItems = linkedItems.filter(
+      (i) => i.link.role === CustomerPropertyRole.OWNER || i.link.role === CustomerPropertyRole.CO_OWNER
+    );
     const totalCount = ownerItems.length;
     const forSaleCount = ownerItems.filter((i) => i.property.status === "Đang bán").length;
     const soldCount = ownerItems.filter((i) => i.property.status === "Đã bán").length;
@@ -256,7 +258,7 @@ export const CustomerDetailPage: React.FC = () => {
         <div className="border-b border-slate-200 mb-3 pb-2 flex items-center justify-between">
           <h2 className="text-sm md:text-base font-bold text-slate-800 flex items-center gap-2">
             <Building2 className="w-4 h-4 text-amber-600" />
-            <span>Kho BĐS ký gửi của chủ nhà ({(linkedItems || []).length})</span>
+            <span>Kho BĐS ký gửi của chủ nhà ({ownerStats.totalCount})</span>
           </h2>
         </div>
       ) : (
@@ -397,12 +399,16 @@ export const CustomerDetailPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span
                       className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                        link.role === "OWNER"
+                        link.role === CustomerPropertyRole.OWNER || link.role === CustomerPropertyRole.CO_OWNER
                           ? "bg-amber-100 text-amber-800"
                           : "bg-purple-100 text-purple-800"
                       }`}
                     >
-                      {link.role === "OWNER" ? "Chủ sở hữu" : "Đã dẫn xem"}
+                      {link.role === CustomerPropertyRole.OWNER
+                        ? "Chủ sở hữu"
+                        : link.role === CustomerPropertyRole.CO_OWNER
+                        ? "Đồng sở hữu"
+                        : "Đã dẫn xem"}
                     </span>
                     <span className="font-semibold text-slate-800 text-sm md:text-base truncate">
                       {property.area}

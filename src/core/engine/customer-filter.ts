@@ -5,6 +5,7 @@ import {
   CustomerFilter,
   CustomerRole,
   CustomerStatus,
+  CustomerPropertyRole,
   OwnerStockFilter,
   OwnerPropertySort,
   PropertyStatus
@@ -19,7 +20,7 @@ export interface OwnerPropertyStats {
 
 /**
  * Tính toán thống kê số nhà của từng chủ nhà:
- * - totalCount: Tổng số BĐS sở hữu chưa xóa
+ * - totalCount: Tổng số BĐS sở hữu chưa xóa (tính cả OWNER và CO_OWNER như Android)
  * - forSaleCount: Số BĐS đang bán (status = 'Đang bán')
  * - soldCount: Số BĐS đã bán (status = 'Đã bán')
  * Khớp 100% với truy vấn SQL getOwnerPropertyStatsFlow() trong CustomerDao.kt.
@@ -38,7 +39,7 @@ export function calculateOwnerPropertyStats(
   const stats: Record<string, OwnerPropertyStats> = {};
 
   for (const link of links) {
-    if (link.role !== CustomerRole.OWNER || link.isDeleted) continue;
+    if ((link.role !== CustomerRole.OWNER && link.role !== CustomerPropertyRole.CO_OWNER) || link.isDeleted) continue;
     const prop = propMap.get(link.propertyId);
     if (!prop) continue;
 

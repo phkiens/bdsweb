@@ -20,18 +20,37 @@ export async function ensureCustomerForProperty(
 
   // Trường hợp (1): Có explicitCustomerId được chỉ định (ví dụ khi bấm thêm BĐS từ trang chi tiết khách hàng)
   if (targetExplicitId) {
-    const existingLinks = await db.customer_property_links
+    const now = Date.now();
+    const existingOwnerLink = await db.customer_property_links
       .where("propertyId")
       .equals(property.id)
-      .filter((l) => l.customerId === targetExplicitId && !l.isDeleted)
+      .filter((l) => l.customerId === targetExplicitId && l.role === CustomerRole.OWNER && !l.isDeleted)
+      .first();
+
+    // Soft-delete các liên kết OWNER khác (KHÔNG động vào CO_OWNER như Android)
+    const otherOwnerLinks = await db.customer_property_links
+      .where("propertyId")
+      .equals(property.id)
+      .filter((l) => l.role === CustomerRole.OWNER && l.customerId !== targetExplicitId && !l.isDeleted)
       .toArray();
 
-    if (existingLinks.length === 0) {
-      const now = Date.now();
+    for (const link of otherOwnerLinks) {
+      await db.customer_property_links.update([link.customerId, property.id], {
+        isDeleted: true,
+        updatedAt: now,
+        isSynced: false
+      });
+      await db.enqueueOutbox("LINK", `${link.customerId}:::${property.id}`, "DELETE");
+    }
+
+    if (!existingOwnerLink) {
+      const existingLink = await db.customer_property_links.get([targetExplicitId, property.id]);
       await db.customer_property_links.put({
         customerId: targetExplicitId,
         propertyId: property.id,
         role: CustomerRole.OWNER,
+        viewDate: existingLink?.viewDate ?? null,
+        viewNote: existingLink?.viewNote ?? null,
         updatedAt: now,
         isDeleted: false,
         isSynced: false
@@ -136,10 +155,29 @@ export async function ensureCustomerForProperty(
 
   if (existingLinksForPair.length === 0) {
     const now = Date.now();
+    // Soft-delete các liên kết OWNER khác (KHÔNG động vào CO_OWNER như Android)
+    const otherOwnerLinks = await db.customer_property_links
+      .where("propertyId")
+      .equals(property.id)
+      .filter((l) => l.role === CustomerRole.OWNER && l.customerId !== customerId && !l.isDeleted)
+      .toArray();
+
+    for (const link of otherOwnerLinks) {
+      await db.customer_property_links.update([link.customerId, property.id], {
+        isDeleted: true,
+        updatedAt: now,
+        isSynced: false
+      });
+      await db.enqueueOutbox("LINK", `${link.customerId}:::${property.id}`, "DELETE");
+    }
+
+    const existingPairLink = await db.customer_property_links.get([customerId, property.id]);
     await db.customer_property_links.put({
       customerId,
       propertyId: property.id,
       role: CustomerRole.OWNER,
+      viewDate: existingPairLink?.viewDate ?? null,
+      viewNote: existingPairLink?.viewNote ?? null,
       updatedAt: now,
       isDeleted: false,
       isSynced: false

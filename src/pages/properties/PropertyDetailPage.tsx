@@ -22,7 +22,18 @@ import {
   X
 } from "lucide-react";
 import { db } from "../../data/local/db";
-import { PropertyStatus } from "../../core/models/enums";
+import { PropertyStatus, CustomerRole, CustomerPropertyRole } from "../../core/models/enums";
+import { Customer } from "../../core/models/customer";
+import {
+  getCoOwners,
+  addCoOwner,
+  addNewCoOwner,
+  removeCoOwner,
+  reconcileOwnerStatus,
+  getActiveOwnerAndCoOwnerLinksForProperty
+} from "../../core/services/co-owner";
+import { PropertyCoOwnersSection } from "../../components/properties/PropertyCoOwnersSection";
+import { PropertyAddCoOwnerDialog } from "../../components/properties/PropertyAddCoOwnerDialog";
 import { MatchEngine } from "../../core/engine/match-engine";
 import { PhoneActionModal } from "../../components/common/PhoneActionModal";
 import { syncManager } from "../../data/sync/sync-manager";
@@ -147,6 +158,23 @@ export const PropertyDetailPage: React.FC = () => {
     return decodedDesc.first;
   }, [property, decodedDesc.first]);
 
+  const [showAddCoOwnerModal, setShowAddCoOwnerModal] = useState(false);
+  const coOwners = useLiveQuery(
+    async () => (id ? getCoOwners(db, id) : []),
+    [id]
+  );
+  const mainOwnerCustomerId = property?.linkedCustomerId;
+  const excludedCoOwnerCustomerIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (mainOwnerCustomerId) ids.add(mainOwnerCustomerId);
+    (propertyLinks || []).forEach((l) => {
+      if (l.role === CustomerRole.OWNER || l.role === CustomerPropertyRole.CO_OWNER) {
+        ids.add(l.customerId);
+      }
+    });
+    return ids;
+  }, [mainOwnerCustomerId, propertyLinks]);
+
   if (!property) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -167,15 +195,57 @@ export const PropertyDetailPage: React.FC = () => {
     .filter((item) => item.result.score > 0)
     .sort((a, b) => b.result.score - a.result.score);
 
+  const handlePickCoOwner = async (customerId: string) => {
+    if (!property) return;
+    const result = await addCoOwner(db, property.id, customerId);
+    let msg = "Không thể thêm đồng sở hữu";
+    if (result.type === "Added") {
+      msg = result.convertedFromBuyer
+        ? "Đã thêm đồng sở hữu (chuyển sang Chủ nhà)"
+        : "Đã thêm đồng sở hữu";
+    } else if (result.type === "AlreadyMainOwner") {
+      msg = "Người này đang là chủ chính";
+    } else if (result.type === "AlreadyCoOwner") {
+      msg = "Người này đã là đồng sở hữu";
+    }
+    alert(msg);
+  };
+
+  const handleCreateNewCoOwner = async (name: string, phone: string) => {
+    if (!property) return;
+    const result = await addNewCoOwner(db, property.id, name, phone);
+    let msg = "Không thể thêm đồng sở hữu";
+    if (result.type === "Added") {
+      msg = result.convertedFromBuyer
+        ? "Đã thêm đồng sở hữu (chuyển sang Chủ nhà)"
+        : "Đã thêm đồng sở hữu";
+    } else if (result.type === "AlreadyMainOwner") {
+      msg = "Người này đang là chủ chính";
+    } else if (result.type === "AlreadyCoOwner") {
+      msg = "Người này đã là đồng sở hữu";
+    }
+    alert(msg);
+  };
+
+  const handleRemoveCoOwner = async (coOwner: Customer) => {
+    if (!property) return;
+    await removeCoOwner(db, property.id, coOwner.id);
+    alert("Đã gỡ đồng sở hữu");
+  };
+
   const handleDelete = async () => {
     if (!window.confirm("Bạn có chắc muốn xóa bất động sản này?")) return;
     const now = Date.now();
+    const ownerLinks = await getActiveOwnerAndCoOwnerLinksForProperty(db, property.id);
     await db.properties.update(property.id, {
       isDeleted: true,
       updatedAt: now,
       isTextSynced: false
     });
     await db.enqueueOutbox("PROPERTY", property.id, "DELETE");
+    for (const link of ownerLinks) {
+      await reconcileOwnerStatus(db, link.customerId);
+    }
     syncManager.pushChanges();
     navigate("/properties");
   };
@@ -573,6 +643,15 @@ export const PropertyDetailPage: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Co-Owners Section */}
+          <PropertyCoOwnersSection
+            coOwners={coOwners || []}
+            onOpenCustomer={(customerId) => navigate(`/customers/${customerId}`)}
+            onPhoneClick={(phone) => setPhoneModalNumber(phone)}
+            onRemoveCoOwner={handleRemoveCoOwner}
+            onAddClick={() => setShowAddCoOwnerModal(true)}
+          />
 
           {(hasDetailTin1 || hasDetailTin2) && (
             <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2">
@@ -1065,6 +1144,16 @@ export const PropertyDetailPage: React.FC = () => {
         onConfirm={handleQuickPriceConfirm}
       />
       )}
+
+      {/* Add Co-Owner Dialog */}
+      <PropertyAddCoOwnerDialog
+        isOpen={showAddCoOwnerModal}
+        onClose={() => setShowAddCoOwnerModal(false)}
+        candidates={activeCustomers || []}
+        excludedIds={excludedCoOwnerCustomerIds}
+        onPickExisting={handlePickCoOwner}
+        onCreateNew={handleCreateNewCoOwner}
+      />
     </div>
   );
 };
