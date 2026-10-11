@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Settings,
@@ -13,11 +13,15 @@ import {
   ChevronRight,
   FileArchive,
   BarChart3,
-  TrendingDown
+  TrendingDown,
+  AlertTriangle
 } from "lucide-react";
 import { db } from "../../data/local/db";
+import { CustomerPropertyRole } from "../../core/models/enums";
 import { syncManager } from "../../data/sync/sync-manager";
 import { exportDatabaseToZip, importDatabaseFromZip } from "../../core/utils/zip-backup";
+import { ActionCenterCalculator } from "../../core/statistics/action-center-calculator";
+import { StatisticsFilter } from "../../core/statistics/statistics-filter";
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +29,54 @@ export const SettingsPage: React.FC = () => {
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [purging, setPurging] = useState(false);
   const [backupProgress, setBackupProgress] = useState<string | null>(null);
+  const [issueCount, setIssueCount] = useState<number>(0);
+
+  // Tính số mục "Cần xử lý" 1 lần khi mở trang bằng ActionCenterCalculator (giống Android)
+  useEffect(() => {
+    let isMounted = true;
+    const calculateActionItems = async () => {
+      try {
+        const now = Date.now();
+        const allProperties = await db.properties.filter((p) => !p.isDeleted).toArray();
+        const allCustomers = await db.customers.filter((c) => !c.isDeleted).toArray();
+        const allLinks = await db.customer_property_links.filter((l) => !l.isDeleted).toArray();
+
+        const customerMap = new Map(allCustomers.map((c) => [c.id, c]));
+        const ownerCountMap = new Map<string, number>();
+        for (const link of allLinks) {
+          if (link.role === "OWNER" || link.role === CustomerPropertyRole.OWNER) {
+            const customer = customerMap.get(link.customerId);
+            if (customer && !customer.isDeleted) {
+              ownerCountMap.set(
+                link.propertyId,
+                (ownerCountMap.get(link.propertyId) ?? 0) + 1
+              );
+            }
+          }
+        }
+
+        const items = ActionCenterCalculator.calculate(
+          allProperties,
+          now,
+          (id) => ownerCountMap.get(id) ?? 0,
+          () => true,
+          false,
+          new StatisticsFilter()
+        );
+
+        if (isMounted) {
+          setIssueCount(items.length);
+        }
+      } catch (err) {
+        console.error("Failed to calculate action items count", err);
+      }
+    };
+
+    calculateActionItems();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -239,6 +291,29 @@ export const SettingsPage: React.FC = () => {
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
+
+        {issueCount > 0 && (
+          <button
+            onClick={() => navigate("/action-center")}
+            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-800">Cần xử lý</div>
+                <div className="text-xs text-slate-500">Các việc cần chuẩn hóa dữ liệu</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                {issueCount} mục
+              </span>
+              <ChevronRight className="w-4 h-4 text-slate-400" />
+            </div>
+          </button>
+        )}
       </div>
 
       {/* Navigation Settings Options */}

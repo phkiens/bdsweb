@@ -13,6 +13,9 @@ import { CustomerListPage } from "./pages/customers/CustomerListPage";
 import { CustomerDetailPage } from "./pages/customers/CustomerDetailPage";
 import { StatisticsPage } from "./pages/statistics/StatisticsPage";
 import { PriceDropPage } from "./pages/statistics/PriceDropPage";
+import { ActionCenterPage } from "./pages/statistics/ActionCenterPage";
+import { OwnerPerformancePage } from "./pages/statistics/OwnerPerformancePage";
+import { RadarAreaDetailPage } from "./pages/statistics/RadarAreaDetailPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 import { ApiConfigPage } from "./pages/settings/ApiConfigPage";
 import { SyncHistoryPage } from "./pages/settings/SyncHistoryPage";
@@ -89,6 +92,11 @@ const AppContent: React.FC = () => {
           {/* Statistics */}
           <Route path="/statistics" element={<StatisticsPage />} />
           <Route path="/price-drops" element={<PriceDropPage />} />
+          <Route path="/action-center" element={<ActionCenterPage />} />
+          <Route path="/owner-performance" element={<OwnerPerformancePage />} />
+          <Route path="/radar/:area/:type" element={<RadarAreaDetailPage />} />
+          <Route path="/radar/:area" element={<RadarAreaDetailPage />} />
+          <Route path="/radar" element={<RadarAreaDetailPage />} />
 
           {/* Settings */}
           <Route path="/settings" element={<SettingsPage />} />
