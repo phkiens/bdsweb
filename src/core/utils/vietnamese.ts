@@ -47,6 +47,8 @@ export function canonicalizeVietnamesePhone(input: string): string {
   return digits;
 }
 
+export const normalizeVietnamesePhone = canonicalizeVietnamesePhone;
+
 /**
  * Chuẩn hóa tên riêng, địa danh thành Title Case
  * (Ví dụ: "phường bến nghé" -> "Phường Bến Nghé")

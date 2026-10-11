@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -18,7 +19,7 @@ import { db } from "../../data/local/db";
 import { createDefaultProperty, Property } from "../../core/models/property";
 import { PropertyStatus, PropertyType, Direction } from "../../core/models/enums";
 import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
-import { parseVietnamCoordinates } from "../../core/utils/coordinates";
+import { parseRawText, getDistinctAreas, UnverifiedPropertyType } from "../../core/engine/property-text-extractor";
 import { syncManager } from "../../data/sync/sync-manager";
 import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 import { checkVerificationReadiness } from "../../core/engine/verification-engine";
@@ -65,6 +66,11 @@ export const PropertyFormPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState("");
   const isOpenForVerify = searchParams.get("openForVerify") === "true";
   const readiness = checkVerificationReadiness(formData);
+
+  // Lấy danh sách khu vực có sẵn từ DB phục vụ trích xuất tự động (chuẩn Android)
+  const knownAreas = useLiveQuery(async () => {
+    return await getDistinctAreas(db);
+  }, []) || [];
 
   useEffect(() => {
     if (isEditMode && id) {
@@ -139,14 +145,12 @@ export const PropertyFormPage: React.FC = () => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleQuickExtract = () => {
+  const handleQuickExtract = async () => {
     if (!quickText.trim()) return;
 
-    // Phân tích sơ bộ từ quickText
-    const parsedCoords = parseVietnamCoordinates(quickText);
-    const phoneMatch = quickText.match(/(?:0|\+84)[1-9]\d{8}/);
-    const priceMatch = quickText.match(/(\d+(?:[.,]\d+)?)\s*(?:tỷ|ty|t)/i);
-    const areaSizeMatch = quickText.match(/(\d+(?:[.,]\d+)?)\s*(?:m2|m²)/i);
+    // Trích xuất thông tin theo chuẩn Android GeminiHelper.parseRawText & PropertyTextExtractor
+    const areas = knownAreas.length > 0 ? knownAreas : await getDistinctAreas(db);
+    const extracted = parseRawText(quickText, areas);
 
     // Tin 1 chỉ có dòng liên hệ điền sẵn (căn mới) ⇒ đặt tin dán lên trên dòng liên hệ.
     setTin1((prev) =>
@@ -160,11 +164,20 @@ export const PropertyFormPage: React.FC = () => {
     setFormData((prev) => ({
       ...prev,
       rawText: quickText,
-      latitude: parsedCoords ? parsedCoords[0] : prev.latitude,
-      longitude: parsedCoords ? parsedCoords[1] : prev.longitude,
-      ownerPhone: phoneMatch ? canonicalizeVietnamesePhone(phoneMatch[0]) : prev.ownerPhone,
-      price: priceMatch ? parseFloat(priceMatch[1].replace(",", ".")) : prev.price,
-      areaSize: areaSizeMatch ? parseFloat(areaSizeMatch[1].replace(",", ".")) : prev.areaSize
+      area: extracted.address || prev.area,
+      latitude: extracted.latitude ?? prev.latitude,
+      longitude: extracted.longitude ?? prev.longitude,
+      ownerPhone: extracted.ownerPhone || prev.ownerPhone,
+      price: extracted.price ?? prev.price,
+      areaSize: extracted.area ?? prev.areaSize,
+      direction: extracted.direction || prev.direction,
+      propertyType:
+        extracted.propertyType === UnverifiedPropertyType.LAND
+          ? PropertyType.LAND
+          : extracted.propertyType === UnverifiedPropertyType.HOUSE && !prev.propertyType
+          ? PropertyType.HOUSE
+          : prev.propertyType || PropertyType.HOUSE,
+      mapLink: extracted.mapLink || prev.mapLink
     }));
 
     setQuickText("");

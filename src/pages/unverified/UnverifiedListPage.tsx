@@ -16,11 +16,12 @@ import {
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { Property } from "../../core/models/property";
-import { PropertyStatus } from "../../core/models/enums";
+import { PropertyStatus, PropertyType } from "../../core/models/enums";
 import { syncManager } from "../../data/sync/sync-manager";
 import { createDefaultProperty } from "../../core/models/property";
-import { canonicalizeVietnamesePhone, toTitleCase } from "../../core/utils/vietnamese";
-import { parseVietnamCoordinates, calculateDistanceKm, isInVietnam } from "../../core/utils/coordinates";
+import { toTitleCase } from "../../core/utils/vietnamese";
+import { calculateDistanceKm, isInVietnam } from "../../core/utils/coordinates";
+import { parseRawText, getDistinctAreas, UnverifiedPropertyType } from "../../core/engine/property-text-extractor";
 import { nowTimestamp } from "../../core/utils/date";
 import { PropertyCard } from "../../components/properties/PropertyCard";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
@@ -131,6 +132,11 @@ export const UnverifiedListPage: React.FC = () => {
       .sortBy("updatedAt");
   }, []);
 
+  // Lấy danh sách khu vực có sẵn từ DB phục vụ trích xuất tự động (chuẩn Android)
+  const knownAreas = useLiveQuery(async () => {
+    return await getDistinctAreas(db);
+  }, []) || [];
+
   // Lọc và xếp hạng theo chuẩn tìm kiếm Android
   const rankedResult = useMemo(() => {
     if (!rawUnverifiedList) return { items: [], ownerMatchStart: -1 };
@@ -221,23 +227,29 @@ export const UnverifiedListPage: React.FC = () => {
   const handleImportRawText = async () => {
     if (!rawInput.trim()) return;
 
-    // Parse thông tin thô
-    const parsedCoords = parseVietnamCoordinates(rawInput);
-    const phoneMatch = rawInput.match(/(?:0|\+84)[1-9]\d{8}/);
-    const priceMatch = rawInput.match(/(\d+(?:[.,]\d+)?)\s*(?:tỷ|ty|t)/i);
-    const areaSizeMatch = rawInput.match(/(\d+(?:[.,]\d+)?)\s*(?:m2|m²)/i);
+    // Trích xuất thông tin theo chuẩn Android GeminiHelper.parseRawText & PropertyTextExtractor
+    const areas = knownAreas.length > 0 ? knownAreas : await getDistinctAreas(db);
+    const extracted = parseRawText(rawInput, areas);
 
     const firstLine = rawInput.trim().split("\n")[0].slice(0, 60);
+    const resolvedArea = extracted.address || toTitleCase(firstLine) || "Tin trích xuất mới";
 
     const newUnverified = createDefaultProperty({
-      area: toTitleCase(firstLine) || "Tin trích xuất mới",
+      area: resolvedArea,
       rawText: rawInput,
       description: rawInput,
-      latitude: parsedCoords ? parsedCoords[0] : null,
-      longitude: parsedCoords ? parsedCoords[1] : null,
-      ownerPhone: phoneMatch ? canonicalizeVietnamesePhone(phoneMatch[0]) : "",
-      price: priceMatch ? parseFloat(priceMatch[1].replace(",", ".")) : 0,
-      areaSize: areaSizeMatch ? parseFloat(areaSizeMatch[1].replace(",", ".")) : null,
+      latitude: extracted.latitude ?? null,
+      longitude: extracted.longitude ?? null,
+      ownerPhone: extracted.ownerPhone || "",
+      price: extracted.price ?? 0,
+      areaSize: extracted.area ?? null,
+      direction: extracted.direction || "",
+      propertyType:
+        extracted.propertyType === UnverifiedPropertyType.LAND
+          ? PropertyType.LAND
+          : PropertyType.HOUSE,
+      mapLink: extracted.mapLink || null,
+      extractedBy: extracted.extractedBy,
       isVerified: false,
       status: PropertyStatus.PENDING_SURVEY
     });
