@@ -1,16 +1,11 @@
 import { Property } from "../../core/models/property";
 import {
   MediaItem,
-  SupabaseMediaObjectRow,
-  isValidMediaItem,
-  mapMediaItemToR2Item,
-  mapR2ItemToMediaItem,
-  mapRpcRowToMediaItem
+  mapR2ItemToMediaItem
 } from "../../core/models/media";
 import { db } from "../local/db";
 import {
   ALLOWED_MIME_TYPES,
-  getMediaIdFromFileName,
   getMediaIdFromObjectKey,
   mergeR2MediaItems,
   parseR2MediaKeys,
@@ -65,11 +60,11 @@ export class MediaService {
 
   /**
    * Lấy danh sách media metadata cho một property theo thứ tự phân cấp nghiêm ngặt:
-   * 1. Check zero media: r2MediaKeys == "[]" -> trả về [] ngay lập tức (không gọi RPC, không fallback Drive).
+   * 1. Check zero media: r2MediaKeys == "[]" -> trả về [] ngay lập tức (không fallback Drive).
    * 2. Cache hit -> trả về danh sách từ cache.
-   * 3. Gọi RPC public.fn_get_property_media(propertyId).
-   * 4. Nếu RPC fail hoặc rỗng -> Fallback về r2MediaKeys của property.
-   * 5. Nếu r2MediaKeys == null và có legacy Drive -> fallback Drive nếu cần.
+   * 3. Đọc manifest r2MediaKeys của property (như màn hiện ảnh Android). Không gọi RPC
+   *    fn_get_property_media: bảng/hàm "M4" chưa từng được tạo trên Supabase (luôn 404).
+   * 4. Nếu r2MediaKeys == null và có legacy Drive -> fallback Drive nếu cần.
    */
   public async fetchPropertyMedia(
     propertyId: string,
@@ -90,38 +85,7 @@ export class MediaService {
       return this.mediaCache.get(propertyId)!;
     }
 
-    // 3. Gọi RPC public.fn_get_property_media(propertyId)
-    const client = getSupabaseClient();
-    if (client) {
-      try {
-        const { data, error } = await client.rpc("fn_get_property_media", {
-          p_property_id: propertyId
-        });
-
-        if (!error && Array.isArray(data)) {
-          const items: MediaItem[] = data
-            .map((row: SupabaseMediaObjectRow) => mapRpcRowToMediaItem(row))
-            .filter(isValidMediaItem)
-            .sort((a, b) => a.sortOrder - b.sortOrder);
-
-          if (items.length > 0) {
-            this.mediaCache.set(propertyId, items);
-            return items;
-          }
-
-          // RPC trả về []:
-          // Nếu property đã xác định r2MediaKeys == "[]" hoặc không có r2MediaKeys thì cache []
-          if (property?.r2MediaKeys === "[]" || !property?.r2MediaKeys) {
-            this.mediaCache.set(propertyId, []);
-            return [];
-          }
-        }
-      } catch (rpcErr) {
-        console.warn(`[MediaService] RPC fn_get_property_media thất bại cho ${propertyId}, fallback manifest:`, rpcErr);
-      }
-    }
-
-    // 4. Fallback sang r2_media_keys
+    // 3. Manifest r2_media_keys
     let r2KeysJson = property?.r2MediaKeys;
     if (r2KeysJson === undefined) {
       const localProp = await db.properties.get(propertyId);
@@ -146,7 +110,7 @@ export class MediaService {
       return [];
     }
 
-    // 5. Fallback legacy Drive (chỉ khi r2KeysJson === null)
+    // 4. Fallback legacy Drive (chỉ khi r2KeysJson === null)
     if (property?.driveMediaIds && property.driveMediaIds.trim()) {
       // Property có driveMediaIds thuần
       const ids = property.driveMediaIds
@@ -169,8 +133,7 @@ export class MediaService {
   }
 
   /**
-   * Preload media cho danh sách BĐS bằng RPC batch (tối đa 100 IDs/request)
-   * Chống N+1 RPC cho PropertyList / Card view
+   * Preload media cho danh sách BĐS từ manifest r2MediaKeys (không gọi mạng)
    */
   public async preloadPropertiesMedia(properties: Property[]): Promise<void> {
     if (!properties || properties.length === 0) return;
@@ -187,62 +150,9 @@ export class MediaService {
 
     if (neededProps.length === 0) return;
 
-    const client = getSupabaseClient();
-    const CHUNK_SIZE = 100;
-
-    for (let i = 0; i < neededProps.length; i += CHUNK_SIZE) {
-      const chunk = neededProps.slice(i, i + CHUNK_SIZE);
-      const chunkIds = chunk.map((p) => p.id);
-
-      if (client) {
-        try {
-          const { data, error } = await client.rpc("fn_get_properties_media_batch", {
-            p_property_ids: chunkIds
-          });
-
-          if (!error && Array.isArray(data)) {
-            const grouped = new Map<string, MediaItem[]>();
-            for (const row of data as SupabaseMediaObjectRow[]) {
-              const item = mapRpcRowToMediaItem(row);
-              if (isValidMediaItem(item)) {
-                const list = grouped.get(item.propertyId) || [];
-                list.push(item);
-                grouped.set(item.propertyId, list);
-              }
-            }
-
-            for (const p of chunk) {
-              const items = (grouped.get(p.id) || []).sort((a, b) => a.sortOrder - b.sortOrder);
-              if (items.length > 0) {
-                this.mediaCache.set(p.id, items);
-              } else if (p.r2MediaKeys === "[]") {
-                this.mediaCache.set(p.id, []);
-              } else {
-                // Fallback r2MediaKeys
-                const fallback = parseR2MediaKeys(p.r2MediaKeys).map((r) =>
-                  mapR2ItemToMediaItem(r, p.id)
-                );
-                this.mediaCache.set(p.id, fallback);
-              }
-            }
-            continue;
-          }
-        } catch (err) {
-          console.warn("[MediaService] Batch RPC thất bại, fallback sang parse manifest:", err);
-        }
-      }
-
-      // Fallback khi không có client hoặc batch RPC fail
-      for (const p of chunk) {
-        if (p.r2MediaKeys === "[]") {
-          this.mediaCache.set(p.id, []);
-        } else {
-          const fallback = parseR2MediaKeys(p.r2MediaKeys).map((r) =>
-            mapR2ItemToMediaItem(r, p.id)
-          );
-          this.mediaCache.set(p.id, fallback);
-        }
-      }
+    for (const p of neededProps) {
+      const items = parseR2MediaKeys(p.r2MediaKeys).map((r) => mapR2ItemToMediaItem(r, p.id));
+      this.mediaCache.set(p.id, items);
     }
   }
 

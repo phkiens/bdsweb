@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import "fake-indexeddb/auto";
 import {
   MediaItem,
-  mapRpcRowToMediaItem,
   mapR2ItemToMediaItem,
   mapMediaItemToR2Item,
   isValidMediaItem,
@@ -11,10 +10,8 @@ import {
 import {
   parseR2MediaKeys,
   serializeR2MediaKeys,
-  mergeR2MediaItems,
   R2MediaItem,
-  r2MediaSignClient,
-  R2SlugUtils
+  r2MediaSignClient
 } from "../../src/data/remote/r2-media-client";
 import { MediaService, mediaService as singletonMediaService } from "../../src/data/media/media-service";
 import { Property, createDefaultProperty } from "../../src/core/models/property";
@@ -34,70 +31,21 @@ describe("Master Plan: Web <-> Android Full Media Sync Tests (WEB-01 to WEB-10)"
     mediaService = new MediaService();
   });
 
-  // WEB-01: RPC đọc property có media
-  it("WEB-01: RPC reads property with media successfully", async () => {
-    const mockRpcRows = [
-      {
-        id: "uuid-1",
-        property_id: "prop-100",
-        object_key: "properties/prop-100__area__owner__1-ty/IMG_001.jpg",
-        file_name: "IMG_001.jpg",
-        content_type: "image/jpeg",
-        sort_order: 0,
-        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-      },
-      {
-        id: "uuid-2",
-        property_id: "prop-100",
-        object_key: "properties/prop-100__area__owner__1-ty/IMG_002.jpg",
-        file_name: "IMG_002.jpg",
-        content_type: "image/jpeg",
-        sort_order: 1,
-        sha256: null
-      }
-    ];
-
-    const mockSupabase = {
-      rpc: vi.fn().mockResolvedValue({ data: mockRpcRows, error: null })
-    };
+  // WEB-01: đọc media từ manifest r2_media_keys, KHÔNG gọi RPC (hàm M4 không có trên server)
+  it("WEB-01: reads media from r2_media_keys manifest without calling Supabase RPC", async () => {
+    const mockSupabase = { rpc: vi.fn() };
     vi.spyOn(supabaseModule, "getSupabaseClient").mockReturnValue(mockSupabase as any);
 
-    const prop = createDefaultProperty({ id: "prop-100", r2MediaKeys: '[{"objectKey":"k","fileName":"f","contentType":"image/jpeg","sortOrder":0}]' });
+    const manifest = JSON.stringify([
+      { objectKey: "properties/prop-100__area__owner__1-ty/IMG_002.jpg", fileName: "IMG_002.jpg", contentType: "image/jpeg", sortOrder: 1 },
+      { objectKey: "properties/prop-100__area__owner__1-ty/IMG_001.jpg", fileName: "IMG_001.jpg", contentType: "image/jpeg", sortOrder: 0 }
+    ]);
+    const prop = createDefaultProperty({ id: "prop-100", r2MediaKeys: manifest });
     const items = await mediaService.fetchPropertyMedia("prop-100", prop);
 
-    expect(mockSupabase.rpc).toHaveBeenCalledWith("fn_get_property_media", {
-      p_property_id: "prop-100"
-    });
+    expect(mockSupabase.rpc).not.toHaveBeenCalled();
     expect(items).toHaveLength(2);
-    expect(items[0].mediaId).toBe("IMG_001");
-    expect(items[0].sortOrder).toBe(0);
-    expect(items[1].mediaId).toBe("IMG_002");
-    expect(items[1].sortOrder).toBe(1);
-  });
-
-  // WEB-02: RPC fail -> fallback r2_media_keys
-  it("WEB-02: RPC fail -> falls back to r2_media_keys", async () => {
-    const mockSupabase = {
-      rpc: vi.fn().mockResolvedValue({ data: null, error: { message: "PGRST202 function not found" } })
-    };
-    vi.spyOn(supabaseModule, "getSupabaseClient").mockReturnValue(mockSupabase as any);
-
-    const fallbackJson = JSON.stringify([
-      {
-        objectKey: "properties/p2/IMG_fallback.jpg",
-        fileName: "IMG_fallback.jpg",
-        contentType: "image/jpeg",
-        sortOrder: 0
-      }
-    ]);
-    const prop = createDefaultProperty({ id: "prop-200", r2MediaKeys: fallbackJson });
-
-    const items = await mediaService.fetchPropertyMedia("prop-200", prop);
-
-    expect(items).toHaveLength(1);
-    expect(items[0].objectKey).toBe("properties/p2/IMG_fallback.jpg");
-    expect(items[0].fileName).toBe("IMG_fallback.jpg");
-    expect(items[0].mediaId).toBe("IMG_fallback");
+    expect(items.map((i) => i.mediaId).sort()).toEqual(["IMG_001", "IMG_002"]);
   });
 
   // WEB-03: Web upload 1 ảnh -> manifest đúng
@@ -376,45 +324,25 @@ describe("Master Plan: Web <-> Android Full Media Sync Tests (WEB-01 to WEB-10)"
   });
 
   // WEB-10: Property list không tạo N+1 RPC
-  it("WEB-10: Preloading 50 properties creates a single batch RPC request instead of 50 individual calls", async () => {
-    const mockBatchRows: any[] = [];
+  it("WEB-10: Preloading 50 properties fills the cache from manifests with zero network calls", async () => {
     const props: Property[] = [];
-
     for (let i = 1; i <= 50; i++) {
       const id = `prop-${i}`;
-      props.push(createDefaultProperty({ id, r2MediaKeys: null }));
-      mockBatchRows.push({
-        id: `uuid-${i}`,
-        property_id: id,
-        object_key: `properties/${id}/img.jpg`,
-        file_name: "img.jpg",
-        content_type: "image/jpeg",
-        sort_order: 0,
-        sha256: null
-      });
+      props.push(
+        createDefaultProperty({
+          id,
+          r2MediaKeys: JSON.stringify([{ objectKey: `properties/${id}/img.jpg`, fileName: "img.jpg", contentType: "image/jpeg", sortOrder: 0 }])
+        })
+      );
     }
-
-    const mockSupabase = {
-      rpc: vi.fn().mockResolvedValue({ data: mockBatchRows, error: null })
-    };
+    const mockSupabase = { rpc: vi.fn() };
     vi.spyOn(supabaseModule, "getSupabaseClient").mockReturnValue(mockSupabase as any);
 
-    // Preload 50 properties
     await mediaService.preloadPropertiesMedia(props);
 
-    // Exactly 1 batch RPC call, NOT 50 individual RPC calls!
-    expect(mockSupabase.rpc).toHaveBeenCalledTimes(1);
-    expect(mockSupabase.rpc).toHaveBeenCalledWith(
-      "fn_get_properties_media_batch",
-      expect.objectContaining({
-        p_property_ids: expect.arrayContaining(["prop-1", "prop-50"])
-      })
-    );
-
-    // Subsequent fetches for individual properties hit the memory cache: 0 additional RPC calls!
-    const item1 = await mediaService.fetchPropertyMedia("prop-1", props[0]);
-    expect(item1).toHaveLength(1);
-    expect(mockSupabase.rpc).toHaveBeenCalledTimes(1);
+    expect(mockSupabase.rpc).not.toHaveBeenCalled();
+    expect(mediaService.getMediaSynchronous("prop-1")).toHaveLength(1);
+    expect(mediaService.getMediaSynchronous("prop-50")).toHaveLength(1);
   });
 
   // WEB-11: Android filename mismatch (propId_IMG_xxx.jpg vs objectKey IMG_xxx.jpg)

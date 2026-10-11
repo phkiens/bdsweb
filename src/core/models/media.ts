@@ -3,9 +3,7 @@ import { R2MediaItem } from "../../data/remote/r2-media-client";
 /**
  * Canonical Web Media Item model.
  * Exactly matches:
- * 1. properties.r2_media_keys schema: { objectKey, fileName, contentType, sortOrder, sha256? }
- * 2. M4 Read RPCs schema (fn_get_property_media, fn_get_properties_media_batch):
- *    { id, property_id, object_key, file_name, content_type, sort_order, sha256 }
+ * properties.r2_media_keys schema: { objectKey, fileName, contentType, sortOrder, sha256? }
  */
 export interface MediaItem {
   id?: string;
@@ -16,19 +14,6 @@ export interface MediaItem {
   contentType: string;
   sortOrder: number;
   sha256?: string | null;
-}
-
-/**
- * Raw DTO returned from Supabase M4 RPCs (public.fn_get_property_media, public.fn_get_properties_media_batch)
- */
-export interface SupabaseMediaObjectRow {
-  id: string;
-  property_id: string;
-  object_key: string;
-  file_name: string;
-  content_type: string;
-  sort_order: number;
-  sha256: string | null;
 }
 
 /**
@@ -51,22 +36,6 @@ export function isValidMediaItem(item: Partial<MediaItem>): boolean {
   if (item.sortOrder === undefined || item.sortOrder === null || item.sortOrder < 0) return false;
   const cType = (item.contentType || "").trim().toLowerCase();
   return cType === "image/jpeg" || cType === "image/png" || cType === "video/mp4";
-}
-
-/**
- * Maps an RPC row from Supabase (M4 Read Surface) to domain MediaItem
- */
-export function mapRpcRowToMediaItem(row: SupabaseMediaObjectRow): MediaItem {
-  return {
-    id: row.id,
-    propertyId: row.property_id,
-    mediaId: extractMediaId(row.object_key || row.file_name),
-    objectKey: row.object_key,
-    fileName: row.file_name,
-    contentType: row.content_type?.toLowerCase() || "image/jpeg",
-    sortOrder: typeof row.sort_order === "number" ? row.sort_order : 0,
-    sha256: row.sha256 || null
-  };
 }
 
 /**
