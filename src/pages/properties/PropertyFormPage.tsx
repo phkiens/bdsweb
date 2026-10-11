@@ -23,6 +23,12 @@ import { syncManager } from "../../data/sync/sync-manager";
 import { ensureCustomerForProperty } from "../../core/services/customer-linker";
 import { checkVerificationReadiness } from "../../core/engine/verification-engine";
 import { mediaService } from "../../data/media/media-service";
+import {
+  encodeListingTexts,
+  decodeListingTexts,
+  appendContactLine,
+  CONTACT_LINE
+} from "../../core/utils/listing-text";
 
 export const PropertyFormPage: React.FC = () => {
   const navigate = useNavigate();
@@ -49,6 +55,9 @@ export const PropertyFormPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [fetchingGps, setFetchingGps] = useState(false);
   const [quickText, setQuickText] = useState("");
+  const [tin1, setTin1] = useState(isEditMode ? "" : CONTACT_LINE);
+  const [tin2, setTin2] = useState(isEditMode ? "" : CONTACT_LINE);
+  const [activeDescTab, setActiveDescTab] = useState<1 | 2>(1);
   const [previewImages, setPreviewImages] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -60,6 +69,9 @@ export const PropertyFormPage: React.FC = () => {
       db.properties.get(id).then((item) => {
         if (item) {
           setFormData(item);
+          const decoded = decodeListingTexts(item.description);
+          setTin1(decoded.first);
+          setTin2(decoded.second);
           if (item.imagePath) {
             setPreviewImages(item.imagePath.split("|||").filter(Boolean));
           }
@@ -133,10 +145,18 @@ export const PropertyFormPage: React.FC = () => {
     const priceMatch = quickText.match(/(\d+(?:[.,]\d+)?)\s*(?:tỷ|ty|t)/i);
     const areaSizeMatch = quickText.match(/(\d+(?:[.,]\d+)?)\s*(?:m2|m²)/i);
 
+    // Tin 1 chỉ có dòng liên hệ điền sẵn (căn mới) ⇒ đặt tin dán lên trên dòng liên hệ.
+    setTin1((prev) =>
+      prev.trim() === CONTACT_LINE
+        ? appendContactLine(quickText)
+        : prev
+          ? `${prev}\n\n${quickText}`
+          : quickText
+    );
+
     setFormData((prev) => ({
       ...prev,
       rawText: quickText,
-      description: prev.description ? `${prev.description}\n\n${quickText}` : quickText,
       latitude: parsedCoords ? parsedCoords[0] : prev.latitude,
       longitude: parsedCoords ? parsedCoords[1] : prev.longitude,
       ownerPhone: phoneMatch ? canonicalizeVietnamesePhone(phoneMatch[0]) : prev.ownerPhone,
@@ -204,6 +224,7 @@ export const PropertyFormPage: React.FC = () => {
 
       const updated: Property = {
         ...formData,
+        description: encodeListingTexts(tin1, tin2),
         area: toTitleCase(formData.area),
         ownerPhone: canonicalizeVietnamesePhone(formData.ownerPhone),
         imagePath: previewImages.length > 0 ? previewImages.join("|||") : null,
@@ -587,19 +608,57 @@ export const PropertyFormPage: React.FC = () => {
 
         {/* Section 5: Detailed Description */}
         <div className="p-4 md:p-5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
-          <h3 className="font-semibold text-slate-800 text-sm border-b border-slate-100 pb-2">
-            Mô tả chi tiết & Nhật ký
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="font-semibold text-slate-800 text-sm">
+              Mô tả chi tiết & Nhật ký
+            </h3>
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setActiveDescTab(1)}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  activeDescTab === 1
+                    ? "bg-white text-blue-600 shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Tin 1
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDescTab(2)}
+                className={`px-3 py-1 rounded-md transition-colors ${
+                  activeDescTab === 2
+                    ? "bg-white text-blue-600 shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Tin 2
+              </button>
+            </div>
+          </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Mô tả BĐS</label>
-            <textarea
-              rows={4}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Thông tin kết cấu, số phòng, tiện ích xung quanh, pháp lý sổ đỏ..."
-              className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white outline-hidden"
-            />
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              {activeDescTab === 1 ? "Mô tả BĐS (Tin 1)" : "Mô tả BĐS (Tin 2)"}
+            </label>
+            {activeDescTab === 1 ? (
+              <textarea
+                rows={4}
+                value={tin1}
+                onChange={(e) => setTin1(e.target.value)}
+                placeholder="Thông tin kết cấu, số phòng, tiện ích xung quanh, pháp lý sổ đỏ (Tin 1)..."
+                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white outline-hidden"
+              />
+            ) : (
+              <textarea
+                rows={4}
+                value={tin2}
+                onChange={(e) => setTin2(e.target.value)}
+                placeholder="Thông tin kết cấu, số phòng, tiện ích xung quanh, pháp lý sổ đỏ (Tin 2)..."
+                className="w-full text-sm p-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white outline-hidden"
+              />
+            )}
           </div>
         </div>
 

@@ -18,7 +18,8 @@ import {
   UserCheck,
   UserPlus,
   ChevronRight,
-  Clock
+  Clock,
+  X
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { PropertyStatus } from "../../core/models/enums";
@@ -32,6 +33,7 @@ import {
 import { AddViewingModal } from "./AddViewingModal";
 import { PropertyMediaGallery } from "../../components/properties/PropertyMediaGallery";
 import { formatPropertyPrice } from "../../core/utils/property-price";
+import { decodeListingTexts, buildPropertyShareBody } from "../../core/utils/listing-text";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -95,6 +97,33 @@ export const PropertyDetailPage: React.FC = () => {
     }
     return mergedActivityItems;
   }, [mergedActivityItems, activityFilter]);
+
+  // Hook phải đứng trước lệnh return sớm bên dưới (quy tắc hook của React).
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [includeBasic, setIncludeBasic] = useState(true);
+  const [includeDesc, setIncludeDesc] = useState(true);
+  const [includeLocation, setIncludeLocation] = useState(false);
+  const [includeOwner, setIncludeOwner] = useState(false);
+  const [selectedShareDescTab, setSelectedShareDescTab] = useState<1 | 2>(1);
+  // null = chưa bấm chọn ⇒ dùng tab mặc định (Tin 1, trừ khi Tin 1 rỗng mà có Tin 2).
+  const [detailTabChoice, setSelectedDetailTab] = useState<1 | 2 | null>(null);
+
+  const decodedDesc = useMemo(
+    () => decodeListingTexts(property?.description),
+    [property?.description]
+  );
+  const hasDetailTin1 = Boolean(decodedDesc.first && decodedDesc.first.trim().length > 0);
+  const hasDetailTin2 = Boolean(decodedDesc.second && decodedDesc.second.trim().length > 0);
+
+  const selectedDetailTab = detailTabChoice ?? (!hasDetailTin1 && hasDetailTin2 ? 2 : 1);
+
+  const shareTin1 = useMemo(() => {
+    if (!property) return "";
+    if (!property.description || property.description.trim() === "") {
+      return property.rawText || "";
+    }
+    return decodedDesc.first;
+  }, [property, decodedDesc.first]);
 
   if (!property) {
     return (
@@ -162,23 +191,52 @@ export const PropertyDetailPage: React.FC = () => {
     syncManager.pushChanges();
   };
 
-  const handleShare = async () => {
-    const text = `Cần bán: ${property.area}\nLoại hình: ${property.propertyType}\nGiá: ${
-      formatPropertyPrice(property.price) || "Thương lượng"
-    }\nDiện tích: ${property.areaSize ? property.areaSize + " m²" : "Đang cập nhật"}\nHướng: ${
-      property.direction || "Chưa xác định"
-    }\nLiên hệ: ${property.ownerPhone}`;
+  const shareTin2 = decodedDesc.second;
+  const hasShareTin1 = Boolean(shareTin1 && shareTin1.trim().length > 0);
+  const hasShareTin2 = Boolean(shareTin2 && shareTin2.trim().length > 0);
+
+  const hasCoords = Boolean(
+    property?.latitude &&
+    property?.longitude &&
+    property.latitude !== 0 &&
+    property.longitude !== 0
+  );
+
+  const canShowOwner = Boolean(
+    (property?.ownerName && property.ownerName.trim().length > 0) ||
+    (property?.ownerPhone && property.ownerPhone.trim().length > 0)
+  );
+
+  const handleShare = () => {
+    setIncludeBasic(true);
+    setIncludeDesc(true);
+    setIncludeLocation(false);
+    setIncludeOwner(false);
+    setSelectedShareDescTab(!hasShareTin1 && hasShareTin2 ? 2 : 1);
+    setShowShareModal(true);
+  };
+
+  const handleExecuteShare = async () => {
+    if (!property) return;
+    const resolvedDescText = selectedShareDescTab === 1 ? shareTin1 : shareTin2;
+    const shareBody = buildPropertyShareBody(property, resolvedDescText, {
+      includeBasic,
+      includeDesc,
+      includeLocation: hasCoords && includeLocation,
+      includeOwner: canShowOwner && includeOwner
+    });
 
     if (navigator.share) {
       try {
-        await navigator.share({ title: property.area, text });
+        await navigator.share({ title: property.area || "Chia sẻ BĐS", text: shareBody });
       } catch {
         // User cancelled
       }
     } else {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(shareBody);
       alert("Đã sao chép nội dung tin đăng vào bộ nhớ đệm!");
     }
+    setShowShareModal(false);
   };
 
   const handleDownloadAllImages = () => {
@@ -410,11 +468,39 @@ export const PropertyDetailPage: React.FC = () => {
             </div>
           </div>
 
-          {property.description && (
+          {(hasDetailTin1 || hasDetailTin2) && (
             <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2">
-              <h4 className="font-semibold text-slate-800 text-sm">Mô tả</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-slate-800 text-sm">Mô tả</h4>
+                {hasDetailTin2 && (
+                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDetailTab(1)}
+                      className={`px-3 py-1 rounded-md transition-colors ${
+                        selectedDetailTab === 1
+                          ? "bg-white text-blue-600 shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Tin 1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDetailTab(2)}
+                      className={`px-3 py-1 rounded-md transition-colors ${
+                        selectedDetailTab === 2
+                          ? "bg-white text-blue-600 shadow-2xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Tin 2
+                    </button>
+                  </div>
+                )}
+              </div>
               <p className="text-xs md:text-sm text-slate-600 whitespace-pre-line leading-relaxed">
-                {property.description}
+                {selectedDetailTab === 1 ? decodedDesc.first : decodedDesc.second}
               </p>
             </div>
           )}
@@ -737,6 +823,131 @@ export const PropertyDetailPage: React.FC = () => {
         existingLinkedCustomerIds={existingLinkedCustomerIds}
         onSuccess={() => {}}
       />
+
+      {/* Share Property Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="font-semibold text-slate-800 text-base">Chia sẻ tin đăng</h3>
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={includeBasic}
+                  onChange={(e) => setIncludeBasic(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500"
+                />
+                <div className="text-xs md:text-sm text-slate-700">
+                  <div className="font-semibold">📋 Thông tin cơ bản</div>
+                  <div className="text-xs text-slate-500">Khu vực, giá, diện tích, loại hình, hướng</div>
+                </div>
+              </label>
+
+              <div className="p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeDesc}
+                    onChange={(e) => setIncludeDesc(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500"
+                  />
+                  <div className="text-xs md:text-sm text-slate-700 font-semibold">
+                    📝 Mô tả chi tiết BĐS
+                  </div>
+                </label>
+                {includeDesc && hasShareTin2 && (
+                  <div className="flex items-center gap-2 mt-2.5 ml-7">
+                    <button
+                      type="button"
+                      disabled={!hasShareTin1}
+                      onClick={() => setSelectedShareDescTab(1)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        selectedShareDescTab === 1
+                          ? "bg-blue-600 text-white shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      } disabled:opacity-40`}
+                    >
+                      Tin 1
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!hasShareTin2}
+                      onClick={() => setSelectedShareDescTab(2)}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        selectedShareDescTab === 2
+                          ? "bg-blue-600 text-white shadow-2xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      } disabled:opacity-40`}
+                    >
+                      Tin 2
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {hasCoords && (
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={includeLocation}
+                    onChange={(e) => setIncludeLocation(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500"
+                  />
+                  <div className="text-xs md:text-sm text-slate-700">
+                    <div className="font-semibold">📍 Định vị</div>
+                    <div className="text-xs text-slate-500">Link Google Maps</div>
+                  </div>
+                </label>
+              )}
+
+              {canShowOwner && (
+                <label className="flex items-start gap-3 p-3 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={includeOwner}
+                    onChange={(e) => setIncludeOwner(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500"
+                  />
+                  <div className="text-xs md:text-sm text-slate-700">
+                    <div className="font-semibold">📞 Chủ nhà</div>
+                    <div className="text-xs text-slate-500">
+                      {property.ownerName || "Chủ nhà"}
+                      {property.ownerPhone ? ` (${property.ownerPhone})` : ""}
+                    </div>
+                  </div>
+                </label>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-slate-100 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 text-xs md:text-sm font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteShare}
+                className="px-5 py-2 text-xs md:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-colors"
+              >
+                Chia sẻ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
