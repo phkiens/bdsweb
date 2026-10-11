@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Home,
@@ -9,6 +9,7 @@ import {
   Search,
   Plus
 } from "lucide-react";
+import { subscribeBottomNavHidden } from "../common/bottom-nav-visibility";
 
 interface NavbarProps {
   onOpenDuplicateCheck: () => void;
@@ -16,6 +17,12 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
   const location = useLocation();
+  const [navHiddenBySelection, setNavHiddenBySelection] = useState(false);
+
+  useEffect(() => {
+    return subscribeBottomNavHidden((hidden) => setNavHiddenBySelection(hidden));
+  }, []);
+
 
   const navItems = [
     { to: "/properties", label: "Kho BĐS", icon: Home },
@@ -28,6 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
   // PARITY-NAV-001: Chỉ hiển thị Bottom Navigation trên các màn hình tab chính trên mobile.
   // Khi vào màn hình chi tiết, biểu mẫu thêm/sửa, hoặc cài đặt con, tự động ẩn thanh điều hướng đáy
   // để tối đa hóa không gian thao tác và chiều cao viewport khả dụng cho người dùng.
+  // Khi đang ở chế độ chọn nhiều (MultiSelectBottomBar), tự động ẩn thanh điều hướng đáy giống Android.
   const topLevelRoutes = [
     "/properties",
     "/unverified",
@@ -36,7 +44,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDuplicateCheck }) => {
     "/settings",
     "/statistics"
   ];
-  const showMobileBottomNav = topLevelRoutes.includes(location.pathname);
+  const showMobileBottomNav =
+    topLevelRoutes.includes(location.pathname) && !navHiddenBySelection;
 
   return (
     <>

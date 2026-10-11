@@ -18,12 +18,14 @@ import {
 import { db } from "../../data/local/db";
 import { RouteOptimizer } from "../../core/engine/route-optimizer";
 import { PropertyStatus } from "../../core/models/enums";
+import { Property } from "../../core/models/property";
 import {
   filterMapProperties,
   getMarkerColorType,
   MapScanCenter,
   MapPropertyItem
 } from "../../core/engine/map-survey-engine";
+import { isValidCoordinate } from "../../core/engine/map-survey-route";
 import { isInVietnam } from "../../core/utils/coordinates";
 import { createMapPinIcon, createGpsUserIcon } from "./map-marker-icons";
 import { PropertyThumbnail } from "../../components/properties/PropertyThumbnail";
@@ -46,6 +48,15 @@ export const MapSurveyPage: React.FC = () => {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [routeInfo, setRouteInfo] = useState<string | null>(null);
   const [viewTodayOnly, setViewTodayOnly] = useState(false);
+
+  // Xử lý query selectedKeys cho chế độ lộ trình (tương đồng Android map_survey?selectedKeys=...)
+  const selectedKeysParam = searchParams.get("selectedKeys");
+  const routeKeys = useMemo(() => {
+    return selectedKeysParam
+      ? selectedKeysParam.split(",").map((k) => k.trim()).filter(Boolean)
+      : [];
+  }, [selectedKeysParam]);
+  const isRouteMode = routeKeys.length > 0;
 
   // GPS & Radius survey state (MAP-SURVEY-GPS-001)
   const [userScanCenter, setUserScanCenter] = useState<MapScanCenter | null>(null);
@@ -140,11 +151,62 @@ export const MapSurveyPage: React.FC = () => {
     };
   }, [searchParams]);
 
-  // Filtered properties based on GPS/Center and Radius
-  const filteredProperties = useMemo(() => {
+  // Danh sách căn cho chế độ lộ trình theo thứ tự routeKeys
+  const routeProperties = useMemo(() => {
+    if (!isRouteMode || !properties) return [];
+    const propMap = new Map<string, Property>();
+    properties.forEach((p) => {
+      propMap.set((p.isVerified ? "official_" : "unverified_") + p.id, p);
+      propMap.set(p.id, p);
+    });
+    return routeKeys
+      .map((k) => propMap.get(k))
+      .filter((p): p is Property => p !== undefined && isValidCoordinate(p.latitude, p.longitude));
+  }, [isRouteMode, properties, routeKeys]);
+
+  // Filtered properties based on Route Mode or GPS/Center and Radius
+  const filteredProperties = useMemo<MapPropertyItem[]>(() => {
+    if (isRouteMode) {
+      return routeProperties;
+    }
     if (!properties) return [];
     return filterMapProperties(properties, scanCenter, radiusKm, viewTodayOnly);
-  }, [properties, scanCenter, radiusKm, viewTodayOnly]);
+  }, [isRouteMode, routeProperties, properties, scanCenter, radiusKm, viewTodayOnly]);
+
+  // Tự động dựng lộ trình khi vào bản đồ từ nút "Xem trên bản đồ"
+  useEffect(() => {
+    if (!isRouteMode || routeProperties.length === 0 || !mapRef.current) return;
+
+    const points = routeProperties.map((p) => ({
+      id: p.id,
+      latitude: p.latitude!,
+      longitude: p.longitude!,
+      title: p.area,
+      property: p
+    }));
+
+    if (polylineLayerRef.current) {
+      polylineLayerRef.current.remove();
+    }
+
+    if (points.length >= 2) {
+      const result = RouteOptimizer.optimize(null, points);
+      const latlngs: [number, number][] = result.optimizedPoints.map((pt) => [pt.latitude, pt.longitude]);
+      const polyline = L.polyline(latlngs, {
+        color: "#2563eb",
+        weight: 4,
+        opacity: 0.8,
+        dashArray: "8, 8"
+      }).addTo(mapRef.current);
+
+      polylineLayerRef.current = polyline;
+      mapRef.current.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+      setRouteInfo(`Lộ trình qua ${result.optimizedPoints.length} BĐS đã chọn.`);
+    } else if (points.length === 1) {
+      mapRef.current.setView([points[0].latitude, points[0].longitude], 16);
+      setRouteInfo("1 BĐS trên bản đồ.");
+    }
+  }, [isRouteMode, routeProperties]);
 
   // Derived selected index and property
   const selectedIndex = useMemo(() => {
@@ -381,17 +443,33 @@ export const MapSurveyPage: React.FC = () => {
 
       {/* Floating Map Controls */}
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-[calc(100vw-32px)] sm:max-w-md">
-        {/* Row 1: Action Buttons */}
+        {/* Row 1: Action Buttons & Route Mode Indicator */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setViewTodayOnly(!viewTodayOnly)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-md transition-all cursor-pointer ${
-              viewTodayOnly ? "bg-blue-600 text-white" : "bg-white text-slate-800 hover:bg-slate-50 border border-slate-200"
-            }`}
-          >
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{viewTodayOnly ? "Đang lọc: Hôm nay" : "Chỉ xem hôm nay"}</span>
-          </button>
+          {isRouteMode && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-xs font-semibold shadow-xs">
+              <Route className="w-3.5 h-3.5 text-blue-600" />
+              <span>Lộ trình ({filteredProperties.length} BĐS)</span>
+              <button
+                onClick={() => navigate("/map")}
+                className="text-slate-400 hover:text-slate-600 ml-1 p-0.5 cursor-pointer"
+                title="Thoát chế độ lộ trình"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {!isRouteMode && (
+            <button
+              onClick={() => setViewTodayOnly(!viewTodayOnly)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-md transition-all cursor-pointer ${
+                viewTodayOnly ? "bg-blue-600 text-white" : "bg-white text-slate-800 hover:bg-slate-50 border border-slate-200"
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>{viewTodayOnly ? "Đang lọc: Hôm nay" : "Chỉ xem hôm nay"}</span>
+            </button>
+          )}
 
           <button
             onClick={handleOptimizeRoute}
@@ -403,8 +481,9 @@ export const MapSurveyPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Row 2: Radius Filter Bar (MAP-SURVEY-GPS-001) */}
-        <div className="p-2.5 bg-white/95 backdrop-blur-xs rounded-2xl shadow-lg border border-slate-200 flex flex-col gap-2">
+        {/* Row 2: Radius Filter Bar (MAP-SURVEY-GPS-001) - Ẩn khi đang ở chế độ lộ trình */}
+        {!isRouteMode && (
+          <div className="p-2.5 bg-white/95 backdrop-blur-xs rounded-2xl shadow-lg border border-slate-200 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-700">
             <span className="flex items-center gap-1 text-slate-500">
               <Target className="w-3.5 h-3.5 text-blue-600" />
@@ -474,6 +553,7 @@ export const MapSurveyPage: React.FC = () => {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* Center GPS Button */}

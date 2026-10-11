@@ -26,6 +26,12 @@ import { nowTimestamp } from "../../core/utils/date";
 import { PropertyCard } from "../../components/properties/PropertyCard";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
 import { PropertyFilter } from "../../core/engine/property-filter";
+import { MultiSelectBottomBar } from "../../components/common/MultiSelectBottomBar";
+import { useHideBottomNavWhile } from "../../components/common/bottom-nav-visibility";
+import {
+  MapSurveyRoute,
+  getMapNavigationMessage
+} from "../../core/engine/map-survey-route";
 
 export interface PropertyCluster {
   center: Property;
@@ -116,6 +122,9 @@ export const UnverifiedListPage: React.FC = () => {
   // Multi-select state
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Ẩn thanh điều hướng đáy khi đang chọn nhiều
+  useHideBottomNavWhile(isMultiSelect && selectedIds.size > 0);
 
   // Clustered View state (PARITY-UNVER-002)
   const [isClusteredView, setIsClusteredView] = useState(false);
@@ -260,6 +269,19 @@ export const UnverifiedListPage: React.FC = () => {
 
     setRawInput("");
     setShowImportModal(false);
+  };
+
+  const handleShowOnMap = () => {
+    if (!rawUnverifiedList) return;
+    const selectedProperties = rawUnverifiedList.filter((p) => selectedIds.has(p.id));
+    const result = MapSurveyRoute.build(selectedProperties);
+    const msg = getMapNavigationMessage(result);
+    if (msg) {
+      alert(msg);
+    }
+    if (result.type === "success") {
+      navigate(result.route);
+    }
   };
 
   if (rawUnverifiedList === undefined) {
@@ -645,6 +667,23 @@ export const UnverifiedListPage: React.FC = () => {
         onConfirm={handleConfirmBatchDelete}
         onCancel={() => setBatchDeleteModalOpen(false)}
       />
+
+      {/* Thanh chọn nhiều đáy dùng chung: Xóa đã chọn + Xem trên bản đồ (N) */}
+      {isMultiSelect && selectedIds.size > 0 && (
+        <MultiSelectBottomBar
+          count={selectedIds.size}
+          onShowOnMap={handleShowOnMap}
+          secondaryAction={
+            <button
+              onClick={() => setBatchDeleteModalOpen(true)}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Xóa đã chọn</span>
+            </button>
+          }
+        />
+      )}
     </div>
   );
 };

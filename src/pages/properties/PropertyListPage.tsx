@@ -29,6 +29,12 @@ import {
 import { PropertyCard } from "../../components/properties/PropertyCard";
 import { PropertyFilterBottomSheet } from "../../components/properties/PropertyFilterBottomSheet";
 import { ConfirmModal } from "../../components/common/ConfirmModal";
+import { MultiSelectBottomBar } from "../../components/common/MultiSelectBottomBar";
+import { useHideBottomNavWhile } from "../../components/common/bottom-nav-visibility";
+import {
+  MapSurveyRoute,
+  getMapNavigationMessage
+} from "../../core/engine/map-survey-route";
 import {
   createDefaultFilterState,
   loadPropertyListState,
@@ -60,6 +66,9 @@ export const PropertyListPage: React.FC = () => {
   const [isMultiSelect, setIsMultiSelect] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  // Ẩn thanh điều hướng đáy khi đang chọn nhiều
+  useHideBottomNavWhile(isMultiSelect && selectedIds.size > 0);
 
   // FAB position state (BEH-PROP-008: Chuyển đổi vị trí FAB trái/phải hỗ trợ thao tác một tay)
   const [fabPosition, setFabPosition] = useState<"left" | "right">(() => {
@@ -218,6 +227,19 @@ export const PropertyListPage: React.FC = () => {
     setSelectedIds(new Set());
     setIsMultiSelect(false);
     setConfirmDeleteOpen(false);
+  };
+
+  const handleShowOnMap = () => {
+    if (!properties) return;
+    const orderedSelected = properties.filter((p) => selectedIds.has(p.id));
+    const result = MapSurveyRoute.build(orderedSelected);
+    const msg = getMapNavigationMessage(result);
+    if (msg) {
+      alert(msg);
+    }
+    if (result.type === "success") {
+      navigate(result.route);
+    }
   };
 
   if (properties === undefined) {
@@ -486,6 +508,14 @@ export const PropertyListPage: React.FC = () => {
         onConfirm={handleConfirmDeleteSelected}
         onCancel={() => setConfirmDeleteOpen(false)}
       />
+
+      {/* Thanh chọn nhiều đáy dùng chung: Xem trên bản đồ (N) */}
+      {isMultiSelect && selectedIds.size > 0 && (
+        <MultiSelectBottomBar
+          count={selectedIds.size}
+          onShowOnMap={handleShowOnMap}
+        />
+      )}
     </div>
   );
 };
