@@ -222,11 +222,18 @@ export function mergeR2MediaItems(
   }));
 }
 
+/** Khoảng chờ giữa các lần thử lại sign_get khi gặp lỗi tạm thời */
+export const SIGN_GET_RETRY_DELAYS_MS = [700, 1800];
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 /**
  * Client giao tiếp với Supabase Edge Function r2-media-sign
  */
 export class R2MediaSignClient {
   private cache = new Map<string, { url: string; expiresAt: number }>();
+  private inflight = new Map<string, Promise<string | null>>();
+  private lastErrors = new Map<string, string>();
 
   private getFunctionUrl(): string {
     const base = (
@@ -346,7 +353,10 @@ export class R2MediaSignClient {
 
   /**
    * Xin Presigned GET URL từ Edge Function để hiển thị hoặc tải ảnh từ R2
-   * Có cache trong bộ nhớ (500 giây) để tránh spam request lên server
+   * Có cache trong bộ nhớ (500 giây) để tránh spam request lên server.
+   * Lỗi tạm thời (mất mạng, server 5xx/429 — hay gặp khi Edge Function khởi động nguội và
+   * nhận một loạt request ký cùng lúc) được tự thử lại; lỗi 4xx thì trả null ngay.
+   * Lý do thất bại gần nhất xem qua getLastDownloadError(objectKey).
    */
   async getPresignedDownloadUrl(params: {
     ownerType: "PROPERTY" | "CUSTOMER";
@@ -359,9 +369,37 @@ export class R2MediaSignClient {
       return cached.url;
     }
 
+    // Gộp các request trùng objectKey đang chạy (thumbnail, gallery, thẻ live cùng xin một ảnh)
+    const pending = this.inflight.get(params.objectKey);
+    if (pending) return pending;
+
+    const promise = this.signGetWithRetry(params).finally(() => {
+      this.inflight.delete(params.objectKey);
+    });
+    this.inflight.set(params.objectKey, promise);
+    return promise;
+  }
+
+  /** Lý do lần xin URL xem gần nhất của objectKey thất bại (undefined nếu thành công) */
+  getLastDownloadError(objectKey: string): string | undefined {
+    return this.lastErrors.get(objectKey);
+  }
+
+  /** Bỏ URL đã ký trong cache (ví dụ ảnh tải lỗi do URL hết hạn) để lần sau ký lại */
+  invalidateDownloadUrl(objectKey: string): void {
+    this.cache.delete(objectKey);
+  }
+
+  private async signGetWithRetry(params: {
+    ownerType: "PROPERTY" | "CUSTOMER";
+    ownerId: string;
+    mediaId: string;
+    objectKey: string;
+  }): Promise<string | null> {
     const publishableKey = this.getPublishableKey();
     if (!publishableKey) {
       console.error("[R2MediaSignClient] Thiếu VITE_ACTIVATION_PUBLISHABLE_KEY");
+      this.lastErrors.set(params.objectKey, "Thiếu khoá cấu hình ký ảnh");
       return null;
     }
 
@@ -375,35 +413,59 @@ export class R2MediaSignClient {
       objectKey: params.objectKey
     };
 
-    try {
-      const res = await fetch(this.getFunctionUrl(), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: publishableKey
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`[R2MediaSignClient] sign_get lỗi HTTP ${res.status}:`, errText);
-        return null;
+    let lastError = "Lỗi không xác định";
+    for (let attempt = 0; attempt <= SIGN_GET_RETRY_DELAYS_MS.length; attempt++) {
+      if (attempt > 0) {
+        await sleep(SIGN_GET_RETRY_DELAYS_MS[attempt - 1]);
       }
 
-      const json = await res.json();
-      if (json.ok && json.downloadUrl) {
-        this.cache.set(params.objectKey, {
-          url: json.downloadUrl,
-          expiresAt: Date.now() + 500 * 1000
+      let retryable = false;
+      try {
+        const res = await fetch(this.getFunctionUrl(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: publishableKey
+          },
+          body: JSON.stringify(payload)
         });
-        return json.downloadUrl;
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error(`[R2MediaSignClient] sign_get lỗi HTTP ${res.status}:`, errText);
+          retryable = res.status >= 500 || res.status === 429 || res.status === 408;
+          let serverMsg = "";
+          try {
+            serverMsg = JSON.parse(errText)?.error || "";
+          } catch {
+            // body không phải JSON
+          }
+          lastError = retryable
+            ? `Máy chủ ký ảnh tạm lỗi (HTTP ${res.status})`
+            : `HTTP ${res.status}${serverMsg ? `: ${serverMsg}` : ""}`;
+        } else {
+          const json = await res.json();
+          if (json.ok && json.downloadUrl) {
+            this.cache.set(params.objectKey, {
+              url: json.downloadUrl,
+              expiresAt: Date.now() + 500 * 1000
+            });
+            this.lastErrors.delete(params.objectKey);
+            return json.downloadUrl;
+          }
+          lastError = json.error || "Máy chủ không trả về URL";
+        }
+      } catch (err) {
+        console.error("[R2MediaSignClient] Ngoại lệ sign_get:", err);
+        retryable = true;
+        lastError = "Mất kết nối mạng";
       }
-      return null;
-    } catch (err) {
-      console.error("[R2MediaSignClient] Ngoại lệ sign_get:", err);
-      return null;
+
+      if (!retryable) break;
     }
+
+    this.lastErrors.set(params.objectKey, lastError);
+    return null;
   }
 }
 

@@ -17,6 +17,8 @@ import {
 import { getSupabaseClient } from "../remote/supabase";
 import { mediaOutbox } from "./media-outbox";
 
+const LEGACY_DRIVE_PREFIX = "legacy/drive/";
+
 /**
  * Tính mã SHA-256 (64 ký tự hex viết thường) bằng Web Crypto API
  */
@@ -120,7 +122,7 @@ export class MediaService {
       const legacyItems: MediaItem[] = ids.map((driveId, idx) => ({
         propertyId,
         mediaId: `drive_${driveId}`,
-        objectKey: `legacy/drive/${driveId}`,
+        objectKey: `${LEGACY_DRIVE_PREFIX}${driveId}`,
         fileName: `drive_${driveId}.jpg`,
         contentType: "image/jpeg",
         sortOrder: idx
@@ -513,6 +515,12 @@ export class MediaService {
    * và vượt qua kiểm tra identity của Edge Function r2-media-sign.
    */
   async resolveImageUrl(propertyId: string, item: MediaItem | R2MediaItem): Promise<string | null> {
+    // Ảnh Google Drive cũ (chưa lên R2): Edge Function không ký được key legacy/drive/*,
+    // hiện thẳng từ Drive như ảnh đại diện ở danh sách
+    if (item.objectKey.startsWith(LEGACY_DRIVE_PREFIX)) {
+      const driveId = item.objectKey.slice(LEGACY_DRIVE_PREFIX.length);
+      return driveId ? `https://drive.google.com/thumbnail?sz=w2000&id=${encodeURIComponent(driveId)}` : null;
+    }
     const mediaId = ("mediaId" in item && item.mediaId)
       ? item.mediaId
       : getMediaIdFromObjectKey(item.objectKey, item.fileName);
@@ -522,6 +530,16 @@ export class MediaService {
       mediaId,
       objectKey: item.objectKey
     });
+  }
+
+  /** Lý do lần lấy URL hiển thị gần nhất của media thất bại (để hiện trên ô ảnh lỗi) */
+  getImageUrlError(item: MediaItem | R2MediaItem): string | undefined {
+    return r2MediaSignClient.getLastDownloadError(item.objectKey);
+  }
+
+  /** Bỏ URL đã ký của media khỏi cache để lần sau ký lại (ảnh tải lỗi / URL hết hạn) */
+  invalidateImageUrl(item: MediaItem | R2MediaItem): void {
+    r2MediaSignClient.invalidateDownloadUrl(item.objectKey);
   }
 
   /**

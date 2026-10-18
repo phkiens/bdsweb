@@ -10,7 +10,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Star,
-  Film
+  Film,
+  RotateCw
 } from "lucide-react";
 import { Property } from "../../core/models/property";
 import { MediaItem } from "../../core/models/media";
@@ -28,6 +29,20 @@ interface ImageItemState {
   srcUrl: string | null;
   loading: boolean;
   error?: string;
+}
+
+async function resolveItem(propertyId: string, item: MediaItem): Promise<ImageItemState> {
+  try {
+    const url = await mediaService.resolveImageUrl(propertyId, item);
+    return {
+      item,
+      srcUrl: url,
+      loading: false,
+      error: url ? undefined : mediaService.getImageUrlError(item) || "Không thể tạo URL xem media"
+    };
+  } catch (err: any) {
+    return { item, srcUrl: null, loading: false, error: err?.message || "Lỗi tải media" };
+  }
 }
 
 export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
@@ -73,27 +88,8 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
         }));
         setImageStates(initial);
 
-        // Ký URL song song có cache
-        const resolved = await Promise.all(
-          items.map(async (item) => {
-            try {
-              const url = await mediaService.resolveImageUrl(property.id, item);
-              return {
-                item,
-                srcUrl: url,
-                loading: false,
-                error: url ? undefined : "Không thể tạo URL xem media"
-              };
-            } catch (err: any) {
-              return {
-                item,
-                srcUrl: null,
-                loading: false,
-                error: err?.message || "Lỗi tải media"
-              };
-            }
-          })
-        );
+        // Ký URL song song có cache (lỗi tạm thời đã được tự thử lại bên trong)
+        const resolved = await Promise.all(items.map((item) => resolveItem(property.id, item)));
 
         if (!isCancelled) {
           setImageStates(resolved);
@@ -111,6 +107,24 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
       isCancelled = true;
     };
   }, [property]);
+
+  // Thử ký lại một ô lỗi (hoặc ảnh tải hỏng do URL hết hạn) mà không phải tải lại trang
+  const retryItem = async (item: MediaItem) => {
+    mediaService.invalidateImageUrl(item);
+    const update = (next: ImageItemState) =>
+      setImageStates((prev) => prev.map((st) => (st.item?.objectKey === item.objectKey ? next : st)));
+    update({ item, srcUrl: null, loading: true });
+    update(await resolveItem(property.id, item));
+  };
+
+  const markImageBroken = (item: MediaItem) => {
+    mediaService.invalidateImageUrl(item);
+    setImageStates((prev) =>
+      prev.map((st) =>
+        st.item?.objectKey === item.objectKey ? { ...st, srcUrl: null, error: "Không tải được ảnh" } : st
+      )
+    );
+  };
 
   // Xử lý upload ảnh/video mới (Phase E)
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -342,6 +356,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                         alt={`BĐS ${property.area} ${idx + 1}`}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 cursor-pointer"
                         onClick={() => openLightbox(st)}
+                        onError={() => st.item && markImageBroken(st.item)}
                       />
                     )}
 
@@ -440,9 +455,19 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                     </div>
                   </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-2 text-center text-slate-400">
-                    <ImageIcon className="w-5 h-5 mb-1" />
-                    <span className="text-[10px] text-red-500">{st.error || "Lỗi media"}</span>
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-1 p-2 text-center text-slate-400">
+                    <ImageIcon className="w-5 h-5" />
+                    <span className="text-[10px] text-red-500 line-clamp-2 break-all">{st.error || "Lỗi media"}</span>
+                    {st.item && (
+                      <button
+                        type="button"
+                        onClick={() => retryItem(st.item!)}
+                        className="mt-0.5 flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 transition-colors"
+                      >
+                        <RotateCw className="w-3 h-3" />
+                        <span>Thử lại</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
