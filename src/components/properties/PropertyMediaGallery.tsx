@@ -33,7 +33,7 @@ interface ImageItemState {
 
 async function resolveItem(propertyId: string, item: MediaItem): Promise<ImageItemState> {
   try {
-    const url = await mediaService.resolveImageUrl(propertyId, item);
+    const url = await mediaService.resolveDisplayUrl(propertyId, item);
     return {
       item,
       srcUrl: url,

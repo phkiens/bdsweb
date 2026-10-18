@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Home, FileText, Star, Loader2 } from "lucide-react";
 import { Property } from "../../core/models/property";
 import { mediaService } from "../../data/media/media-service";
@@ -19,14 +19,39 @@ export const PropertyThumbnail: React.FC<PropertyThumbnailProps> = ({
   className = "",
   onClick
 }) => {
-  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+  // Ảnh đã có trong phiên (lưu trong máy / URL ký còn hạn) hiện ngay, không chớp loading khi quay lại Kho
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(
+    () => mediaService.peekPrimaryDisplayUrl(property) || null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const primaryItemRef = useRef<MediaItem | null>(null);
+
+  // Chỉ ký/tải ảnh khi ô sắp cuộn tới màn hình (danh sách dài không xin ký & tải hết cùng lúc)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isNearViewport, setIsNearViewport] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    if (isNearViewport) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setIsNearViewport(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "400px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isNearViewport]);
 
   const isUnverified = !property.isVerified;
   const isPotential = property.needToViewToday && !isUnverified;
 
   useEffect(() => {
+    if (!isNearViewport) return;
     let isCancelled = false;
     setHasError(false);
 
@@ -42,12 +67,16 @@ export const PropertyThumbnail: React.FC<PropertyThumbnailProps> = ({
       }
 
       // 2. Tầng 1: Đọc qua mediaService (media_objects RPC -> fallback r2_media_keys)
-      setIsLoading(true);
+      const peeked = mediaService.peekPrimaryDisplayUrl(property);
+      if (peeked) setResolvedUrl(peeked);
+      else setIsLoading(true);
       try {
         const items: MediaItem[] = await mediaService.fetchPropertyMedia(property.id, property);
         if (items.length > 0) {
           const primaryItem = items[0];
-          const url = await mediaService.resolveImageUrl(property.id, primaryItem);
+          primaryItemRef.current = primaryItem;
+          // Ưu tiên ảnh đã lưu trong máy; chưa có thì ký + tải một lần để lưu
+          const url = await mediaService.resolveDisplayUrl(property.id, primaryItem);
           if (!isCancelled) {
             if (url) {
               setResolvedUrl(url);
@@ -117,9 +146,11 @@ export const PropertyThumbnail: React.FC<PropertyThumbnailProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [property.id, property.r2MediaKeys, property.imagePath, property.driveMediaIds]);
+  }, [isNearViewport, property.id, property.r2MediaKeys, property.imagePath, property.driveMediaIds]);
 
   const handleImageError = () => {
+    // Ảnh lưu hỏng hoặc URL ký hết hạn: bỏ để lần sau ký/tải lại
+    if (primaryItemRef.current) mediaService.invalidateImageUrl(primaryItemRef.current);
     setHasError(true);
   };
 
@@ -132,6 +163,7 @@ export const PropertyThumbnail: React.FC<PropertyThumbnailProps> = ({
 
   return (
     <div
+      ref={containerRef}
       style={dimensionStyle}
       onClick={onClick}
       className={`relative rounded-lg overflow-hidden shrink-0 select-none bg-slate-100 ${className}`}

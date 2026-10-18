@@ -16,6 +16,12 @@ import {
 } from "../remote/r2-media-client";
 import { getSupabaseClient } from "../remote/supabase";
 import { mediaOutbox } from "./media-outbox";
+import {
+  downloadAndCacheMedia,
+  getCachedMediaUrl,
+  peekCachedMediaUrl,
+  removeCachedMedia
+} from "./media-cache";
 
 const LEGACY_DRIVE_PREFIX = "legacy/drive/";
 
@@ -410,6 +416,7 @@ export class MediaService {
       });
 
       this.invalidateCache(propertyId);
+      void removeCachedMedia(objectKey);
 
       return { success: true };
     } catch (err: any) {
@@ -532,6 +539,34 @@ export class MediaService {
     });
   }
 
+  /**
+   * URL để hiển thị ảnh, ưu tiên bản đã lưu trong máy (không xin ký, không tải lại).
+   * Ảnh chưa có thì ký URL rồi tải một lần qua proxy để lưu; không lưu được thì trả URL ký.
+   * Video không lưu (nặng) — trả URL ký như cũ.
+   */
+  async resolveDisplayUrl(propertyId: string, item: MediaItem | R2MediaItem): Promise<string | null> {
+    if (item.objectKey.startsWith(LEGACY_DRIVE_PREFIX) || item.contentType === "video/mp4") {
+      return this.resolveImageUrl(propertyId, item);
+    }
+    const local = await getCachedMediaUrl(item.objectKey);
+    if (local) return local;
+    const signed = await this.resolveImageUrl(propertyId, item);
+    if (!signed) return null;
+    return (await downloadAndCacheMedia(item.objectKey, signed)) || signed;
+  }
+
+  /** Ảnh đại diện có sẵn ngay (đồng bộ) từ manifest r2MediaKeys — để danh sách không chớp loading */
+  peekPrimaryDisplayUrl(property: Property): string | undefined {
+    if (!property.r2MediaKeys || property.r2MediaKeys === "[]") return undefined;
+    const first = parseR2MediaKeys(property.r2MediaKeys)[0];
+    return first ? this.peekDisplayUrl(first) : undefined;
+  }
+
+  /** URL hiển thị có sẵn ngay (đồng bộ): ảnh đã lưu trong phiên hoặc URL ký còn hạn */
+  peekDisplayUrl(item: MediaItem | R2MediaItem): string | undefined {
+    return peekCachedMediaUrl(item.objectKey) || r2MediaSignClient.peekDownloadUrl(item.objectKey);
+  }
+
   /** Lý do lần lấy URL hiển thị gần nhất của media thất bại (để hiện trên ô ảnh lỗi) */
   getImageUrlError(item: MediaItem | R2MediaItem): string | undefined {
     return r2MediaSignClient.getLastDownloadError(item.objectKey);
@@ -540,6 +575,7 @@ export class MediaService {
   /** Bỏ URL đã ký của media khỏi cache để lần sau ký lại (ảnh tải lỗi / URL hết hạn) */
   invalidateImageUrl(item: MediaItem | R2MediaItem): void {
     r2MediaSignClient.invalidateDownloadUrl(item.objectKey);
+    void removeCachedMedia(item.objectKey);
   }
 
   /**

@@ -123,7 +123,7 @@ export const LiveShowcaseCard: React.FC<LiveShowcaseCardProps> = ({
         setSignedUrls((prev) => ({ ...prev, [idx]: src.url! }));
       } else if (src.item) {
         mediaService
-          .resolveImageUrl(property.id, src.item)
+          .resolveDisplayUrl(property.id, src.item)
           .then((url) => {
             if (url) setSignedUrls((prev) => ({ ...prev, [idx]: url }));
           })

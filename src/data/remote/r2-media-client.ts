@@ -380,6 +380,12 @@ export class R2MediaSignClient {
     return promise;
   }
 
+  /** URL ký còn hạn trong cache bộ nhớ (đồng bộ, không gọi mạng) */
+  peekDownloadUrl(objectKey: string): string | undefined {
+    const cached = this.cache.get(objectKey);
+    return cached && cached.expiresAt > Date.now() ? cached.url : undefined;
+  }
+
   /** Lý do lần xin URL xem gần nhất của objectKey thất bại (undefined nếu thành công) */
   getLastDownloadError(objectKey: string): string | undefined {
     return this.lastErrors.get(objectKey);
