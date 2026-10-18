@@ -20,7 +20,8 @@ import {
   ChevronRight,
   Clock,
   X,
-  Copy
+  Copy,
+  Check
 } from "lucide-react";
 import { db } from "../../data/local/db";
 import { PropertyStatus, CustomerRole, CustomerPropertyRole } from "../../core/models/enums";
@@ -60,6 +61,40 @@ import { maskOwnerName, maskOwnerPhone } from "../../core/live/privacy";
 import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import { LiveHideItem } from "../../core/live/live-hide";
 import { LiveTag, useLiveHighlight } from "../../components/live/LiveTag";
+
+export const AddressCopyButton: React.FC<{ address: string }> = ({ address }) => {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(address.trim());
+      setCopied(true);
+    } catch {
+      alert("Không thể sao chép vào bộ nhớ đệm");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={copied ? "Đã sao chép địa chỉ" : "Sao chép địa chỉ"}
+      aria-label="Sao chép địa chỉ"
+      className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+        copied ? "text-emerald-700 bg-emerald-50" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+      }`}
+    >
+      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+      {copied && <span>Đã chép</span>}
+    </button>
+  );
+};
 
 export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: number }> = ({
   latitude,
@@ -593,9 +628,12 @@ export const PropertyDetailPage: React.FC = () => {
                 {property.status}
               </span>
             </div>
-            <h1 className="font-bold text-slate-900 text-lg md:text-xl mt-1.5">
-              {property.area || "Chưa rõ khu vực"}
-            </h1>
+            <div className="flex items-start gap-1 mt-1.5">
+              <h1 className="font-bold text-slate-900 text-lg md:text-xl">
+                {property.area || "Chưa rõ khu vực"}
+              </h1>
+              {!isLive && property.area?.trim() && <AddressCopyButton address={property.area} />}
+            </div>
           </div>
 
           <div className="text-right">

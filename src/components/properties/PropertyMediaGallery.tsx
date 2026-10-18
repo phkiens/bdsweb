@@ -16,6 +16,7 @@ import { Property } from "../../core/models/property";
 import { MediaItem } from "../../core/models/media";
 import { mediaService } from "../../data/media/media-service";
 import { confirmDialog } from "../common/confirm-dialog";
+import { ImageLightbox, LightboxItem } from "../common/ImageLightbox";
 
 interface PropertyMediaGalleryProps {
   property: Property;
@@ -41,10 +42,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
     message: string;
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [selectedPreview, setSelectedPreview] = useState<{
-    url: string;
-    isVideo: boolean;
-  } | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [actionLoadingKey, setActionLoadingKey] = useState<string | null>(null);
 
   // Tải media theo phân cấp nghiêm ngặt (RPC -> fallback r2_media_keys -> fallback Drive nếu unmanaged)
@@ -213,6 +211,18 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
 
   const totalCount = imageStates.length;
 
+  // Danh sách cho trình xem phóng to: chỉ các media đã ký URL được
+  const viewableStates = imageStates.filter((st) => st.srcUrl);
+  const lightboxItems: LightboxItem[] = viewableStates.map((st) => ({
+    url: st.srcUrl!,
+    isVideo: st.item?.contentType === "video/mp4",
+    fileName: st.item?.fileName
+  }));
+  const openLightbox = (st: ImageItemState) => {
+    const i = viewableStates.indexOf(st);
+    if (i >= 0) setLightboxIndex(i);
+  };
+
   return (
     <div className="mb-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
       {/* Header */}
@@ -309,7 +319,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                     {isVideo ? (
                       <div
                         className="w-full h-full relative flex items-center justify-center bg-slate-900 cursor-pointer"
-                        onClick={() => setSelectedPreview({ url: st.srcUrl!, isVideo: true })}
+                        onClick={() => openLightbox(st)}
                       >
                         <video
                           src={st.srcUrl}
@@ -331,7 +341,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                         src={st.srcUrl}
                         alt={`BĐS ${property.area} ${idx + 1}`}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 cursor-pointer"
-                        onClick={() => setSelectedPreview({ url: st.srcUrl!, isVideo: false })}
+                        onClick={() => openLightbox(st)}
                       />
                     )}
 
@@ -342,8 +352,11 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                       </span>
                     )}
 
-                    {/* Reorder and Action Overlay */}
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2">
+                    {/* Reorder and Action Overlay — phủ lên ảnh nên bấm vào vùng trống cũng mở xem phóng to */}
+                    <div
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2 cursor-zoom-in"
+                      onClick={() => openLightbox(st)}
+                    >
                       {/* Top Action Buttons (Reorder: Set as cover, move left, move right) */}
                       <div className="flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1">
@@ -394,6 +407,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                           href={st.srcUrl}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="p-1.5 bg-white/90 hover:bg-white text-slate-800 rounded-lg transition-transform hover:scale-110 shadow-xs"
                           title="Mở tab mới"
                         >
@@ -403,6 +417,7 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
                         <a
                           href={st.srcUrl}
                           download={st.item?.fileName || `bds_${property.id}_${idx + 1}.jpg`}
+                          onClick={(e) => e.stopPropagation()}
                           className="p-1.5 bg-white/90 hover:bg-white text-slate-800 rounded-lg transition-transform hover:scale-110 shadow-xs"
                           title="Tải về máy"
                         >
@@ -444,38 +459,13 @@ export const PropertyMediaGallery: React.FC<PropertyMediaGalleryProps> = ({
         </div>
       )}
 
-      {/* Modal xem trước ảnh / video phóng to */}
-      {selectedPreview && (
-        <div
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in"
-          onClick={() => setSelectedPreview(null)}
-        >
-          <div
-            className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl flex items-center justify-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {selectedPreview.isVideo ? (
-              <video
-                src={selectedPreview.url}
-                controls
-                autoPlay
-                className="max-w-full max-h-[85vh] rounded-2xl bg-black"
-              />
-            ) : (
-              <img
-                src={selectedPreview.url}
-                alt="Preview"
-                className="max-w-full max-h-[85vh] object-contain rounded-2xl"
-              />
-            )}
-            <button
-              onClick={() => setSelectedPreview(null)}
-              className="absolute top-3 right-3 p-2 bg-black/70 hover:bg-black text-white rounded-full text-xs font-bold transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+      {/* Trình xem ảnh / video phóng to */}
+      {lightboxIndex !== null && lightboxItems.length > 0 && (
+        <ImageLightbox
+          items={lightboxItems}
+          startIndex={Math.min(lightboxIndex, lightboxItems.length - 1)}
+          onClose={() => setLightboxIndex(null)}
+        />
       )}
     </div>
   );
