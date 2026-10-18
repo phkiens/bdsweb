@@ -15,6 +15,8 @@ const CACHE_KEY_PREFIX = "/__media-cache/";
 /** objectKey -> blob URL đã tạo trong phiên này (đọc đồng bộ để hiện ảnh ngay, không chớp loading) */
 const objectUrls = new Map<string, string>();
 const inflight = new Map<string, Promise<string | null>>();
+/** objectKey bị xoá khi đang tải: lượt tải đó không được lưu lại */
+const removedWhileLoading = new Set<string>();
 
 function cacheKey(objectKey: string): string {
   return CACHE_KEY_PREFIX + encodeURIComponent(objectKey);
@@ -72,6 +74,7 @@ export function downloadAndCacheMedia(objectKey: string, signedUrl: string): Pro
       // Proxy chưa cấu hình (dev) trả index.html; lỗi R2 trả XML — đều không lưu
       if (!res.ok || !type.startsWith("image/")) return null;
       const blob = await res.blob();
+      if (removedWhileLoading.has(objectKey)) return null;
       try {
         const cache = await caches.open(CACHE_NAME);
         await cache.put(
@@ -81,11 +84,16 @@ export function downloadAndCacheMedia(objectKey: string, signedUrl: string): Pro
       } catch {
         // Hết dung lượng / chế độ ẩn danh: vẫn hiện ảnh trong phiên này
       }
+      if (removedWhileLoading.has(objectKey)) {
+        await caches.open(CACHE_NAME).then((c) => c.delete(cacheKey(objectKey))).catch(() => {});
+        return null;
+      }
       return rememberBlob(objectKey, blob);
     } catch {
       return null;
     } finally {
       inflight.delete(objectKey);
+      removedWhileLoading.delete(objectKey);
     }
   })();
 
@@ -95,6 +103,7 @@ export function downloadAndCacheMedia(objectKey: string, signedUrl: string): Pro
 
 /** Xoá ảnh khỏi bộ đệm (khi xoá ảnh khỏi BĐS, hoặc ảnh lưu bị hỏng) */
 export async function removeCachedMedia(objectKey: string): Promise<void> {
+  if (inflight.has(objectKey)) removedWhileLoading.add(objectKey);
   const url = objectUrls.get(objectKey);
   if (url) {
     objectUrls.delete(objectKey);
