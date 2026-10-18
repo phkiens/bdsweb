@@ -100,7 +100,6 @@ export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: numbe
   latitude,
   longitude
 }) => {
-  const { isLive } = useLivestream();
   const [open, setOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
@@ -118,8 +117,7 @@ export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: numbe
     };
   }, [open]);
 
-  if (isLive) return null;
-
+  // Khi live chỉ ẩn số toạ độ trên màn hình; nút sao chép vẫn dùng được (menu không lộ toạ độ)
   const handleCopyLink = async () => {
     setOpen(false);
     const url = buildLocationUrl(latitude, longitude);
@@ -632,7 +630,7 @@ export const PropertyDetailPage: React.FC = () => {
               <h1 className="font-bold text-slate-900 text-lg md:text-xl">
                 {property.area || "Chưa rõ khu vực"}
               </h1>
-              {!isLive && property.area?.trim() && <AddressCopyButton address={property.area} />}
+              {property.area?.trim() && <AddressCopyButton address={property.area} />}
             </div>
           </div>
 
