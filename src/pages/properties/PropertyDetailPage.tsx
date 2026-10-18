@@ -56,121 +56,61 @@ import {
 import { PropertyPriceHistorySection } from "../../components/properties/PropertyPriceHistorySection";
 import { QuickPriceModal } from "../../components/properties/QuickPriceModal";
 import { buildLocationUrl, buildCoordinateText } from "../../core/utils/maps";
+import { copyText } from "../../core/utils/clipboard";
 import { useLivestream } from "../../core/live/use-livestream";
 import { maskOwnerName, maskOwnerPhone } from "../../core/live/privacy";
 import { LivestreamBadge } from "../../components/live/LivestreamBadge";
 import { LiveHideItem } from "../../core/live/live-hide";
 import { LiveTag, useLiveHighlight } from "../../components/live/LiveTag";
 
-export const AddressCopyButton: React.FC<{ address: string }> = ({ address }) => {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(address.trim());
-      setCopied(true);
-    } catch {
-      alert("Không thể sao chép vào bộ nhớ đệm");
-    }
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      title={copied ? "Đã sao chép địa chỉ" : "Sao chép địa chỉ"}
-      aria-label="Sao chép địa chỉ"
-      className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
-        copied ? "text-emerald-700 bg-emerald-50" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50"
-      }`}
-    >
-      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-      {copied && <span>Đã chép</span>}
-    </button>
-  );
-};
-
 export const CoordinateCopyButton: React.FC<{ latitude: number; longitude: number }> = ({
   latitude,
   longitude
 }) => {
-  const [open, setOpen] = useState(false);
-  const menuRef = React.useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState<"coords" | "link" | null>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [open]);
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(null), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
 
-  // Khi live chỉ ẩn số toạ độ trên màn hình; nút sao chép vẫn dùng được (menu không lộ toạ độ)
-  const handleCopyLink = async () => {
-    setOpen(false);
-    const url = buildLocationUrl(latitude, longitude);
-    try {
-      await navigator.clipboard.writeText(url);
-      alert("Đã sao chép link Google Maps");
-    } catch {
-      alert("Không thể sao chép vào bộ nhớ đệm");
-    }
+  // Khi live chỉ ẩn số toạ độ trên màn hình; nút sao chép vẫn dùng được và không hiện
+  // popup nào có toạ độ lên stream
+  const handleCopy = async (kind: "coords" | "link") => {
+    const text =
+      kind === "coords" ? buildCoordinateText(latitude, longitude) : buildLocationUrl(latitude, longitude);
+    if (await copyText(text)) setCopied(kind);
+    else alert("Không thể sao chép vào bộ nhớ đệm");
   };
 
-  const handleCopyCoords = async () => {
-    setOpen(false);
-    const text = buildCoordinateText(latitude, longitude);
-    try {
-      await navigator.clipboard.writeText(text);
-      alert("Đã sao chép tọa độ");
-    } catch {
-      alert("Không thể sao chép vào bộ nhớ đệm");
-    }
-  };
+  const btn = "inline-flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer";
+  const idle = "text-slate-500 hover:text-blue-600 hover:bg-blue-50";
+  const done = "text-emerald-700 bg-emerald-50";
 
   return (
-    <div className="relative inline-block ml-1 align-middle" ref={menuRef}>
+    <span className="inline-flex items-center gap-0.5 ml-1 align-middle">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
-        title="Tùy chọn sao chép vị trí"
-        aria-label="Tùy chọn sao chép vị trí"
-        className="p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+        onClick={() => handleCopy("coords")}
+        title="Sao chép tọa độ"
+        aria-label="Sao chép tọa độ"
+        className={`${btn} ${copied === "coords" ? done : idle}`}
       >
-        <Copy className="w-3.5 h-3.5" />
+        {copied === "coords" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+        {copied === "coords" && <span>Đã chép</span>}
       </button>
-
-      {open && (
-        <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 text-xs">
-          <button
-            type="button"
-            onClick={handleCopyLink}
-            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium transition-colors cursor-pointer"
-          >
-            Sao chép link Google Maps
-          </button>
-          <button
-            type="button"
-            onClick={handleCopyCoords}
-            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-slate-700 font-medium transition-colors cursor-pointer"
-          >
-            Sao chép tọa độ
-          </button>
-        </div>
-      )}
-    </div>
+      <button
+        type="button"
+        onClick={() => handleCopy("link")}
+        title="Sao chép link Google Maps"
+        aria-label="Sao chép link Google Maps"
+        className={`${btn} ${copied === "link" ? done : idle}`}
+      >
+        {copied === "link" ? <Check className="w-4 h-4" /> : <MapPin className="w-3.5 h-3.5" />}
+        <span>{copied === "link" ? "Đã chép" : "Link"}</span>
+      </button>
+    </span>
   );
 };
 
@@ -626,12 +566,9 @@ export const PropertyDetailPage: React.FC = () => {
                 {property.status}
               </span>
             </div>
-            <div className="flex items-start gap-1 mt-1.5">
-              <h1 className="font-bold text-slate-900 text-lg md:text-xl">
-                {property.area || "Chưa rõ khu vực"}
-              </h1>
-              {property.area?.trim() && <AddressCopyButton address={property.area} />}
-            </div>
+            <h1 className="font-bold text-slate-900 text-lg md:text-xl mt-1.5">
+              {property.area || "Chưa rõ khu vực"}
+            </h1>
           </div>
 
           <div className="text-right">
@@ -780,8 +717,8 @@ export const PropertyDetailPage: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-slate-500">Tọa độ:</span>{" "}
-                  <div className="inline-flex items-center gap-1">
-                    <span className="font-mono text-slate-800">
+                  <div className="inline-flex flex-wrap items-center gap-1">
+                    <span className="font-mono text-slate-800 whitespace-nowrap">
                       {property.latitude ? (isLive ? "Đã định vị" : `${property.latitude}, ${property.longitude}`) : "Chưa có"}
                     </span>
                     {hasCoords && (
